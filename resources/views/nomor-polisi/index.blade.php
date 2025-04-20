@@ -97,7 +97,7 @@
         <div class="row mt-3">
             <div class="col-md-12">
                 <a href="{{ route('rekap-pengambilan.create') }}" class="btn btn-secondary">
-                    <i class="fas fa-arrow-left mr-1"></i> Kembali ke Rekap Pengambilan
+                    <i class="fas fa-arrow-left mr-1"></i> Kembali ke Rekap Pengambilan ss
                 </a>
 
 
