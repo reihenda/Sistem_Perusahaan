@@ -1,0 +1,207 @@
+<?php
+
+use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\Auth\AuthController;
+use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\DataPencatatanController;
+use App\Http\Controllers\UserController;
+use App\Http\Controllers\FobController;
+use App\Http\Controllers\RekapPengambilanController;
+use App\Http\Controllers\NomorPolisiController;
+use App\Http\Controllers\InvoiceController;
+use App\Http\Controllers\BillingController;
+
+
+// Rute Autentikasi
+Route::get('/login', [AuthController::class, 'showLoginForm'])->name('login');
+Route::post('/login', [AuthController::class, 'login']);
+Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
+
+// Rute untuk SuperAdmin
+Route::middleware(['auth', 'role:superadmin'])->group(function () {
+    Route::get('/superadmin/dashboard', [DashboardController::class, 'superadminDashboard'])
+        ->name('superadmin.dashboard');
+});
+
+// Rute untuk Admin
+Route::middleware(['auth', 'role:admin,superadmin'])->group(function () {
+    Route::get('/admin/dashboard', [DashboardController::class, 'adminDashboard'])
+        ->name('admin.dashboard');
+        
+    // Rute untuk kelola user
+    Route::get('/kelola-user', [UserController::class, 'index'])->name('user.index');
+    Route::post('/tambah-user', [AuthController::class, 'tambahUser'])->name('tambah.user');
+
+    // Rute untuk Rekap Penjualan
+    Route::get('/rekap-penjualan', [App\Http\Controllers\Rekap\RekapPenjualanController::class, 'index'])
+        ->name('rekap.penjualan.index');
+    Route::get('/rekap-penjualan/cetak', [App\Http\Controllers\Rekap\RekapPenjualanController::class, 'cetakRekapPenjualan'])
+        ->name('rekap.penjualan.cetak');
+
+    // Rute untuk data pencatatan
+    Route::get('/data-pencatatan', [DataPencatatanController::class, 'index'])
+        ->name('data-pencatatan.index');
+    Route::get('/data-pencatatan/create', [DataPencatatanController::class, 'create'])
+        ->name('data-pencatatan.create');
+    Route::post('/data-pencatatan', [DataPencatatanController::class, 'store'])
+        ->name('data-pencatatan.store');
+    Route::get('/data-pencatatan/{dataPencatatan}', [DataPencatatanController::class, 'show'])
+        ->name('data-pencatatan.show');
+    Route::get('/data-pencatatan/{dataPencatatan}/edit', [DataPencatatanController::class, 'edit'])
+        ->name('data-pencatatan.edit');
+    Route::put('/data-pencatatan/{dataPencatatan}', [DataPencatatanController::class, 'update'])
+        ->name('data-pencatatan.update');
+    Route::delete('/data-pencatatan/{dataPencatatan}', [DataPencatatanController::class, 'destroy'])
+        ->name('data-pencatatan.destroy');
+    Route::get('/data-pencatatan/customer/{customer}', [DataPencatatanController::class, 'customerDetail'])
+        ->name('data-pencatatan.customer-detail');
+    Route::post('/user/customer/{customer}/update-pricing', [UserController::class, 'updateCustomerPricing'])
+        ->name('user.update-pricing');
+    Route::get('/data-pencatatan/customer/{customer}/details', [DataPencatatanController::class, 'getCustomerDetails'])
+        ->name('data-pencatatan.customer-details');
+    Route::post('/customer/{userId}/add-deposit', [UserController::class, 'addDeposit'])
+        ->name('customer.add-deposit');
+    Route::delete('/customers/{userId}/remove-deposit', [UserController::class, 'removeDeposit'])
+        ->name('customer.remove-deposit');
+    Route::post('/data-pencatatan/{customer}/filter', [DataPencatatanController::class, 'filterByDateRange'])
+        ->name('data-pencatatan.filter');
+    Route::get('/data-pencatatan/get-latest-reading', [DataPencatatanController::class, 'getLatestReading'])
+        ->name('data-pencatatan.get-latest-reading');
+    Route::get('/data-pencatatan/create/{customerId}', [DataPencatatanController::class, 'createWithCustomer'])
+        ->name('data-pencatatan.create-with-customer');
+
+    // Rute untuk Rekap Pengambilan
+    Route::get('/rekap-pengambilan', [RekapPengambilanController::class, 'index'])
+        ->name('rekap-pengambilan.index');
+    Route::get('/rekap-pengambilan/create', [RekapPengambilanController::class, 'create'])
+        ->name('rekap-pengambilan.create');
+    Route::post('/rekap-pengambilan', [RekapPengambilanController::class, 'store'])
+        ->name('rekap-pengambilan.store');
+    Route::get('/rekap-pengambilan/{rekapPengambilan}', [RekapPengambilanController::class, 'show'])
+        ->name('rekap-pengambilan.show');
+    Route::get('/rekap-pengambilan/{rekapPengambilan}/edit', [RekapPengambilanController::class, 'edit'])
+        ->name('rekap-pengambilan.edit');
+    Route::put('/rekap-pengambilan/{rekapPengambilan}', [RekapPengambilanController::class, 'update'])
+        ->name('rekap-pengambilan.update');
+    Route::delete('/rekap-pengambilan/{rekapPengambilan}', [RekapPengambilanController::class, 'destroy'])
+        ->name('rekap-pengambilan.destroy');
+
+    // Rute untuk mengelola nomor polisi
+    Route::resource('nomor-polisi', NomorPolisiController::class);
+    // Make sure the route name matches what's being used in the view
+    Route::get('/api/nomor-polisi/get-all', [NomorPolisiController::class, 'getAll'])->name('nomor-polisi.getAll');
+
+    // Route baru untuk filter berdasarkan bulan dan tahun
+    Route::post('/data-pencatatan/{customer}/filter-month-year', [DataPencatatanController::class, 'filterByMonthYear'])
+        ->name('data-pencatatan.filter-month-year');
+
+    // Route baru untuk mendapatkan riwayat pricing
+    Route::get('/customer/{customer}/pricing-history', [UserController::class, 'getPricingHistory'])
+        ->name('customer.pricing-history');
+
+    // Route untuk cetak billing dalam bentuk PDF
+    Route::get('/customer/{customer}/print-billing', [DataPencatatanController::class, 'printBilling'])
+        ->name('data-pencatatan.print-billing');
+
+    // Route untuk cetak invoice dalam bentuk PDF
+    Route::get('/customer/{customer}/print-invoice', [DataPencatatanController::class, 'printInvoice'])
+        ->name('data-pencatatan.print-invoice');
+
+    // Rute untuk FOB
+    Route::get('/data-pencatatan/fob/create', [FobController::class, 'create'])
+        ->name('data-pencatatan.fob.create');
+    Route::get('/data-pencatatan/fob/create/{fobId}', [FobController::class, 'createWithFob'])
+        ->name('data-pencatatan.fob.create-with-fob');
+    Route::get('/data-pencatatan/fob/{customer}', [FobController::class, 'fobDetail'])
+        ->name('data-pencatatan.fob-detail');
+    Route::post('/data-pencatatan/fob', [FobController::class, 'store'])
+        ->name('data-pencatatan.fob.store');
+    Route::post('/data-pencatatan/fob/{customer}/filter-month-year', [FobController::class, 'filterByMonthYear'])
+        ->name('data-pencatatan.fob.filter-month-year');
+    Route::get('/data-pencatatan/fob/{fob}/debug', function (App\Models\User $fob) {
+        return view('data-pencatatan.fob.fob-debug', compact('fob'));
+    })->name('fob.debug');
+    Route::post('/fob/{fobId}/update-pricing', [UserController::class, 'updateFobPricing'])
+        ->name('fob.update-pricing');
+
+    // Rute untuk Invoice dan Billing
+    Route::get('/invoices', [InvoiceController::class, 'index'])->name('invoices.index');
+    Route::get('/invoices/select-customer', [InvoiceController::class, 'selectCustomer'])->name('invoices.select-customer');
+    Route::get('/invoices/create/{customer}', [InvoiceController::class, 'create'])->name('invoices.create');
+    Route::post('/invoices/{customer}', [InvoiceController::class, 'store'])->name('invoices.store');
+    Route::get('/invoices/{invoice}', [InvoiceController::class, 'show'])->name('invoices.show');
+    Route::get('/invoices/{invoice}/edit', [InvoiceController::class, 'edit'])->name('invoices.edit');
+    Route::put('/invoices/{invoice}', [InvoiceController::class, 'update'])->name('invoices.update');
+    Route::delete('/invoices/{invoice}', [InvoiceController::class, 'destroy'])->name('invoices.destroy');
+
+    Route::get('/billings', [BillingController::class, 'index'])->name('billings.index');
+    Route::get('/billings/select-customer', [BillingController::class, 'selectCustomer'])->name('billings.select-customer');
+    Route::get('/billings/create/{customer}', [BillingController::class, 'create'])->name('billings.create');
+    Route::post('/billings/{customer}', [BillingController::class, 'store'])->name('billings.store');
+    Route::get('/billings/{billing}', [BillingController::class, 'show'])->name('billings.show');
+    Route::get('/billings/{billing}/edit', [BillingController::class, 'edit'])->name('billings.edit');
+    Route::put('/billings/{billing}', [BillingController::class, 'update'])->name('billings.update');
+    Route::delete('/billings/{billing}', [BillingController::class, 'destroy'])->name('billings.destroy');
+});
+
+// Rute untuk Customer
+Route::middleware(['auth', 'role:customer'])->group(function () {
+    Route::get('/customer/dashboard', [DashboardController::class, 'customerDashboard'])
+        ->name('customer.dashboard');
+
+    // Route untuk filter dashboard
+    Route::get('/customer/filter', [DashboardController::class, 'customerDashboard'])
+        ->name('customer.filter');
+
+    // Modifikasi route ini agar bisa menerima parameter filter
+    Route::get('/data-saya', [DataPencatatanController::class, 'indexCustomer'])
+        ->name('customer.data');
+
+    // Proses pembayaran
+    Route::post('/proses-pembayaran/{dataPencatatan}', [DataPencatatanController::class, 'prosesPembayaran'])
+        ->name('customer.proses-pembayaran');
+
+    // Lihat invoice dan billing untuk customer
+    Route::get('/customer/invoices', [InvoiceController::class, 'customerInvoices'])->name('customer.invoices');
+    Route::get('/customer/billings', [BillingController::class, 'customerBillings'])->name('customer.billings');
+});
+
+// Rute untuk Demo
+Route::middleware(['auth', 'role:demo'])->group(function () {
+    // Demo Admin
+    Route::get('/demo/admin', [App\Http\Controllers\Demo\DemoController::class, 'demoAdmin'])
+        ->name('demo.admin');
+
+    // Demo Customer
+    Route::get('/demo/customer', [App\Http\Controllers\Demo\DemoController::class, 'demoCustomer'])
+        ->name('demo.customer');
+
+    // Filter Demo
+    Route::post('/demo/filter', [App\Http\Controllers\Demo\DemoController::class, 'filterByMonthYear'])
+        ->name('demo.filter');
+
+    // Create data pencatatan (Demo)
+    Route::get('/demo/create', [App\Http\Controllers\Demo\DemoController::class, 'create'])
+        ->name('demo.create');
+
+    // Store data pencatatan (Demo)
+    Route::post('/demo/store', [App\Http\Controllers\Demo\DemoController::class, 'store'])
+        ->name('demo.store');
+
+    // Update pricing (Demo)
+    Route::post('/demo/pricing', [App\Http\Controllers\Demo\DemoController::class, 'updatePricing'])
+        ->name('demo.update-pricing');
+
+    // Add deposit (Demo)
+    Route::post('/demo/deposit', [App\Http\Controllers\Demo\DemoController::class, 'addDeposit'])
+        ->name('demo.deposit');
+
+    // Remove deposit (Demo)
+    Route::delete('/demo/deposit/{index}', [App\Http\Controllers\Demo\DemoController::class, 'removeDeposit'])
+        ->name('demo.remove-deposit');
+});
+
+// Rute default setelah login
+Route::get('/', function () {
+    return redirect('/login');
+});
