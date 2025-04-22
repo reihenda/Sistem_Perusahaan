@@ -16,6 +16,7 @@ class RekapPengambilan extends Model
         'tanggal',
         'nopol',
         'volume',
+        'alamat_pengambilan',
         'keterangan',
     ];
 

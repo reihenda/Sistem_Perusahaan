@@ -91,6 +91,13 @@
                             </div>
 
                             <div class="form-group">
+                                <label for="alamat_pengambilan">Alamat Pengambilan</label>
+                                <textarea name="alamat_pengambilan" id="alamat_pengambilan" rows="3"
+                                    class="form-control @error('alamat_pengambilan') is-invalid @enderror" 
+                                    placeholder="Masukkan alamat lokasi pengambilan">{{ old('alamat_pengambilan') }}</textarea>
+                            </div>
+
+                            <div class="form-group">
                                 <label for="keterangan">Keterangan</label>
                                 <textarea name="keterangan" id="keterangan" rows="3"
                                     class="form-control @error('keterangan') is-invalid @enderror" placeholder="Tambahkan keterangan jika diperlukan">{{ old('keterangan') }}</textarea>

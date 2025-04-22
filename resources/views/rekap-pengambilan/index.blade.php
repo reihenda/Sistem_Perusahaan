@@ -106,6 +106,7 @@
                                     <th>Tanggal</th>
                                     <th>NOPOL</th>
                                     <th>Volume (SM³)</th>
+                                    <th>Alamat Pengambilan</th>
                                     <th>Aksi</th>
                                 </tr>
                             </thead>
@@ -119,6 +120,7 @@
                                             <td>{{ $rekap->tanggal->format('d M Y H:i') }}</td>
                                             <td>{{ $rekap->nopol }}</td>
                                             <td>{{ number_format($rekap->volume, 2) }}</td>
+                                            <td>{{ $rekap->alamat_pengambilan ?: '-' }}</td>
                                             <td>
                                                 <div class="btn-group">
                                                     <a href="{{ route('rekap-pengambilan.show', $rekap->id) }}"

@@ -69,6 +69,7 @@ class RekapPengambilanController extends Controller
             'tanggal' => 'required|date',
             'nopol' => 'required|string|max:20',
             'volume' => 'required|numeric|min:0',
+            'alamat_pengambilan' => 'nullable|string|max:500',
             'keterangan' => 'nullable|string',
         ]);
         
@@ -107,6 +108,7 @@ class RekapPengambilanController extends Controller
             'tanggal' => 'required|date',
             'nopol' => 'required|string|max:20',
             'volume' => 'required|numeric|min:0',
+            'alamat_pengambilan' => 'nullable|string|max:500',
             'keterangan' => 'nullable|string',
         ]);
         

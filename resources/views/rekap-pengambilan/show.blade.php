@@ -46,6 +46,10 @@
                             <td>{{ number_format($rekapPengambilan->volume, 2) }} SM³</td>
                         </tr>
                         <tr>
+                            <th>Alamat Pengambilan</th>
+                            <td>{{ $rekapPengambilan->alamat_pengambilan ?: '-' }}</td>
+                        </tr>
+                        <tr>
                             <th>Keterangan</th>
                             <td>{{ $rekapPengambilan->keterangan ?: '-' }}</td>
                         </tr>
