@@ -64,12 +64,13 @@
                                     <i class="fas fa-eye"></i>
                                 </a>
                             @endif
-                            <button class="btn btn-warning btn-sm" title="Edit User"
-                                onclick="alert('Fitur edit user belum tersedia')">
+                            <button class="btn btn-warning btn-sm edit-user-btn" title="Edit User"
+                                data-id="{{ $user->id }}" data-name="{{ $user->name }}" 
+                                data-email="{{ $user->email }}" data-role="{{ $user->role }}">
                                 <i class="fas fa-edit"></i>
                             </button>
-                            <button class="btn btn-danger btn-sm" title="Hapus User"
-                                onclick="alert('Fitur hapus user belum tersedia')">
+                            <button type="button" class="btn btn-sm btn-danger" 
+                                    onclick="confirmDelete('{{ route('user.destroy', $user->id) }}')">
                                 <i class="fas fa-trash"></i>
                             </button>
                         </div>

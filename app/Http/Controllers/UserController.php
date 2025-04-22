@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\Hash;
 
 class UserController extends Controller
 {
@@ -378,5 +379,136 @@ class UserController extends Controller
         $C = 1 + (0.002 * $tekananKeluar);
 
         return $A * $B * $C;
+    }
+    
+    /**
+     * Show the form for editing the specified user.
+     *
+     * @param  int  $id
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function edit(User $user)
+    {
+        // Pastikan user yang login adalah admin atau superadmin
+        if (!Auth::user()->isAdmin() && !Auth::user()->isSuperAdmin()) {
+            return response()->json(['error' => 'Anda tidak memiliki izin'], 403);
+        }
+        
+        return response()->json([
+            'user' => $user
+        ]);
+    }
+    
+    /**
+     * Update the specified user in storage.
+     *
+     * @param  \Illuminate\Http\Request  $request
+     * @param  int  $id
+     * @return \Illuminate\Http\Response
+     */
+    public function update(Request $request, User $user)
+    {
+        // Pastikan user yang login adalah admin atau superadmin
+        if (!Auth::user()->isAdmin() && !Auth::user()->isSuperAdmin()) {
+            return redirect()->back()->with('error', 'Anda tidak memiliki izin');
+        }
+        
+        // Validasi data input
+        $validator = Validator::make($request->all(), [
+            'name' => 'required|string|max:255',
+            'email' => 'required|string|email|max:255|unique:users,email,' . $user->id,
+            'role' => 'required|in:admin,customer,fob,demo',
+            'password' => 'nullable|string|min:3',
+        ], [
+            'name.required' => 'Nama harus diisi',
+            'email.required' => 'Email harus diisi',
+            'email.email' => 'Format email tidak valid',
+            'email.unique' => 'Email sudah digunakan',
+            'role.required' => 'Role harus dipilih',
+            'role.in' => 'Role tidak valid',
+            'password.min' => 'Password minimal 3 karakter',
+        ]);
+
+        if ($validator->fails()) {
+            return redirect()->back()
+                ->withErrors($validator)
+                ->withInput();
+        }
+        
+        try {
+            DB::beginTransaction();
+            
+            // Update data user
+            $user->name = $request->name;
+            $user->email = $request->email;
+            $user->role = $request->role;
+            
+            // Update password jika diisi
+            if ($request->filled('password')) {
+                $user->password = Hash::make($request->password);
+            }
+            
+            $user->save();
+            DB::commit();
+            
+            return redirect()->route('user.index')->with('success', 'User berhasil diperbarui');
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return redirect()->back()->with('error', 'Gagal memperbarui user: ' . $e->getMessage());
+        }
+    }
+    
+    /**
+     * Remove the specified user from storage.
+     *
+     * @param  int  $id
+     * @return \Illuminate\Http\Response
+     */
+    public function destroy(User $user, Request $request)
+    {
+        // Pastikan user yang login adalah admin atau superadmin
+        if (!Auth::user()->isAdmin() && !Auth::user()->isSuperAdmin()) {
+            if ($request->ajax() || $request->wantsJson()) {
+                return response()->json(['error' => 'Anda tidak memiliki izin'], 403);
+            }
+            return redirect()->route('user.index')->with('error', 'Anda tidak memiliki izin');
+        }
+        
+        // Cek apakah user yang dihapus adalah superadmin
+        if ($user->role === 'superadmin') {
+            if ($request->ajax() || $request->wantsJson()) {
+                return response()->json(['error' => 'User superadmin tidak dapat dihapus'], 403);
+            }
+            return redirect()->route('user.index')->with('error', 'User superadmin tidak dapat dihapus');
+        }
+        
+        // Cek apakah user yang dihapus adalah user yang sedang login
+        if ($user->id === Auth::id()) {
+            if ($request->ajax() || $request->wantsJson()) {
+                return response()->json(['error' => 'Anda tidak dapat menghapus akun yang sedang digunakan'], 403);
+            }
+            return redirect()->route('user.index')->with('error', 'Anda tidak dapat menghapus akun yang sedang digunakan');
+        }
+        
+        try {
+            DB::beginTransaction();
+            
+            // Hapus user
+            $user->delete();
+            
+            DB::commit();
+            
+            if ($request->ajax() || $request->wantsJson()) {
+                return response()->json(['success' => 'User berhasil dihapus']);
+            }
+            return redirect()->route('user.index')->with('success', 'User berhasil dihapus');
+        } catch (\Exception $e) {
+            DB::rollBack();
+            
+            if ($request->ajax() || $request->wantsJson()) {
+                return response()->json(['error' => 'Gagal menghapus user: ' . $e->getMessage()], 500);
+            }
+            return redirect()->route('user.index')->with('error', 'Gagal menghapus user: ' . $e->getMessage());
+        }
     }
 }

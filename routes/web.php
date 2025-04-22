@@ -31,6 +31,9 @@ Route::middleware(['auth', 'role:admin,superadmin'])->group(function () {
     // Rute untuk kelola user
     Route::get('/kelola-user', [UserController::class, 'index'])->name('user.index');
     Route::post('/tambah-user', [AuthController::class, 'tambahUser'])->name('tambah.user');
+    Route::get('/edit-user/{user}', [UserController::class, 'edit'])->name('user.edit');
+    Route::put('/update-user/{user}', [UserController::class, 'update'])->name('user.update');
+    Route::delete('/delete-user/{user}', [UserController::class, 'destroy'])->name('user.destroy');
 
     // Rute untuk Rekap Penjualan
     Route::get('/rekap-penjualan', [App\Http\Controllers\Rekap\RekapPenjualanController::class, 'index'])
