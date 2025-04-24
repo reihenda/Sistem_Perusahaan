@@ -286,7 +286,8 @@
                         </div>
                         <div class="row mt-3">
                             <div class="col-md-6 col-sm-12">
-                                <div class="info-box enhanced-info-box" style="background-color: #f8fafc; border: 1px solid #e2e8f0;">
+                                <div class="info-box enhanced-info-box"
+                                    style="background-color: #f8fafc; border: 1px solid #e2e8f0;">
                                     <span class="info-box-icon bg-info"><i class="fas fa-calculator"></i></span>
                                     <div class="info-box-content">
                                         <span class="info-box-text">Informasi Saldo Bulan
@@ -372,14 +373,20 @@
                                         ];
                                         $volumeFlowMeter = $dataInput['volume_flow_meter'] ?? 0;
 
-                                        // Hitung Volume Sm³
-                                        $volumeSm3 = $volumeFlowMeter * $customer->koreksi_meter;
-
-                                        // Hitung Pembelian
-                                        $pembelian = $volumeSm3 * $customer->harga_per_meter_kubik;
-
-                                        // Get the timestamp for data-filter attribute
+                                        // Get the timestamp for data-filter attribute and pricing period
                                         $waktuAwalTimestamp = strtotime($dataInput['pembacaan_awal']['waktu'] ?? '');
+                                        $waktuAwalYearMonth = $waktuAwalTimestamp ? date('Y-m', $waktuAwalTimestamp) : date('Y-m');
+                                        
+                                        // Dapatkan pricing info berdasarkan periode bulan
+                                        $itemPricingInfo = $customer->getPricingForYearMonth($waktuAwalYearMonth);
+                                        
+                                        // Hitung Volume Sm³ dengan koreksi meter yang sesuai periode
+                                        $koreksiMeter = floatval($itemPricingInfo['koreksi_meter'] ?? $customer->koreksi_meter);
+                                        $volumeSm3 = $volumeFlowMeter * $koreksiMeter;
+
+                                        // Hitung Pembelian dengan harga sesuai periode
+                                        $hargaPerM3 = floatval($itemPricingInfo['harga_per_meter_kubik'] ?? $customer->harga_per_meter_kubik);
+                                        $pembelian = $volumeSm3 * $hargaPerM3;
                                         $tanggalAwalFilter = $waktuAwalTimestamp
                                             ? date('Y-m-d', $waktuAwalTimestamp)
                                             : '';
@@ -889,23 +896,27 @@
 @section('js')
     <script>
         $(function() {
-            // Show loading animation
-            $('body').append('<div id="page-loader" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(255,255,255,0.9); z-index: 9999; display: flex; justify-content: center; align-items: center;"><div style="text-align: center;"><div class="spinner-border text-primary" style="width: 3rem; height: 3rem;" role="status"></div><p style="margin-top: 10px; font-weight: bold; color: #4e73df;">Loading...</p></div></div>');
-            
+            // // Show loading animation
+            // $('body').append('<div id="page-loader" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(255,255,255,0.9); z-index: 9999; display: flex; justify-content: center; align-items: center;"><div style="text-align: center;"><div class="spinner-border text-primary" style="width: 3rem; height: 3rem;" role="status"></div><p style="margin-top: 10px; font-weight: bold; color: #4e73df;">Loading...</p></div></div>');
+
             // Hide loading animation after page fully loads
             $(window).on('load', function() {
                 $('#page-loader').fadeOut(500, function() {
                     $(this).remove();
                     // Animate elements one by one
                     $('.card').each(function(i) {
-                        $(this).delay(i * 150).animate({'opacity': 1}, 500);
+                        $(this).delay(i * 150).animate({
+                            'opacity': 1
+                        }, 500);
                     });
                     $('.mobile-summary-card').each(function(i) {
-                        $(this).delay(i * 100).animate({'opacity': 1}, 500);
+                        $(this).delay(i * 100).animate({
+                            'opacity': 1
+                        }, 500);
                     });
                 });
             });
-            
+
             // DataTables initialization
             var table = $("#dataPencatatanTable").DataTable({
                 "responsive": true,

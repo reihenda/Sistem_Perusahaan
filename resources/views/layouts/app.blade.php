@@ -17,7 +17,7 @@
 
     <!-- Bootstrap dan plugin lainnya -->
     <script src="{{ asset('vendor/bootstrap/js/bootstrap.bundle.min.js') }}"></script>
-    
+
     <!-- DataTables -->
     <link rel="stylesheet" href="{{ asset('vendor/datatables-bs4/css/dataTables.bootstrap4.min.css') }}">
     <link rel="stylesheet" href="{{ asset('vendor/datatables-responsive/css/responsive.bootstrap4.min.css') }}">
@@ -37,7 +37,8 @@
             transition: all 0.3s ease;
         }
 
-        .nav-sidebar .nav-link:hover, .nav-sidebar .nav-link.active {
+        .nav-sidebar .nav-link:hover,
+        .nav-sidebar .nav-link.active {
             color: white !important;
             background-color: #28a745 !important;
             transform: translateY(-2px);
@@ -45,7 +46,8 @@
         }
 
         /* Pastikan efek hover dan active juga bekerja untuk submenu */
-        .nav-treeview .nav-link:hover, .nav-treeview .nav-link.active {
+        .nav-treeview .nav-link:hover,
+        .nav-treeview .nav-link.active {
             color: white !important;
             background-color: #28a745 !important;
             transform: translateY(-2px);
@@ -342,11 +344,11 @@
     <script src="{{ asset('vendor/bootstrap/js/bootstrap.bundle.min.js') }}"></script>
     <script src="{{ asset('vendor/adminlte/dist/js/adminlte.min.js') }}"></script>
     <script src="{{ asset('js/sidebar-effects.js') }}"></script>
-    
+
     <!-- DataTables JS -->
     <script src="{{ asset('vendor/datatables/jquery.dataTables.min.js') }}"></script>
     <script src="{{ asset('vendor/datatables-bs4/js/dataTables.bootstrap4.min.js') }}"></script>
-    
+
     <!-- Stack untuk scripts custom dari child views -->
     @stack('scripts')
 
@@ -360,16 +362,17 @@
             function setActiveMenu() {
                 // Mendapatkan URL saat ini
                 const currentUrl = window.location.href;
-                
+
                 // Mencari semua link di sidebar
                 $('.nav-sidebar .nav-link').each(function() {
                     const linkUrl = $(this).attr('href');
-                    
+
                     // Jika link URL cocok dengan current URL atau current URL mengandung link URL
                     // dan link URL bukan '#' (untuk dropdown)
-                    if (linkUrl && linkUrl !== '#' && (currentUrl === linkUrl || currentUrl.indexOf(linkUrl) > -1)) {
+                    if (linkUrl && linkUrl !== '#' && (currentUrl === linkUrl || currentUrl.indexOf(
+                            linkUrl) > -1)) {
                         $(this).addClass('active');
-                        
+
                         // Jika berada di dalam submenu, buka parent menu-nya
                         if ($(this).parents('.nav-treeview').length) {
                             $(this).parents('.has-treeview').addClass('menu-open');
@@ -378,10 +381,10 @@
                     }
                 });
             }
-            
+
             // Jalankan fungsi setActiveMenu
             setActiveMenu();
-            
+
             const userForm = $('#tambahUserForm');
             const submitButton = userForm.find('button[type="submit"]');
 

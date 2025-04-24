@@ -304,7 +304,7 @@ $(function() {
                 // Reset button after 10 seconds (failsafe)
                 setTimeout(function() {
                     submitBtn.html(originalText);
-                    submitBtn.prop('disabled', false);
+                submitBtn.prop('disabled', false);
                 }, 10000);
             }
         }

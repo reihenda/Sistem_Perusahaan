@@ -56,7 +56,7 @@
                 </div>
             </div>
         </div>
-        
+
         <!-- Daftar FOB Section -->
         <div class="col-md-12 mt-4">
             <div class="card">
@@ -119,7 +119,7 @@
                 "lengthChange": false,
                 "autoWidth": false,
             });
-            
+
             $("#fobsTable").DataTable({
                 "responsive": true,
                 "lengthChange": false,
