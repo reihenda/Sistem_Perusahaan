@@ -25,6 +25,20 @@ Route::middleware(['auth', 'role:superadmin'])->group(function () {
 
 // Rute untuk Admin
 Route::middleware(['auth', 'role:admin,superadmin'])->group(function () {
+    // Rute untuk Lembur Operator GTM
+    Route::get('/operator-gtm', [App\Http\Controllers\OperatorGtmController::class, 'index'])->name('operator-gtm.index');
+    Route::get('/operator-gtm/create', [App\Http\Controllers\OperatorGtmController::class, 'create'])->name('operator-gtm.create');
+    Route::post('/operator-gtm', [App\Http\Controllers\OperatorGtmController::class, 'store'])->name('operator-gtm.store');
+    Route::get('/operator-gtm/{operatorGtm}', [App\Http\Controllers\OperatorGtmController::class, 'show'])->name('operator-gtm.show');
+    Route::get('/operator-gtm/{operatorGtm}/edit', [App\Http\Controllers\OperatorGtmController::class, 'edit'])->name('operator-gtm.edit');
+    Route::put('/operator-gtm/{operatorGtm}', [App\Http\Controllers\OperatorGtmController::class, 'update'])->name('operator-gtm.update');
+    Route::delete('/operator-gtm/{operatorGtm}', [App\Http\Controllers\OperatorGtmController::class, 'destroy'])->name('operator-gtm.destroy');
+    Route::get('/operator-gtm/{operatorGtm}/create-lembur', [App\Http\Controllers\OperatorGtmController::class, 'createLembur'])->name('operator-gtm.create-lembur');
+    Route::post('/operator-gtm/{operatorGtm}/lembur', [App\Http\Controllers\OperatorGtmController::class, 'storeLembur'])->name('operator-gtm.store-lembur');
+    Route::get('/operator-gtm-lembur/{lembur}/edit', [App\Http\Controllers\OperatorGtmController::class, 'editLembur'])->name('operator-gtm.edit-lembur');
+    Route::put('/operator-gtm-lembur/{lembur}', [App\Http\Controllers\OperatorGtmController::class, 'updateLembur'])->name('operator-gtm.update-lembur');
+    Route::delete('/operator-gtm-lembur/{lembur}', [App\Http\Controllers\OperatorGtmController::class, 'destroyLembur'])->name('operator-gtm.destroy-lembur');
+
     Route::get('/admin/dashboard', [DashboardController::class, 'adminDashboard'])
         ->name('admin.dashboard');
         

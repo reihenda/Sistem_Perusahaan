@@ -177,6 +177,12 @@
                                     <p>Rekap Penjualan</p>
                                 </a>
                             </li>
+                            <li class="nav-item">
+                                <a href="{{ route('operator-gtm.index') }}" class="nav-link">
+                                    <i class="nav-icon fas fa-user-clock"></i>
+                                    <p>Lembur Operator GTM</p>
+                                </a>
+                            </li>
                             <li class="nav-item has-treeview">
                                 <a href="#" class="nav-link">
                                     <i class="nav-icon fas fa-file-invoice-dollar"></i>
