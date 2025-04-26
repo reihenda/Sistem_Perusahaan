@@ -225,13 +225,50 @@
                                         <span class="info-box-text">Total yang Harus Dibayarkan</span>
                                         <span class="info-box-number">
                                             @php
-                                                // Selalu tampilkan gaji pokok, terlepas dari filter
+                                                // Perhitungan gaji pokok berdasarkan range tanggal
                                                 $gajiPokok = $operatorGtm->gaji_pokok;
                                                 
                                                 // Hitung upah lembur hanya jika ada filter periode
                                                 $totalUpahLembur = 0;
                                                 if (request('start_date') && request('end_date')) {
                                                     $totalUpahLembur = $filteredRecords->sum('upah_lembur');
+                                                    
+                                                    // Hitung jumlah hari dalam range tanggal
+                                                    $startDate = \Carbon\Carbon::parse(request('start_date'));
+                                                    $endDate = \Carbon\Carbon::parse(request('end_date'));
+                                                    
+                                                    // Pastikan tanggal awal tidak lebih besar dari tanggal akhir
+                                                    if ($startDate->gt($endDate)) {
+                                                        // Tukar posisi jika terbalik
+                                                        $temp = $startDate;
+                                                        $startDate = $endDate;
+                                                        $endDate = $temp;
+                                                    }
+                                                    
+                                                    $totalDays = $startDate->diffInDays($endDate) + 1; // +1 untuk menghitung hari ini juga
+                                                    
+                                                    // Log untuk debugging
+                                                    \Log::info('Start date: ' . $startDate->format('Y-m-d'));
+                                                    \Log::info('End date: ' . $endDate->format('Y-m-d'));
+                                                    \Log::info('Total days: ' . $totalDays);
+                                                    \Log::info('Days in month: ' . $startDate->daysInMonth);
+                                                    \Log::info('Original gaji pokok: ' . $operatorGtm->gaji_pokok);
+                                                    
+                                                    // Jika range tanggal kurang dari 28 hari, sesuaikan gaji pokok
+                                                    if ($totalDays < 28) {
+                                                        // Hitung jumlah hari dalam bulan saat ini
+                                                        $daysInMonth = $startDate->daysInMonth;
+                                                        
+                                                        // Proporsi gaji pokok berdasarkan jumlah hari
+                                                        $gajiPokok = ($operatorGtm->gaji_pokok / $daysInMonth) * $totalDays;
+                                                        
+                                                        // Pastikan tidak ada nilai negatif
+                                                        $gajiPokok = max(0, $gajiPokok);
+                                                        
+                                                        // Log hasil perhitungan
+                                                        \Log::info('Calculated gaji pokok: ' . $gajiPokok);
+                                                    }
+                                                    // Jika 28 hari atau lebih, gunakan gaji pokok penuh
                                                 }
                                                 
                                                 $totalPembayaran = $gajiPokok + $totalUpahLembur;
@@ -373,6 +410,11 @@
                     <div class="card-body">
                         <div class="alert alert-info mb-0">
                             <i class="fas fa-info-circle mr-1"></i> Silahkan pilih periode tanggal terlebih dahulu untuk melihat data lembur operator.
+                        </div>
+                        <div class="text-center mt-3">
+                            <a href="{{ route('operator-gtm.create-lembur', $operatorGtm->id) }}" class="btn btn-success">
+                                <i class="fas fa-plus mr-1"></i> Tambah Data Lembur
+                            </a>
                         </div>
                     </div>
                 </div>

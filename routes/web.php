@@ -10,6 +10,11 @@ use App\Http\Controllers\RekapPengambilanController;
 use App\Http\Controllers\NomorPolisiController;
 use App\Http\Controllers\InvoiceController;
 use App\Http\Controllers\BillingController;
+use App\Http\Controllers\KeuanganController;
+use App\Http\Controllers\KasController;
+use App\Http\Controllers\BankController;
+use App\Http\Controllers\FinancialAccountController;
+use App\Http\Controllers\TransactionDescriptionController;
 
 
 // Rute Autentikasi
@@ -48,6 +53,42 @@ Route::middleware(['auth', 'role:admin,superadmin'])->group(function () {
     Route::get('/edit-user/{user}', [UserController::class, 'edit'])->name('user.edit');
     Route::put('/update-user/{user}', [UserController::class, 'update'])->name('user.update');
     Route::delete('/delete-user/{user}', [UserController::class, 'destroy'])->name('user.destroy');
+
+    // Rute untuk Keuangan
+    Route::get('/keuangan', [KeuanganController::class, 'index'])->name('keuangan.index');
+    
+    // Rute untuk Financial Accounts
+    Route::get('/keuangan/accounts', [FinancialAccountController::class, 'index'])->name('keuangan.accounts.index');
+    Route::get('/keuangan/accounts/create', [FinancialAccountController::class, 'create'])->name('keuangan.accounts.create');
+    Route::post('/keuangan/accounts', [FinancialAccountController::class, 'store'])->name('keuangan.accounts.store');
+    Route::get('/keuangan/accounts/{account}/edit', [FinancialAccountController::class, 'edit'])->name('keuangan.accounts.edit');
+    Route::put('/keuangan/accounts/{account}', [FinancialAccountController::class, 'update'])->name('keuangan.accounts.update');
+    Route::delete('/keuangan/accounts/{account}', [FinancialAccountController::class, 'destroy'])->name('keuangan.accounts.destroy');
+    
+    // Rute untuk Transaction Descriptions
+    Route::get('/keuangan/descriptions', [TransactionDescriptionController::class, 'index'])->name('keuangan.descriptions.index');
+    Route::get('/keuangan/descriptions/create', [TransactionDescriptionController::class, 'create'])->name('keuangan.descriptions.create');
+    Route::post('/keuangan/descriptions', [TransactionDescriptionController::class, 'store'])->name('keuangan.descriptions.store');
+    Route::get('/keuangan/descriptions/{description}/edit', [TransactionDescriptionController::class, 'edit'])->name('keuangan.descriptions.edit');
+    Route::put('/keuangan/descriptions/{description}', [TransactionDescriptionController::class, 'update'])->name('keuangan.descriptions.update');
+    Route::delete('/keuangan/descriptions/{description}', [TransactionDescriptionController::class, 'destroy'])->name('keuangan.descriptions.destroy');
+    Route::get('/api/descriptions/category', [TransactionDescriptionController::class, 'getByCategory'])->name('keuangan.descriptions.by-category');
+    
+    // Rute untuk Kas
+    Route::get('/keuangan/kas', [KasController::class, 'index'])->name('keuangan.kas.index');
+    Route::get('/keuangan/kas/create', [KasController::class, 'create'])->name('keuangan.kas.create');
+    Route::post('/keuangan/kas', [KasController::class, 'store'])->name('keuangan.kas.store');
+    Route::get('/keuangan/kas/{transaction}/edit', [KasController::class, 'edit'])->name('keuangan.kas.edit');
+    Route::put('/keuangan/kas/{transaction}', [KasController::class, 'update'])->name('keuangan.kas.update');
+    Route::delete('/keuangan/kas/{transaction}', [KasController::class, 'destroy'])->name('keuangan.kas.destroy');
+    
+    // Rute untuk Bank
+    Route::get('/keuangan/bank', [BankController::class, 'index'])->name('keuangan.bank.index');
+    Route::get('/keuangan/bank/create', [BankController::class, 'create'])->name('keuangan.bank.create');
+    Route::post('/keuangan/bank', [BankController::class, 'store'])->name('keuangan.bank.store');
+    Route::get('/keuangan/bank/{transaction}/edit', [BankController::class, 'edit'])->name('keuangan.bank.edit');
+    Route::put('/keuangan/bank/{transaction}', [BankController::class, 'update'])->name('keuangan.bank.update');
+    Route::delete('/keuangan/bank/{transaction}', [BankController::class, 'destroy'])->name('keuangan.bank.destroy');
 
     // Rute untuk Rekap Penjualan
     Route::get('/rekap-penjualan', [App\Http\Controllers\Rekap\RekapPenjualanController::class, 'index'])

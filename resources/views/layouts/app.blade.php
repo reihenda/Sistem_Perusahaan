@@ -185,6 +185,47 @@
                             </li>
                             <li class="nav-item has-treeview">
                                 <a href="#" class="nav-link">
+                                    <i class="nav-icon fas fa-money-bill-wave"></i>
+                                    <p>
+                                        Keuangan
+                                        <i class="fas fa-angle-left right"></i>
+                                    </p>
+                                </a>
+                                <ul class="nav nav-treeview">
+                                    <li class="nav-item">
+                                        <a href="{{ route('keuangan.index') }}" class="nav-link">
+                                            <i class="fas fa-chart-line nav-icon"></i>
+                                            <p>Dashboard Keuangan</p>
+                                        </a>
+                                    </li>
+                                    <li class="nav-item">
+                                        <a href="{{ route('keuangan.kas.index') }}" class="nav-link">
+                                            <i class="fas fa-wallet nav-icon"></i>
+                                            <p>Kas</p>
+                                        </a>
+                                    </li>
+                                    <li class="nav-item">
+                                        <a href="{{ route('keuangan.bank.index') }}" class="nav-link">
+                                            <i class="fas fa-university nav-icon"></i>
+                                            <p>Bank</p>
+                                        </a>
+                                    </li>
+                                    <li class="nav-item">
+                                        <a href="{{ route('keuangan.accounts.index') }}" class="nav-link">
+                                            <i class="fas fa-list-alt nav-icon"></i>
+                                            <p>Kelola Akun</p>
+                                        </a>
+                                    </li>
+                                    <li class="nav-item">
+                                        <a href="{{ route('keuangan.descriptions.index') }}" class="nav-link">
+                                            <i class="fas fa-tags nav-icon"></i>
+                                            <p>Kelola Deskripsi</p>
+                                        </a>
+                                    </li>
+                                </ul>
+                            </li>
+                            <li class="nav-item has-treeview">
+                                <a href="#" class="nav-link">
                                     <i class="nav-icon fas fa-file-invoice-dollar"></i>
                                     <p>
                                         Invoice & Billing

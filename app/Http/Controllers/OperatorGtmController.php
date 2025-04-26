@@ -15,7 +15,7 @@ class OperatorGtmController extends Controller
      */
     public function index()
     {
-        $operators = OperatorGtm::all();
+        $operators = OperatorGtm::paginate(10);
         return view('operator-gtm.index', compact('operators'));
     }
 
