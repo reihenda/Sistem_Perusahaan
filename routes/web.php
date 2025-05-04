@@ -8,6 +8,7 @@ use App\Http\Controllers\UserController;
 use App\Http\Controllers\FobController;
 use App\Http\Controllers\RekapPengambilanController;
 use App\Http\Controllers\NomorPolisiController;
+use App\Http\Controllers\UkuranController;
 use App\Http\Controllers\InvoiceController;
 use App\Http\Controllers\BillingController;
 use App\Http\Controllers\KeuanganController;
@@ -148,6 +149,10 @@ Route::middleware(['auth', 'role:admin,superadmin'])->group(function () {
     Route::resource('nomor-polisi', NomorPolisiController::class);
     // Make sure the route name matches what's being used in the view
     Route::get('/api/nomor-polisi/get-all', [NomorPolisiController::class, 'getAll'])->name('nomor-polisi.getAll');
+    
+    // Rute untuk mengelola ukuran
+    Route::get('/api/ukuran/get-all', [UkuranController::class, 'getAll'])->name('ukuran.getAll');
+    Route::post('/api/ukuran', [UkuranController::class, 'store'])->name('ukuran.store');
 
     // Route baru untuk filter berdasarkan bulan dan tahun
     Route::post('/data-pencatatan/{customer}/filter-month-year', [DataPencatatanController::class, 'filterByMonthYear'])

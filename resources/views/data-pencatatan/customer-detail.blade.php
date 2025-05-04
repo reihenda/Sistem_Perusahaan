@@ -961,7 +961,11 @@
                 }
             });
 
-            // Initialize DataTable for pricing history modal
+            // Initialize DataTable for pricing history modal dengan pengecekan
+            if ($.fn.DataTable.isDataTable('#pricingHistoryTable')) {
+                $('#pricingHistoryTable').DataTable().destroy();
+            }
+            
             $("#pricingHistoryTable").DataTable({
                 "responsive": true,
                 "lengthChange": false,

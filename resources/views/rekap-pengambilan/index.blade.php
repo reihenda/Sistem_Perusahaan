@@ -112,7 +112,7 @@
                             </thead>
                             <tbody>
                                 @if (count($rekapPengambilan) > 0)
-                                    @php $no = 1; @endphp
+                                    @php $no = ($rekapPengambilan->currentPage()-1) * $rekapPengambilan->perPage() + 1; @endphp
                                     @foreach ($rekapPengambilan as $rekap)
                                         <tr>
                                             <td>{{ $no++ }}</td>
@@ -146,11 +146,16 @@
                                     @endforeach
                                 @else
                                     <tr>
-                                        <td colspan="6" class="text-center">Tidak ada data untuk ditampilkan</td>
+                                        <td colspan="7" class="text-center">Tidak ada data untuk ditampilkan</td>
                                     </tr>
                                 @endif
                             </tbody>
                         </table>
+                    </div>
+                    <div class="card-footer clearfix">
+                        <div class="float-right">
+                            {{ $rekapPengambilan->appends(request()->except('page'))->links() }}
+                        </div>
                     </div>
                 </div>
             </div>
@@ -161,29 +166,6 @@
 @section('js')
     <script>
         $(function() {
-            $('#rekapPengambilanTable').DataTable({
-                "paging": true,
-                "lengthChange": false,
-                "searching": true,
-                "ordering": true,
-                "info": true,
-                "autoWidth": false,
-                "responsive": true,
-                "language": {
-                    "emptyTable": "Tidak ada data yang tersedia",
-                    "info": "Menampilkan _START_ hingga _END_ dari _TOTAL_ entri",
-                    "infoEmpty": "Menampilkan 0 hingga 0 dari 0 entri",
-                    "infoFiltered": "(disaring dari total _MAX_ entri)",
-                    "search": "Cari:",
-                    "paginate": {
-                        "first": "Pertama",
-                        "last": "Terakhir",
-                        "next": "Selanjutnya",
-                        "previous": "Sebelumnya"
-                    }
-                }
-            });
-
             // Auto submit form when date changes
             $('#tanggal').on('change', function() {
                 $(this).closest('form').submit();

@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\NomorPolisi;
 use App\Models\RekapPengambilan;
+use App\Models\Ukuran;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -14,8 +15,38 @@ class NomorPolisiController extends Controller
      */
     public function index()
     {
-        $nomorPolisiList = NomorPolisi::orderBy('nopol')->get();
-        return view('nomor-polisi.index', compact('nomorPolisiList'));
+        $nomorPolisiList = NomorPolisi::with('ukuran')
+            ->orderByRaw('CASE WHEN no_gtm IS NULL THEN 1 ELSE 0 END')
+            ->orderBy('no_gtm', 'asc')
+            ->get();
+        $ukuranList = Ukuran::orderBy('nama_ukuran')->get();
+        return view('nomor-polisi.index', compact('nomorPolisiList', 'ukuranList'));
+    }
+
+    /**
+     * Generate No GTM berdasarkan status
+     */
+    private function generateNoGTM($status)
+    {
+        if ($status == 'milik' || $status == 'disewakan') {
+            // Cari nomor GTM terakhir
+            $lastNomorGTM = NomorPolisi::whereNotNull('no_gtm')
+                ->where('no_gtm', 'like', 'MPS%')
+                ->orderBy('no_gtm', 'desc')
+                ->first();
+
+            if ($lastNomorGTM) {
+                // Ambil nomor urut terakhir
+                $lastNumber = (int) substr($lastNomorGTM->no_gtm, 3);
+                // Increment dan format dengan leading zeros
+                $newNumber = str_pad($lastNumber + 1, 3, '0', STR_PAD_LEFT);
+                return "MPS{$newNumber}";
+            } else {
+                // Jika belum ada, mulai dari 001
+                return "MPS001";
+            }
+        }
+        return null; // Jika status bukan milik atau disewakan
     }
 
     /**
@@ -23,23 +54,61 @@ class NomorPolisiController extends Controller
      */
     public function store(Request $request)
     {
-        $validated = $request->validate([
-            'nopol' => 'required|string|max:20|unique:nomor_polisi,nopol',
-            'keterangan' => 'nullable|string|max:255',
-        ]);
-
-        NomorPolisi::create($validated);
-
-        if ($request->ajax()) {
-            return response()->json([
-                'success' => true,
-                'message' => 'Nomor polisi berhasil ditambahkan.',
-                'nopol' => $validated['nopol'],
-                'id' => NomorPolisi::where('nopol', $validated['nopol'])->first()->id
+        try {
+            \Log::info('Request data:', $request->all());
+            
+            // Jika ukuran_id adalah 'tambah_baru', atur nilainya menjadi null agar tidak divalidasi
+            if ($request->ukuran_id === 'tambah_baru') {
+                $request->merge(['ukuran_id' => null]);
+            }
+            
+            $validated = $request->validate([
+                'nopol' => 'required|string|max:20|unique:nomor_polisi,nopol',
+                'keterangan' => 'nullable|string|max:255',
+                'jenis' => 'nullable|string|max:100',
+                'ukuran_id' => 'nullable|exists:ukuran,id',
+                'area_operasi' => 'nullable|string|max:100',
+                'status' => 'nullable|in:milik,sewa,disewakan',
+                'iso' => 'nullable|in:ISO - 11439,ISO - 11119',
+                'coi' => 'nullable|in:sudah,belum',
             ]);
-        }
 
-        return redirect()->back()->with('success', 'Nomor polisi berhasil ditambahkan.');
+            // Jika ukuran_new diisi, buat ukuran baru
+            if ($request->has('ukuran_new') && !empty($request->ukuran_new)) {
+                try {
+                    // Cek apakah ukuran sudah ada
+                    $ukuran = Ukuran::firstOrCreate(
+                        ['nama_ukuran' => $request->ukuran_new]
+                    );
+                    $validated['ukuran_id'] = $ukuran->id;
+                    \Log::info('Created or found ukuran: ' . $ukuran->id . ' - ' . $ukuran->nama_ukuran);
+                } catch (\Exception $e) {
+                    \Log::error('Error creating ukuran: ' . $e->getMessage());
+                    throw $e;
+                }
+            }
+
+            // Generate No GTM jika status milik atau disewakan
+            if (in_array($validated['status'] ?? '', ['milik', 'disewakan'])) {
+                $validated['no_gtm'] = $this->generateNoGTM($validated['status']);
+            }
+
+            NomorPolisi::create($validated);
+
+            if ($request->ajax()) {
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Nomor polisi berhasil ditambahkan.',
+                    'nopol' => $validated['nopol'],
+                    'id' => NomorPolisi::where('nopol', $validated['nopol'])->first()->id
+                ]);
+            }
+
+            return redirect()->back()->with('success', 'Nomor polisi berhasil ditambahkan.');
+        } catch (\Exception $e) {
+            \Log::error('Error adding nomor polisi: ' . $e->getMessage());
+            return redirect()->back()->with('error', 'Terjadi kesalahan: ' . $e->getMessage());
+        }
     }
 
     /**
@@ -48,10 +117,46 @@ class NomorPolisiController extends Controller
     public function update(Request $request, NomorPolisi $nomorPolisi)
     {
         try {
+            \Log::info('Update request data:', $request->all());
+            
+            // Jika ukuran_id adalah 'tambah_baru', atur nilainya menjadi null agar tidak divalidasi
+            if ($request->ukuran_id === 'tambah_baru') {
+                $request->merge(['ukuran_id' => null]);
+            }
+            
             $validated = $request->validate([
                 'nopol' => 'required|string|max:20|unique:nomor_polisi,nopol,'.$nomorPolisi->id,
                 'keterangan' => 'nullable|string|max:255',
+                'jenis' => 'nullable|string|max:100',
+                'ukuran_id' => 'nullable|exists:ukuran,id',
+                'area_operasi' => 'nullable|string|max:100',
+                'status' => 'nullable|in:milik,sewa,disewakan',
+                'iso' => 'nullable|in:ISO - 11439,ISO - 11119',
+                'coi' => 'nullable|in:sudah,belum',
             ]);
+            
+            // Jika ukuran_new diisi, buat ukuran baru
+            if ($request->has('ukuran_new') && !empty($request->ukuran_new)) {
+                try {
+                    // Cek apakah ukuran sudah ada
+                    $ukuran = Ukuran::firstOrCreate(
+                        ['nama_ukuran' => $request->ukuran_new]
+                    );
+                    $validated['ukuran_id'] = $ukuran->id;
+                    \Log::info('Created or found ukuran for update: ' . $ukuran->id . ' - ' . $ukuran->nama_ukuran);
+                } catch (\Exception $e) {
+                    \Log::error('Error creating ukuran for update: ' . $e->getMessage());
+                    throw $e;
+                }
+            }
+            
+            // Generate No GTM jika status berubah menjadi milik atau disewakan
+            if (in_array($validated['status'] ?? '', ['milik', 'disewakan']) && 
+                ($nomorPolisi->status != $validated['status'] || empty($nomorPolisi->no_gtm))) {
+                $validated['no_gtm'] = $this->generateNoGTM($validated['status']);
+            } elseif ($validated['status'] == 'sewa') {
+                $validated['no_gtm'] = null;
+            }
             
             // Trim nopol value to remove whitespaces
             $validated['nopol'] = trim($validated['nopol']);
@@ -116,7 +221,7 @@ class NomorPolisiController extends Controller
                     return redirect()->back()->with('error', 'Gagal mengubah nomor polisi: ' . $e->getMessage());
                 }
             } else {
-                // Jika tidak mengubah nopol, cukup update keterangan
+                // Jika tidak mengubah nopol, cukup update data
                 $nomorPolisi->update($validated);
             }
             

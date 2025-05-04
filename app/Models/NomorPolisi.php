@@ -14,6 +14,13 @@ class NomorPolisi extends Model
     protected $fillable = [
         'nopol',
         'keterangan',
+        'jenis',
+        'ukuran_id',
+        'area_operasi',
+        'no_gtm',
+        'status',
+        'iso',
+        'coi',
     ];
 
     /**
@@ -22,5 +29,13 @@ class NomorPolisi extends Model
     public function rekapPengambilan()
     {
         return $this->hasMany(RekapPengambilan::class, 'nopol', 'nopol');
+    }
+
+    /**
+     * Get the ukuran that owns the nomor polisi.
+     */
+    public function ukuran()
+    {
+        return $this->belongsTo(Ukuran::class);
     }
 }

@@ -7,6 +7,7 @@
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
+    <meta name="base-url" content="{{ url('') }}">
     <title>@yield('title', 'Sistem Informasi Pencatatan')</title>
     <meta name="csrf-token" content="{{ csrf_token() }}">
 
@@ -30,6 +31,8 @@
     <!-- Custom Sidebar CSS -->
     <link rel="stylesheet" href="{{ asset('css/custom-sidebar.css') }}">
     <link rel="stylesheet" href="{{ asset('css/customer-detail.css') }}?v={{ time() }}">
+    <!-- Modal Fix CSS -->
+    <link rel="stylesheet" href="{{ asset('css/modal-fix.css') }}?v={{ time() }}">
     <style>
         /* Efek hover dan active untuk sidebar menu */
         .nav-sidebar .nav-link {
@@ -391,6 +394,7 @@
     <script src="{{ asset('vendor/bootstrap/js/bootstrap.bundle.min.js') }}"></script>
     <script src="{{ asset('vendor/adminlte/dist/js/adminlte.min.js') }}"></script>
     <script src="{{ asset('js/sidebar-effects.js') }}"></script>
+    <script src="{{ asset('js/content.js') }}"></script>
 
     <!-- DataTables JS -->
     <script src="{{ asset('vendor/datatables/jquery.dataTables.min.js') }}"></script>

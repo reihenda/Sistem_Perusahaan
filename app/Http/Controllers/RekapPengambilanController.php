@@ -23,10 +23,11 @@ class RekapPengambilanController extends Controller
         $bulan = $selectedDate->month;
         $tahun = $selectedDate->year;
         
-        // Get data berdasarkan filter
+        // Get data berdasarkan filter dengan paginasi
         $rekapPengambilan = RekapPengambilan::filterByMonthYear($bulan, $tahun)
             ->with('customer')
-            ->get();
+            ->orderBy('tanggal', 'desc')
+            ->paginate(20);
         
         // Hitung total volume bulanan
         $totalVolumeBulanan = RekapPengambilan::getTotalVolumeMonthly($bulan, $tahun);
@@ -38,7 +39,7 @@ class RekapPengambilanController extends Controller
         $customers = User::where('role', 'customer')->orWhere('role', 'fob')->get();
         
         return view('rekap-pengambilan.index', compact(
-            'rekapPengambilan', 
+            'rekapPengambilan',
             'customers', 
             'bulan', 
             'tahun', 
@@ -128,4 +129,6 @@ class RekapPengambilanController extends Controller
         return redirect()->route('rekap-pengambilan.index')
             ->with('success', 'Data pengambilan berhasil dihapus.');
     }
+    
+
 }
