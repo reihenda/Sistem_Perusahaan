@@ -8,6 +8,11 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
+use PhpOffice\PhpSpreadsheet\IOFactory;
+use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
+use PhpOffice\PhpSpreadsheet\Spreadsheet;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Validator;
 
 class DataPencatatanController extends Controller
 {
@@ -66,7 +71,7 @@ class DataPencatatanController extends Controller
             // Filter by year-month
             return $waktuAwal === $yearMonth;
         });
-
+        
         // Urutkan data berdasarkan tanggal pembacaan awal
         $dataPencatatan = $dataPencatatan->sortBy(function ($item) {
             $dataInput = $this->ensureArray($item->data_input);
@@ -107,6 +112,126 @@ class DataPencatatanController extends Controller
             'belumLunas' => $belumLunas,
             'totalTagihan' => $customer->dataPencatatan()->where('status_pembayaran', 'belum_lunas')->sum('harga_final')
         ]);
+    }
+
+    /**
+     * Download template Excel untuk import data pencatatan
+     *
+     * @return \Symfony\Component\HttpFoundation\BinaryFileResponse
+     */
+    public function downloadTemplateExcel()
+    {
+        try {
+            // Buat spreadsheet baru
+            $spreadsheet = new Spreadsheet();
+            $sheet = $spreadsheet->getActiveSheet();
+
+            // Set judul sheet
+            $sheet->setTitle('Template Pencatatan');
+
+            // Header row 1
+            $sheet->setCellValue('A1', 'No');
+            $sheet->setCellValue('B1', 'Pembacaan Awal');
+            $sheet->setCellValue('E1', 'Pembacaan Akhir');
+            $sheet->mergeCells('B1:D1');
+            $sheet->mergeCells('E1:G1');
+
+            // Header row 2
+            $sheet->setCellValue('A2', '');
+            $sheet->setCellValue('B2', 'Tanggal');
+            $sheet->setCellValue('C2', 'Jam');
+            $sheet->setCellValue('D2', 'Meter');
+            $sheet->setCellValue('E2', 'Tanggal');
+            $sheet->setCellValue('F2', 'Jam');
+            $sheet->setCellValue('G2', 'Meter');
+
+            // Contoh data
+            $sheet->setCellValue('A3', '1');
+            $sheet->setCellValue('B3', '1-May-24');
+            $sheet->setCellValue('C3', '7:00');
+            $sheet->setCellValue('D3', '1928.20');
+            $sheet->setCellValue('E3', '1-May-24');
+            $sheet->setCellValue('F3', '18:00');
+            $sheet->setCellValue('G3', '1928.20');
+
+            $sheet->setCellValue('A4', '2');
+            $sheet->setCellValue('B4', '2-May-24');
+            $sheet->setCellValue('C4', '7:00');
+            $sheet->setCellValue('D4', '1928.20');
+            $sheet->setCellValue('E4', '2-May-24');
+            $sheet->setCellValue('F4', '18:00');
+            $sheet->setCellValue('G4', '2057.98');
+
+            // Style untuk header
+            $headerStyle = [
+                'font' => [
+                    'bold' => true,
+                ],
+                'alignment' => [
+                    'horizontal' => \PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER,
+                    'vertical' => \PhpOffice\PhpSpreadsheet\Style\Alignment::VERTICAL_CENTER,
+                ],
+                'borders' => [
+                    'allBorders' => [
+                        'borderStyle' => \PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN,
+                    ],
+                ],
+                'fill' => [
+                    'fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID,
+                    'startColor' => [
+                        'rgb' => 'D9EAD3',
+                    ],
+                ],
+            ];
+
+            // Style untuk baris data
+            $dataStyle = [
+                'borders' => [
+                    'allBorders' => [
+                        'borderStyle' => \PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN,
+                    ],
+                ],
+            ];
+
+            // Style untuk header row 1
+            $sheet->getStyle('A1:G1')->applyFromArray($headerStyle);
+
+            // Style untuk header row 2
+            $sheet->getStyle('A2:G2')->applyFromArray($headerStyle);
+
+            // Style untuk contoh data
+            $sheet->getStyle('A3:G4')->applyFromArray($dataStyle);
+
+            // Set lebar kolom
+            $sheet->getColumnDimension('A')->setWidth(5);
+            $sheet->getColumnDimension('B')->setWidth(12);
+            $sheet->getColumnDimension('C')->setWidth(8);
+            $sheet->getColumnDimension('D')->setWidth(12);
+            $sheet->getColumnDimension('E')->setWidth(12);
+            $sheet->getColumnDimension('F')->setWidth(8);
+            $sheet->getColumnDimension('G')->setWidth(12);
+
+            // Set format angka untuk kolom meter
+            $sheet->getStyle('D3:D1000')->getNumberFormat()->setFormatCode('#,##0.00');
+            $sheet->getStyle('G3:G1000')->getNumberFormat()->setFormatCode('#,##0.00');
+
+            // Tulis file ke tmp dan kirim ke browser
+            $writer = new Xlsx($spreadsheet);
+            $filename = 'template_data_pencatatan_' . date('Ymd') . '.xlsx';
+            $temp_file = tempnam(sys_get_temp_dir(), $filename);
+            $writer->save($temp_file);
+
+            return response()->download($temp_file, $filename, [
+                'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            ])->deleteFileAfterSend(true);
+
+        } catch (\Exception $e) {
+            Log::error('Error creating Excel template: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return redirect()->back()->with('error', 'Gagal membuat template Excel: ' . $e->getMessage());
+        }
     }
     // Menampilkan daftar customer dan FOB
     public function index()
@@ -220,7 +345,7 @@ class DataPencatatanController extends Controller
         // Mendapatkan bulan sebelumnya
         $prevDate = Carbon::createFromDate($tahun, $bulan, 1)->subMonth();
         $prevMonthYear = $prevDate->format('Y-m');
-        
+
         // Mendapatkan deposit dan pembelian pada semua periode sebelumnya
         $prevTotalDeposits = 0;
         $prevTotalPurchases = 0;

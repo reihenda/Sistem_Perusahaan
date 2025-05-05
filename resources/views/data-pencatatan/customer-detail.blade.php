@@ -328,468 +328,246 @@
                             <i class="fas fa-list-alt mr-2"></i>
                             Riwayat Pencatatan
                         </h3>
+                        <div class="card-tools">
+                            @if (Auth::user()->isAdmin() || Auth::user()->isSuperAdmin())
+                                <div class="btn-group btn-group-sm">
+                                    <button class="btn btn-success" data-toggle="modal" data-target="#uploadExcelModal">
+                                        <i class="fas fa-file-excel mr-1"></i> Upload Excel
+                                    </button>
+                                    <button class="btn btn-info" id="btnShowTemplate" data-toggle="modal"
+                                        data-target="#templateExcelModal">
+                                        <i class="fas fa-info-circle mr-1"></i> Template Excel
+                                    </button>
+                                    <a href="{{ asset('templates/template_pencatatan.xlsx') }}" class="btn btn-primary"
+                                        target="_blank">
+                                        <i class="fas fa-download mr-1"></i> Download Template
+                                    </a>
+                                </div>
+                            @endif
+                        </div>
                     </div>
-                    <div class="card-body table-responsive p-0">
-                        <table class="table table-bordered table-striped table-hover" id="dataPencatatanTable">
-                            <thead>
-                                <tr>
-                                    <th>No</th>
-                                    <th colspan="2">Pembacaan Awal</th>
-                                    <th colspan="2">Pembacaan Akhir</th>
-                                    <th>Volume</th>
-                                    <th>Sm³</th>
-                                    <th>Rupiah</th>
-                                    <th>Aksi</th>
-                                </tr>
-                                <tr>
-                                    <th></th>
-                                    <th>Tanggal</th>
-                                    <th>Meter</th>
-                                    <th>Tanggal</th>
-                                    <th>Meter</th>
-                                    <th></th>
-                                    <th></th>
-                                    <th></th>
-                                    <th></th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                @php $no = 1; @endphp
-                                @foreach ($dataPencatatan as $item)
-                                    @php
-                                        $dataInput = is_string($item->data_input)
-                                            ? json_decode($item->data_input, true)
-                                            : (is_array($item->data_input)
-                                                ? $item->data_input
-                                                : []);
 
-                                        $pembacaanAwal = $dataInput['pembacaan_awal'] ?? [
-                                            'volume' => 0,
-                                            'tanggal' => null,
-                                        ];
-                                        $pembacaanAkhir = $dataInput['pembacaan_akhir'] ?? [
-                                            'volume' => 0,
-                                            'tanggal' => null,
-                                        ];
-                                        $volumeFlowMeter = $dataInput['volume_flow_meter'] ?? 0;
-
-                                        // Get the timestamp for data-filter attribute and pricing period
-                                        $waktuAwalTimestamp = strtotime($dataInput['pembacaan_awal']['waktu'] ?? '');
-                                        $waktuAwalYearMonth = $waktuAwalTimestamp ? date('Y-m', $waktuAwalTimestamp) : date('Y-m');
-                                        
-                                        // Dapatkan pricing info berdasarkan periode bulan
-                                        $itemPricingInfo = $customer->getPricingForYearMonth($waktuAwalYearMonth);
-                                        
-                                        // Hitung Volume Sm³ dengan koreksi meter yang sesuai periode
-                                        $koreksiMeter = floatval($itemPricingInfo['koreksi_meter'] ?? $customer->koreksi_meter);
-                                        $volumeSm3 = $volumeFlowMeter * $koreksiMeter;
-
-                                        // Hitung Pembelian dengan harga sesuai periode
-                                        $hargaPerM3 = floatval($itemPricingInfo['harga_per_meter_kubik'] ?? $customer->harga_per_meter_kubik);
-                                        $pembelian = $volumeSm3 * $hargaPerM3;
-                                        $tanggalAwalFilter = $waktuAwalTimestamp
-                                            ? date('Y-m-d', $waktuAwalTimestamp)
-                                            : '';
-                                    @endphp
-                                    <tr data-tanggal-awal="{{ $tanggalAwalFilter }}">
-                                        <td>{{ $no++ }}</td>
-                                        <td>{{ \Carbon\Carbon::parse($dataInput['pembacaan_awal']['waktu'])->format('d M Y H:i') }}
-                                        </td>
-                                        <td>{{ number_format($pembacaanAwal['volume'] ?? 0, 2) }} m³</td>
-                                        <td>{{ \Carbon\Carbon::parse($dataInput['pembacaan_akhir']['waktu'])->format('d M Y H:i') }}
-                                        </td>
-                                        <td>{{ number_format($pembacaanAkhir['volume'] ?? 0, 2) }} m³</td>
-                                        <td>{{ number_format($volumeFlowMeter, 2) }} m³</td>
-                                        <td>{{ number_format($volumeSm3, 2) }}</td>
-                                        <td>Rp {{ number_format($pembelian, 2) }}</td>
-
-                                        <td>
-                                            <div class="btn-group">
-                                                <a href="{{ route('data-pencatatan.show', $item->id) }}"
-                                                    class="btn btn-info btn-sm">
-                                                    <i class="fas fa-eye"></i>
-                                                </a>
-                                                @if (Auth::user()->isAdmin() || Auth::user()->isSuperAdmin())
-                                                    <a href="{{ route('data-pencatatan.edit', $item->id) }}"
-                                                        class="btn btn-warning btn-sm">
-                                                        <i class="fas fa-edit"></i>
-                                                    </a>
-                                                    <form action="{{ route('data-pencatatan.destroy', $item->id) }}"
-                                                        method="POST" class="d-inline"
-                                                        onsubmit="return confirm('Apakah Anda yakin ingin menghapus data ini?');">
-                                                        @csrf
-                                                        @method('DELETE')
-                                                        <button type="submit" class="btn btn-danger btn-sm">
-                                                            <i class="fas fa-trash"></i>
-                                                        </button>
-                                                    </form>
-                                                @endif
-                                            </div>
-                                        </td>
-                                    </tr>
+                    @if (session('import_errors'))
+                        <div class="alert alert-danger alert-dismissible fade show m-3" role="alert">
+                            <i class="fas fa-times-circle mr-2"></i>
+                            <strong>Error saat import data Excel:</strong>
+                            <ul class="mt-2 mb-0">
+                                @foreach (session('import_errors') as $error)
+                                    <li>{{ $error }}</li>
                                 @endforeach
-                            </tbody>
-                        </table>
-                    </div>
+                            </ul>
+                            <button type="button" class="close" data-dismiss="alert" aria-label="Close">
+                                <span aria-hidden="true">&times;</span>
+                            </button>
+                        </div>
+                    @endif
+                </div>
+                <div class="card-body table-responsive p-0">
+                    <table class="table table-bordered table-striped table-hover" id="dataPencatatanTable">
+                        <thead>
+                            <tr>
+                                <th>No</th>
+                                <th colspan="2">Pembacaan Awal</th>
+                                <th colspan="2">Pembacaan Akhir</th>
+                                <th>Volume</th>
+                                <th>Sm³</th>
+                                <th>Rupiah</th>
+                                <th>Aksi</th>
+                            </tr>
+                            <tr>
+                                <th></th>
+                                <th>Tanggal</th>
+                                <th>Meter</th>
+                                <th>Tanggal</th>
+                                <th>Meter</th>
+                                <th></th>
+                                <th></th>
+                                <th></th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @php $no = 1; @endphp
+                            @foreach ($dataPencatatan as $item)
+                                @php
+                                    $dataInput = is_string($item->data_input)
+                                        ? json_decode($item->data_input, true)
+                                        : (is_array($item->data_input)
+                                            ? $item->data_input
+                                            : []);
+
+                                    $pembacaanAwal = $dataInput['pembacaan_awal'] ?? [
+                                        'volume' => 0,
+                                        'tanggal' => null,
+                                    ];
+                                    $pembacaanAkhir = $dataInput['pembacaan_akhir'] ?? [
+                                        'volume' => 0,
+                                        'tanggal' => null,
+                                    ];
+                                    $volumeFlowMeter = $dataInput['volume_flow_meter'] ?? 0;
+
+                                    // Get the timestamp for data-filter attribute and pricing period
+                                    $waktuAwalTimestamp = strtotime($dataInput['pembacaan_awal']['waktu'] ?? '');
+                                    $waktuAwalYearMonth = $waktuAwalTimestamp
+                                        ? date('Y-m', $waktuAwalTimestamp)
+                                        : date('Y-m');
+
+                                    // Dapatkan pricing info berdasarkan periode bulan
+                                    $itemPricingInfo = $customer->getPricingForYearMonth($waktuAwalYearMonth);
+
+                                    // Hitung Volume Sm³ dengan koreksi meter yang sesuai periode
+                                    $koreksiMeter = floatval(
+                                        $itemPricingInfo['koreksi_meter'] ?? $customer->koreksi_meter,
+                                    );
+                                    $volumeSm3 = $volumeFlowMeter * $koreksiMeter;
+
+                                    // Hitung Pembelian dengan harga sesuai periode
+                                    $hargaPerM3 = floatval(
+                                        $itemPricingInfo['harga_per_meter_kubik'] ?? $customer->harga_per_meter_kubik,
+                                    );
+                                    $pembelian = $volumeSm3 * $hargaPerM3;
+                                    $tanggalAwalFilter = $waktuAwalTimestamp ? date('Y-m-d', $waktuAwalTimestamp) : '';
+                                @endphp
+                                <tr data-tanggal-awal="{{ $tanggalAwalFilter }}">
+                                    <td>{{ $no++ }}</td>
+                                    <td>{{ \Carbon\Carbon::parse($dataInput['pembacaan_awal']['waktu'])->format('d M Y H:i') }}
+                                    </td>
+                                    <td>{{ number_format($pembacaanAwal['volume'] ?? 0, 2) }} m³</td>
+                                    <td>{{ \Carbon\Carbon::parse($dataInput['pembacaan_akhir']['waktu'])->format('d M Y H:i') }}
+                                    </td>
+                                    <td>{{ number_format($pembacaanAkhir['volume'] ?? 0, 2) }} m³</td>
+                                    <td>{{ number_format($volumeFlowMeter, 2) }} m³</td>
+                                    <td>{{ number_format($volumeSm3, 2) }}</td>
+                                    <td>Rp {{ number_format($pembelian, 2) }}</td>
+
+                                    <td>
+                                        <div class="btn-group">
+                                            <a href="{{ route('data-pencatatan.show', $item->id) }}"
+                                                class="btn btn-info btn-sm">
+                                                <i class="fas fa-eye"></i>
+                                            </a>
+                                            @if (Auth::user()->isAdmin() || Auth::user()->isSuperAdmin())
+                                                <a href="{{ route('data-pencatatan.edit', $item->id) }}"
+                                                    class="btn btn-warning btn-sm">
+                                                    <i class="fas fa-edit"></i>
+                                                </a>
+                                                <form action="{{ route('data-pencatatan.destroy', $item->id) }}"
+                                                    method="POST" class="d-inline"
+                                                    onsubmit="return confirm('Apakah Anda yakin ingin menghapus data ini?');">
+                                                    @csrf
+                                                    @method('DELETE')
+                                                    <button type="submit" class="btn btn-danger btn-sm">
+                                                        <i class="fas fa-trash"></i>
+                                                    </button>
+                                                </form>
+                                            @endif
+                                        </div>
+                                    </td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
                 </div>
             </div>
         </div>
+    </div>
 
-        {{-- Deposit History Modal --}}
-        @if (Auth::user()->isAdmin() || Auth::user()->isSuperAdmin())
-            <div class="modal fade" id="depositHistoryModal" tabindex="-1" role="dialog">
-                <div class="modal-dialog modal-lg" role="document">
-                    <div class="modal-content">
-                        <div class="modal-header bg-success text-white">
-                            <h5 class="modal-title" id="depositHistoryModalLabel">
-                                <i class="fas fa-money-bill-alt mr-2"></i>History Deposit
-                            </h5>
-                            <button type="button" class="close text-white" data-dismiss="modal" aria-label="Close">
-                                <span aria-hidden="true">&times;</span>
-                            </button>
-                        </div>
-                        <div class="modal-body">
-                            <div class="row mb-3">
-                                <div class="col-md-6 col-sm-12 mb-3">
-                                    <h5>Total Deposit: <span class="text-success">Rp
-                                            {{ number_format($customer->total_deposit, 2) }}</span></h5>
-                                    <h5>Total Pembelian: <span class="text-danger">Rp
-                                            {{ number_format($customer->total_purchases, 2) }}</span></h5>
-                                    <h5>Saldo Tersisa: <span class="text-primary">Rp
-                                            {{ number_format($customer->total_deposit - $customer->total_purchases, 2) }}</span>
-                                    </h5>
-                                </div>
-                                <div class="col-md-6 col-sm-12 text-right">
-                                    <button class="btn btn-primary w-100 w-md-auto" data-toggle="modal"
-                                        data-target="#tambahDepositModal">
-                                        <i class="fas fa-plus mr-1"></i> Tambah Deposit
-                                    </button>
-                                </div>
-                            </div>
-                            <div class="table-responsive">
-                                <table class="table table-bordered table-striped" id="depositHistoryTable">
-                                    <thead>
-                                        <tr>
-                                            <th>No</th>
-                                            <th>Tanggal</th>
-                                            <th>Jumlah Deposit</th>
-                                            <th>Keterangan</th>
-                                            <th>Aksi</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        @php
-                                            // Ensure deposit_history is an array before looping
-                                            $depositHistory = $customer->deposit_history;
-                                            if (is_string($depositHistory)) {
-                                                $depositHistory = json_decode($depositHistory, true) ?? [];
-                                            }
-                                            // If it's still not an array (could be null), make it an empty array
-                                            if (!is_array($depositHistory)) {
-                                                $depositHistory = [];
-                                            }
-                                        @endphp
-
-                                        @php
-                                            $no = 1;
-                                            // Sort deposit history by date (newest first)
-                                            $sortedDeposits = collect($depositHistory)
-                                                ->map(function ($deposit, $index) {
-                                                    return [
-                                                        'index' => $index,
-                                                        'date' => $deposit['date'] ?? '',
-                                                        'amount' => $deposit['amount'] ?? 0,
-                                                        'description' => $deposit['description'] ?? '-',
-                                                    ];
-                                                })
-                                                ->sortByDesc('date')
-                                                ->values();
-                                        @endphp
-
-                                        @foreach ($sortedDeposits as $deposit)
-                                            <tr>
-                                                <td>{{ $no++ }}</td>
-                                                <td>
-                                                    @if (!empty($deposit['date']))
-                                                        {{ date('d M Y H:i', strtotime($deposit['date'])) }}
-                                                    @else
-                                                        Tanggal tidak tersedia
-                                                    @endif
-                                                </td>
-                                                <td>Rp {{ number_format($deposit['amount'] ?? 0, 2) }}</td>
-                                                <td>{{ $deposit['description'] ?? '-' }}</td>
-                                                <td>
-                                                    <form action="{{ route('customer.remove-deposit', $customer->id) }}"
-                                                        method="POST" class="d-inline"
-                                                        onsubmit="return confirm('Apakah Anda yakin ingin menghapus deposit ini?');">
-                                                        @csrf
-                                                        @method('DELETE')
-                                                        <input type="hidden" name="deposit_index"
-                                                            value="{{ $deposit['index'] }}">
-                                                        <button type="submit" class="btn btn-danger btn-sm">
-                                                            <i class="fas fa-trash"></i>
-                                                        </button>
-                                                    </form>
-                                                </td>
-                                            </tr>
-                                        @endforeach
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
+    {{-- Deposit History Modal --}}
+    @if (Auth::user()->isAdmin() || Auth::user()->isSuperAdmin())
+        <div class="modal fade" id="depositHistoryModal" tabindex="-1" role="dialog">
+            <div class="modal-dialog modal-lg" role="document">
+                <div class="modal-content">
+                    <div class="modal-header bg-success text-white">
+                        <h5 class="modal-title" id="depositHistoryModalLabel">
+                            <i class="fas fa-money-bill-alt mr-2"></i>History Deposit
+                        </h5>
+                        <button type="button" class="close text-white" data-dismiss="modal" aria-label="Close">
+                            <span aria-hidden="true">&times;</span>
+                        </button>
                     </div>
-                </div>
-            </div>
-
-            {{-- Tambah Deposit Modal --}}
-            @if (Auth::user()->isAdmin() || Auth::user()->isSuperAdmin())
-                <div class="modal fade" id="tambahDepositModal" tabindex="-1" role="dialog">
-                    <div class="modal-dialog" role="document">
-                        <div class="modal-content">
-                            <div class="modal-header bg-primary text-white">
-                                <h5 class="modal-title">
-                                    <i class="fas fa-plus-circle mr-2"></i>Tambah Deposit
+                    <div class="modal-body">
+                        <div class="row mb-3">
+                            <div class="col-md-6 col-sm-12 mb-3">
+                                <h5>Total Deposit: <span class="text-success">Rp
+                                        {{ number_format($customer->total_deposit, 2) }}</span></h5>
+                                <h5>Total Pembelian: <span class="text-danger">Rp
+                                        {{ number_format($customer->total_purchases, 2) }}</span></h5>
+                                <h5>Saldo Tersisa: <span class="text-primary">Rp
+                                        {{ number_format($customer->total_deposit - $customer->total_purchases, 2) }}</span>
                                 </h5>
-                                <button type="button" class="close text-white" data-dismiss="modal" aria-label="Close">
-                                    <span aria-hidden="true">&times;</span>
+                            </div>
+                            <div class="col-md-6 col-sm-12 text-right">
+                                <button class="btn btn-primary w-100 w-md-auto" data-toggle="modal"
+                                    data-target="#tambahDepositModal">
+                                    <i class="fas fa-plus mr-1"></i> Tambah Deposit
                                 </button>
                             </div>
-                            <form action="{{ route('customer.add-deposit', $customer->id) }}" method="POST"
-                                id="tambahDepositForm">
-                                @csrf
-                                <div class="modal-body">
-                                    <div class="form-group">
-                                        <label>Jumlah Deposit <span class="text-danger">*</span></label>
-                                        <div class="input-group">
-                                            <div class="input-group-prepend">
-                                                <span class="input-group-text">Rp</span>
-                                            </div>
-                                            <input type="number" step="0.01" name="amount" class="form-control"
-                                                placeholder="Jumlah deposit" required>
-                                        </div>
-                                    </div>
-                                    <div class="form-group">
-                                        <label>Tanggal Deposit <span class="text-danger">*</span></label>
-                                        <input type="datetime-local" name="deposit_date" class="form-control"
-                                            value="{{ now()->format('Y-m-d\TH:i') }}" required>
-                                    </div>
-                                    <div class="form-group mb-0">
-                                        <label>Keterangan (Opsional)</label>
-                                        <textarea name="description" class="form-control" placeholder="Keterangan deposit (opsional)" rows="2"></textarea>
-                                    </div>
-                                </div>
-                                <div class="modal-footer">
-                                    <button type="button" class="btn btn-secondary" data-dismiss="modal">
-                                        <i class="fas fa-times mr-1"></i>Batal
-                                    </button>
-                                    <button type="submit" class="btn btn-primary">
-                                        <i class="fas fa-save mr-1"></i>Simpan
-                                    </button>
-                                </div>
-                            </form>
                         </div>
-                    </div>
-                </div>
-            @endif
-        @endif
-
-        <!-- Modal untuk Setting Pricing and Correction yang diperbarui -->
-        @if (Auth::user()->isAdmin() || Auth::user()->isSuperAdmin())
-            <div class="modal fade" id="setPricingModal" tabindex="-1" role="dialog"
-                aria-labelledby="setPricingModalLabel" aria-hidden="true">
-                <div class="modal-dialog modal-lg" role="document">
-                    <div class="modal-content">
-                        <div class="modal-header bg-primary text-white">
-                            <h5 class="modal-title" id="setPricingModalLabel">
-                                <i class="fas fa-cog mr-2"></i>Atur Harga & Koreksi Meter untuk Periode Baru
-                            </h5>
-                            <button type="button" class="close text-white" data-dismiss="modal" aria-label="Close">
-                                <span aria-hidden="true">&times;</span>
-                            </button>
-                        </div>
-                        <form action="{{ route('user.update-pricing', $customer->id) }}" method="POST"
-                            id="pricingForm">
-                            @csrf
-                            <div class="modal-body">
-                                <div class="alert alert-info">
-                                    <i class="fas fa-info-circle mr-2"></i>
-                                    Pengaturan harga dan koreksi meter ini akan disimpan untuk periode yang dipilih dan akan
-                                    berlaku untuk semua pencatatan pada periode tersebut.
-                                </div>
-
-                                <!-- Periode -->
-                                <div class="form-group">
-                                    <label for="pricingDate"><strong>Periode</strong></label>
-                                    <div class="input-group">
-                                        <div class="input-group-prepend">
-                                            <span class="input-group-text"><i class="fas fa-calendar-alt"></i></span>
-                                        </div>
-                                        <input type="month" name="pricing_date" id="pricingDate"
-                                            class="form-control @error('pricing_date') is-invalid @enderror"
-                                            value="{{ now()->format('Y-m') }}" required>
-                                        @error('pricing_date')
-                                            <div class="invalid-feedback">{{ $message }}</div>
-                                        @enderror
-                                    </div>
-                                </div>
-
-                                <div class="row">
-                                    <!-- Harga per meter kubik -->
-                                    <div class="col-md-6">
-                                        <div class="form-group">
-                                            <label for="modalHargaPerM3"><strong>Harga per m³</strong></label>
-                                            <div class="input-group">
-                                                <div class="input-group-prepend">
-                                                    <span class="input-group-text">Rp</span>
-                                                </div>
-                                                <input type="number" step="0.01" name="harga_per_meter_kubik"
-                                                    id="modalHargaPerM3"
-                                                    class="form-control @error('harga_per_meter_kubik') is-invalid @enderror"
-                                                    value="{{ old('harga_per_meter_kubik', $customer->harga_per_meter_kubik ?? 0) }}"
-                                                    placeholder="Masukkan harga per m³" required>
-                                                <div class="input-group-append">
-                                                    <span class="input-group-text">/m³</span>
-                                                </div>
-                                                @error('harga_per_meter_kubik')
-                                                    <div class="invalid-feedback">{{ $message }}</div>
-                                                @enderror
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    <!-- Tekanan keluar -->
-                                    <div class="col-md-6">
-                                        <div class="form-group">
-                                            <label for="modalTekananKeluar"><strong>Tekanan Keluar (Bar)</strong></label>
-                                            <div class="input-group">
-                                                <input type="number" step="0.001" name="tekanan_keluar"
-                                                    id="modalTekananKeluar"
-                                                    class="form-control @error('tekanan_keluar') is-invalid @enderror"
-                                                    value="{{ old('tekanan_keluar', $customer->tekanan_keluar ?? 0) }}"
-                                                    placeholder="Tekanan Keluar" required>
-                                                <div class="input-group-append">
-                                                    <span class="input-group-text">Bar</span>
-                                                </div>
-                                                @error('tekanan_keluar')
-                                                    <div class="invalid-feedback">{{ $message }}</div>
-                                                @enderror
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div class="row">
-                                    <!-- Suhu -->
-                                    <div class="col-md-6">
-                                        <div class="form-group">
-                                            <label for="modalSuhu"><strong>Suhu (°C)</strong></label>
-                                            <div class="input-group">
-                                                <input type="number" step="0.1" name="suhu" id="modalSuhu"
-                                                    class="form-control @error('suhu') is-invalid @enderror"
-                                                    value="{{ old('suhu', $customer->suhu ?? 0) }}" placeholder="Suhu"
-                                                    required>
-                                                <div class="input-group-append">
-                                                    <span class="input-group-text">°C</span>
-                                                </div>
-                                                @error('suhu')
-                                                    <div class="invalid-feedback">{{ $message }}</div>
-                                                @enderror
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    <!-- Hasil koreksi meter -->
-                                    <div class="col-md-6">
-                                        <div class="form-group">
-                                            <label for="modalHasilKoreksi">
-                                                <strong>Hasil Koreksi Meter</strong>
-                                                <i class="fas fa-info-circle text-info" data-toggle="tooltip"
-                                                    title="Koreksi meter dihitung otomatis berdasarkan tekanan keluar dan suhu"></i>
-                                            </label>
-                                            <div class="input-group">
-                                                <input type="number" step="0.0001" name="koreksi_meter"
-                                                    id="modalHasilKoreksi"
-                                                    class="form-control @error('koreksi_meter') is-invalid @enderror"
-                                                    value="{{ old('koreksi_meter', $customer->koreksi_meter ?? 1) }}"
-                                                    readonly>
-                                                @error('koreksi_meter')
-                                                    <div class="invalid-feedback">{{ $message }}</div>
-                                                @enderror
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <!-- Footer dengan tombol aksi -->
-                            <div class="modal-footer">
-                                <button type="button" class="btn btn-secondary" data-dismiss="modal">
-                                    <i class="fas fa-times mr-1"></i>Batal
-                                </button>
-                                <button type="submit" class="btn btn-primary">
-                                    <i class="fas fa-save mr-1"></i>Simpan Perubahan
-                                </button>
-                            </div>
-                        </form>
-                    </div>
-                </div>
-            </div>
-        @endif
-
-        {{-- History Pricing Modal --}}
-        @if (Auth::user()->isAdmin() || Auth::user()->isSuperAdmin())
-            <div class="modal fade" id="pricingHistoryModal" tabindex="-1" role="dialog"
-                aria-labelledby="pricingHistoryModalLabel" aria-hidden="true">
-                <div class="modal-dialog modal-lg" role="document">
-                    <div class="modal-content">
-                        <div class="modal-header bg-info text-white">
-                            <h5 class="modal-title" id="pricingHistoryModalLabel">
-                                <i class="fas fa-history mr-2"></i>Riwayat Harga & Koreksi Meter
-                            </h5>
-                            <button type="button" class="close text-white" data-dismiss="modal" aria-label="Close">
-                                <span aria-hidden="true">&times;</span>
-                            </button>
-                        </div>
-                        <div class="modal-body">
-                            <table class="table table-bordered table-striped" id="pricingHistoryTable">
+                        <div class="table-responsive">
+                            <table class="table table-bordered table-striped" id="depositHistoryTable">
                                 <thead>
                                     <tr>
                                         <th>No</th>
-                                        <th>Periode</th>
-                                        <th>Harga per m³</th>
-                                        <th>Tekanan (Bar)</th>
-                                        <th>Suhu (°C)</th>
-                                        <th>Koreksi Meter</th>
+                                        <th>Tanggal</th>
+                                        <th>Jumlah Deposit</th>
+                                        <th>Keterangan</th>
+                                        <th>Aksi</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     @php
-                                        // Ensure pricing_history is an array before looping
-                                        $pricingHistory = $customer->pricing_history;
-                                        if (is_string($pricingHistory)) {
-                                            $pricingHistory = json_decode($pricingHistory, true) ?? [];
+                                        // Ensure deposit_history is an array before looping
+                                        $depositHistory = $customer->deposit_history;
+                                        if (is_string($depositHistory)) {
+                                            $depositHistory = json_decode($depositHistory, true) ?? [];
                                         }
                                         // If it's still not an array (could be null), make it an empty array
-                                        if (!is_array($pricingHistory)) {
-                                            $pricingHistory = [];
+                                        if (!is_array($depositHistory)) {
+                                            $depositHistory = [];
                                         }
-                                        $no = 1;
                                     @endphp
 
-                                    @foreach ($pricingHistory as $pricing)
+                                    @php
+                                        $no = 1;
+                                        // Sort deposit history by date (newest first)
+                                        $sortedDeposits = collect($depositHistory)
+                                            ->map(function ($deposit, $index) {
+                                                return [
+                                                    'index' => $index,
+                                                    'date' => $deposit['date'] ?? '',
+                                                    'amount' => $deposit['amount'] ?? 0,
+                                                    'description' => $deposit['description'] ?? '-',
+                                                ];
+                                            })
+                                            ->sortByDesc('date')
+                                            ->values();
+                                    @endphp
+
+                                    @foreach ($sortedDeposits as $deposit)
                                         <tr>
                                             <td>{{ $no++ }}</td>
                                             <td>
-                                                @if (isset($pricing['date']))
-                                                    {{ \Carbon\Carbon::parse($pricing['date'])->format('F Y') }}
+                                                @if (!empty($deposit['date']))
+                                                    {{ date('d M Y H:i', strtotime($deposit['date'])) }}
                                                 @else
-                                                    Periode tidak tersedia
+                                                    Tanggal tidak tersedia
                                                 @endif
                                             </td>
-                                            <td>Rp {{ number_format($pricing['harga_per_meter_kubik'] ?? 0, 2) }}</td>
-                                            <td>{{ number_format($pricing['tekanan_keluar'] ?? 0, 2) }} Bar</td>
-                                            <td>{{ number_format($pricing['suhu'] ?? 0, 2) }} °C</td>
-                                            <td>{{ number_format($pricing['koreksi_meter'] ?? 1, 8) }}</td>
+                                            <td>Rp {{ number_format($deposit['amount'] ?? 0, 2) }}</td>
+                                            <td>{{ $deposit['description'] ?? '-' }}</td>
+                                            <td>
+                                                <form action="{{ route('customer.remove-deposit', $customer->id) }}"
+                                                    method="POST" class="d-inline"
+                                                    onsubmit="return confirm('Apakah Anda yakin ingin menghapus deposit ini?');">
+                                                    @csrf
+                                                    @method('DELETE')
+                                                    <input type="hidden" name="deposit_index"
+                                                        value="{{ $deposit['index'] }}">
+                                                    <button type="submit" class="btn btn-danger btn-sm">
+                                                        <i class="fas fa-trash"></i>
+                                                    </button>
+                                                </form>
+                                            </td>
                                         </tr>
                                     @endforeach
                                 </tbody>
@@ -798,8 +576,423 @@
                     </div>
                 </div>
             </div>
+        </div>
+
+        {{-- Tambah Deposit Modal --}}
+        @if (Auth::user()->isAdmin() || Auth::user()->isSuperAdmin())
+            <div class="modal fade" id="tambahDepositModal" tabindex="-1" role="dialog">
+                <div class="modal-dialog" role="document">
+                    <div class="modal-content">
+                        <div class="modal-header bg-primary text-white">
+                            <h5 class="modal-title">
+                                <i class="fas fa-plus-circle mr-2"></i>Tambah Deposit
+                            </h5>
+                            <button type="button" class="close text-white" data-dismiss="modal" aria-label="Close">
+                                <span aria-hidden="true">&times;</span>
+                            </button>
+                        </div>
+                        <form action="{{ route('customer.add-deposit', $customer->id) }}" method="POST"
+                            id="tambahDepositForm">
+                            @csrf
+                            <div class="modal-body">
+                                <div class="form-group">
+                                    <label>Jumlah Deposit <span class="text-danger">*</span></label>
+                                    <div class="input-group">
+                                        <div class="input-group-prepend">
+                                            <span class="input-group-text">Rp</span>
+                                        </div>
+                                        <input type="number" step="0.01" name="amount" class="form-control"
+                                            placeholder="Jumlah deposit" required>
+                                    </div>
+                                </div>
+                                <div class="form-group">
+                                    <label>Tanggal Deposit <span class="text-danger">*</span></label>
+                                    <input type="datetime-local" name="deposit_date" class="form-control"
+                                        value="{{ now()->format('Y-m-d\TH:i') }}" required>
+                                </div>
+                                <div class="form-group mb-0">
+                                    <label>Keterangan (Opsional)</label>
+                                    <textarea name="description" class="form-control" placeholder="Keterangan deposit (opsional)" rows="2"></textarea>
+                                </div>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-secondary" data-dismiss="modal">
+                                    <i class="fas fa-times mr-1"></i>Batal
+                                </button>
+                                <button type="submit" class="btn btn-primary">
+                                    <i class="fas fa-save mr-1"></i>Simpan
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
         @endif
-    </div>
+    @endif
+
+    <!-- Modal untuk Setting Pricing and Correction yang diperbarui -->
+    @if (Auth::user()->isAdmin() || Auth::user()->isSuperAdmin())
+        <div class="modal fade" id="setPricingModal" tabindex="-1" role="dialog"
+            aria-labelledby="setPricingModalLabel" aria-hidden="true">
+            <div class="modal-dialog modal-lg" role="document">
+                <div class="modal-content">
+                    <div class="modal-header bg-primary text-white">
+                        <h5 class="modal-title" id="setPricingModalLabel">
+                            <i class="fas fa-cog mr-2"></i>Atur Harga & Koreksi Meter untuk Periode Baru
+                        </h5>
+                        <button type="button" class="close text-white" data-dismiss="modal" aria-label="Close">
+                            <span aria-hidden="true">&times;</span>
+                        </button>
+                    </div>
+                    <form action="{{ route('user.update-pricing', $customer->id) }}" method="POST" id="pricingForm">
+                        @csrf
+                        <div class="modal-body">
+                            <div class="alert alert-info">
+                                <i class="fas fa-info-circle mr-2"></i>
+                                Pengaturan harga dan koreksi meter ini akan disimpan untuk periode yang dipilih dan akan
+                                berlaku untuk semua pencatatan pada periode tersebut.
+                            </div>
+
+                            <!-- Periode -->
+                            <div class="form-group">
+                                <label for="pricingDate"><strong>Periode</strong></label>
+                                <div class="input-group">
+                                    <div class="input-group-prepend">
+                                        <span class="input-group-text"><i class="fas fa-calendar-alt"></i></span>
+                                    </div>
+                                    <input type="month" name="pricing_date" id="pricingDate"
+                                        class="form-control @error('pricing_date') is-invalid @enderror"
+                                        value="{{ now()->format('Y-m') }}" required>
+                                    @error('pricing_date')
+                                        <div class="invalid-feedback">{{ $message }}</div>
+                                    @enderror
+                                </div>
+                            </div>
+
+                            <div class="row">
+                                <!-- Harga per meter kubik -->
+                                <div class="col-md-6">
+                                    <div class="form-group">
+                                        <label for="modalHargaPerM3"><strong>Harga per m³</strong></label>
+                                        <div class="input-group">
+                                            <div class="input-group-prepend">
+                                                <span class="input-group-text">Rp</span>
+                                            </div>
+                                            <input type="number" step="0.01" name="harga_per_meter_kubik"
+                                                id="modalHargaPerM3"
+                                                class="form-control @error('harga_per_meter_kubik') is-invalid @enderror"
+                                                value="{{ old('harga_per_meter_kubik', $customer->harga_per_meter_kubik ?? 0) }}"
+                                                placeholder="Masukkan harga per m³" required>
+                                            <div class="input-group-append">
+                                                <span class="input-group-text">/m³</span>
+                                            </div>
+                                            @error('harga_per_meter_kubik')
+                                                <div class="invalid-feedback">{{ $message }}</div>
+                                            @enderror
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Tekanan keluar -->
+                                <div class="col-md-6">
+                                    <div class="form-group">
+                                        <label for="modalTekananKeluar"><strong>Tekanan Keluar (Bar)</strong></label>
+                                        <div class="input-group">
+                                            <input type="number" step="0.001" name="tekanan_keluar"
+                                                id="modalTekananKeluar"
+                                                class="form-control @error('tekanan_keluar') is-invalid @enderror"
+                                                value="{{ old('tekanan_keluar', $customer->tekanan_keluar ?? 0) }}"
+                                                placeholder="Tekanan Keluar" required>
+                                            <div class="input-group-append">
+                                                <span class="input-group-text">Bar</span>
+                                            </div>
+                                            @error('tekanan_keluar')
+                                                <div class="invalid-feedback">{{ $message }}</div>
+                                            @enderror
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="row">
+                                <!-- Suhu -->
+                                <div class="col-md-6">
+                                    <div class="form-group">
+                                        <label for="modalSuhu"><strong>Suhu (°C)</strong></label>
+                                        <div class="input-group">
+                                            <input type="number" step="0.1" name="suhu" id="modalSuhu"
+                                                class="form-control @error('suhu') is-invalid @enderror"
+                                                value="{{ old('suhu', $customer->suhu ?? 0) }}" placeholder="Suhu"
+                                                required>
+                                            <div class="input-group-append">
+                                                <span class="input-group-text">°C</span>
+                                            </div>
+                                            @error('suhu')
+                                                <div class="invalid-feedback">{{ $message }}</div>
+                                            @enderror
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Hasil koreksi meter -->
+                                <div class="col-md-6">
+                                    <div class="form-group">
+                                        <label for="modalHasilKoreksi">
+                                            <strong>Hasil Koreksi Meter</strong>
+                                            <i class="fas fa-info-circle text-info" data-toggle="tooltip"
+                                                title="Koreksi meter dihitung otomatis berdasarkan tekanan keluar dan suhu"></i>
+                                        </label>
+                                        <div class="input-group">
+                                            <input type="number" step="0.0001" name="koreksi_meter"
+                                                id="modalHasilKoreksi"
+                                                class="form-control @error('koreksi_meter') is-invalid @enderror"
+                                                value="{{ old('koreksi_meter', $customer->koreksi_meter ?? 1) }}"
+                                                readonly>
+                                            @error('koreksi_meter')
+                                                <div class="invalid-feedback">{{ $message }}</div>
+                                            @enderror
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Footer dengan tombol aksi -->
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-dismiss="modal">
+                                <i class="fas fa-times mr-1"></i>Batal
+                            </button>
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fas fa-save mr-1"></i>Simpan Perubahan
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    @endif
+
+    {{-- History Pricing Modal --}}
+    @if (Auth::user()->isAdmin() || Auth::user()->isSuperAdmin())
+        <div class="modal fade" id="pricingHistoryModal" tabindex="-1" role="dialog"
+            aria-labelledby="pricingHistoryModalLabel" aria-hidden="true">
+            <div class="modal-dialog modal-lg" role="document">
+                <div class="modal-content">
+                    <div class="modal-header bg-info text-white">
+                        <h5 class="modal-title" id="pricingHistoryModalLabel">
+                            <i class="fas fa-history mr-2"></i>Riwayat Harga & Koreksi Meter
+                        </h5>
+                        <button type="button" class="close text-white" data-dismiss="modal" aria-label="Close">
+                            <span aria-hidden="true">&times;</span>
+                        </button>
+                    </div>
+                    <div class="modal-body">
+                        <table class="table table-bordered table-striped" id="pricingHistoryTable">
+                            <thead>
+                                <tr>
+                                    <th>No</th>
+                                    <th>Periode</th>
+                                    <th>Harga per m³</th>
+                                    <th>Tekanan (Bar)</th>
+                                    <th>Suhu (°C)</th>
+                                    <th>Koreksi Meter</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @php
+                                    // Ensure pricing_history is an array before looping
+                                    $pricingHistory = $customer->pricing_history;
+                                    if (is_string($pricingHistory)) {
+                                        $pricingHistory = json_decode($pricingHistory, true) ?? [];
+                                    }
+                                    // If it's still not an array (could be null), make it an empty array
+                                    if (!is_array($pricingHistory)) {
+                                        $pricingHistory = [];
+                                    }
+                                    $no = 1;
+                                @endphp
+
+                                @foreach ($pricingHistory as $pricing)
+                                    <tr>
+                                        <td>{{ $no++ }}</td>
+                                        <td>
+                                            @if (isset($pricing['date']))
+                                                {{ \Carbon\Carbon::parse($pricing['date'])->format('F Y') }}
+                                            @else
+                                                Periode tidak tersedia
+                                            @endif
+                                        </td>
+                                        <td>Rp {{ number_format($pricing['harga_per_meter_kubik'] ?? 0, 2) }}</td>
+                                        <td>{{ number_format($pricing['tekanan_keluar'] ?? 0, 2) }} Bar</td>
+                                        <td>{{ number_format($pricing['suhu'] ?? 0, 2) }} °C</td>
+                                        <td>{{ number_format($pricing['koreksi_meter'] ?? 1, 8) }}</td>
+                                    </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    @endif
+
+
+    {{-- Upload Excel Modal --}}
+    @if (Auth::user()->isAdmin() || Auth::user()->isSuperAdmin())
+        <div class="modal fade" id="uploadExcelModal" tabindex="-1" role="dialog"
+            aria-labelledby="uploadExcelModalLabel" aria-hidden="true">
+            <div class="modal-dialog" role="document">
+                <div class="modal-content">
+                    <div class="modal-header bg-success text-white">
+                        <h5 class="modal-title" id="uploadExcelModalLabel">
+                            <i class="fas fa-file-excel mr-2"></i>Upload Data Excel
+                        </h5>
+                        <button type="button" class="close text-white" data-dismiss="modal" aria-label="Close">
+                            <span aria-hidden="true">&times;</span>
+                        </button>
+                    </div>
+                    <form action="{{ route('data-pencatatan.import-excel', $customer->id) }}" method="POST"
+                        enctype="multipart/form-data" id="formUploadExcel">
+                        @csrf
+                        <div class="modal-body">
+                            <div class="alert alert-info">
+                                <i class="fas fa-info-circle mr-2"></i>
+                                Upload file Excel dengan format yang sesuai. File akan diproses dan data akan ditambahkan ke
+                                riwayat pencatatan. Waktu pembacaan awal dan akhir yang sama diperbolehkan.
+                                Data yang diinputkan akan terinput sesuai dengan tanggal nya.
+                            </div>
+
+                            @if (session('import_errors'))
+                                <div class="alert alert-danger">
+                                    <i class="fas fa-times-circle mr-2"></i>
+                                    <strong>Error saat import data:</strong>
+                                    <ul class="mt-2 mb-0">
+                                        @foreach (session('import_errors') as $error)
+                                            <li>{{ $error }}</li>
+                                        @endforeach
+                                    </ul>
+                                </div>
+                            @endif
+                            <div class="form-group">
+                                <label for="excelFile">Pilih File Excel <span class="text-danger">*</span></label>
+                                <div class="custom-file">
+                                    <input type="file" class="custom-file-input" id="excelFile" name="excel_file"
+                                        accept=".xlsx,.xls" required>
+                                    <label class="custom-file-label" for="excelFile">Pilih file...</label>
+                                </div>
+                                <small class="form-text text-muted">File harus berformat .xlsx atau .xls</small>
+                            </div>
+                            <div class="form-group">
+                                <div class="custom-control custom-checkbox">
+                                    <input type="checkbox" class="custom-control-input" id="skipValidation"
+                                        name="skip_validation">
+                                    <label class="custom-control-label" for="skipValidation">Lewati validasi volume (tidak
+                                        disarankan)</label>
+                                </div>
+                                <small class="form-text text-muted">Hanya gunakan jika yakin data Excel sudah benar</small>
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-info" id="btnViewTemplate">
+                                <i class="fas fa-info-circle mr-1"></i>Lihat Template
+                            </button>
+                            <button type="button" class="btn btn-secondary" data-dismiss="modal">
+                                <i class="fas fa-times mr-1"></i>Batal
+                            </button>
+                            <button type="submit" class="btn btn-success">
+                                <i class="fas fa-file-import mr-1"></i>Import Data
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        {{-- Template Excel Modal --}}
+        <div class="modal fade" id="templateExcelModal" tabindex="-1" role="dialog"
+            aria-labelledby="templateExcelModalLabel" aria-hidden="true">
+            <div class="modal-dialog modal-lg" role="document">
+                <div class="modal-content">
+                    <div class="modal-header bg-info text-white">
+                        <h5 class="modal-title" id="templateExcelModalLabel">
+                            <i class="fas fa-info-circle mr-2"></i>Format Template Excel
+                        </h5>
+                        <button type="button" class="close text-white" data-dismiss="modal" aria-label="Close">
+                            <span aria-hidden="true">&times;</span>
+                        </button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="alert alert-info">
+                            <i class="fas fa-info-circle mr-2"></i>
+                            Pastikan format Excel Anda sesuai dengan format berikut:
+                        </div>
+                        <div class="table-responsive">
+                            <table class="table table-bordered">
+                                <thead>
+                                    <tr>
+                                        <th>No</th>
+                                        <th colspan="3">Pembacaan Awal</th>
+                                        <th colspan="3">Pembacaan Akhir</th>
+                                    </tr>
+                                    <tr>
+                                        <th></th>
+                                        <th>Tanggal</th>
+                                        <th>Jam</th>
+                                        <th>Meter</th>
+                                        <th>Tanggal</th>
+                                        <th>Jam</th>
+                                        <th>Meter</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td>1</td>
+                                        <td>1-May-24</td>
+                                        <td>7:00</td>
+                                        <td>1,928.20</td>
+                                        <td>1-May-24</td>
+                                        <td>18:00</td>
+                                        <td>1,928.20</td>
+                                    </tr>
+                                    <tr>
+                                        <td>2</td>
+                                        <td>2-May-24</td>
+                                        <td>7:00</td>
+                                        <td>1,928.20</td>
+                                        <td>2-May-24</td>
+                                        <td>18:00</td>
+                                        <td>2,057.98</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        <div class="alert alert-warning mt-3">
+                            <i class="fas fa-exclamation-triangle mr-2"></i>
+                            <strong>Catatan penting:</strong>
+                            <ul class="mb-0 mt-1">
+                                <li>Format tanggal harus sesuai (dd-MMM-yy atau format tanggal lainnya yang konsisten)</li>
+                                <li>Pembacaan akhir tidak boleh lebih kecil dari pembacaan awal pada baris yang sama</li>
+                                <li>Pembacaan awal harus sama dengan pembacaan akhir dari baris sebelumnya</li>
+                                <li>Volume meter harus mengikuti format angka dengan pemisah ribuan koma (,)</li>
+                                <li>Waktu pembacaan awal dan waktu pembacaan akhir yang sama diperbolehkan</li>
+                            </ul>
+                        </div>
+
+
+                    </div>
+                    <div class="modal-footer">
+
+                        <button type="button" class="btn btn-info" id="btnDownloadTemplate">
+                            <i class="fas fa-download mr-1"></i>Download Template
+                        </button>
+                        <button type="button" class="btn btn-secondary" data-dismiss="modal">
+                            <i class="fas fa-times mr-1"></i>Tutup
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    @endif
 @endsection
 
 @section('css')
@@ -895,7 +1088,46 @@
 
 @section('js')
     <script>
+        // JavaScript untuk Excel telah dipindahkan ke dalam $(function() {})
         $(function() {
+            // File name display for custom file input
+            $(document).on('change', '.custom-file-input', function() {
+                let fileName = $(this).val().split('\\').pop();
+                $(this).next('.custom-file-label').addClass('selected').html(fileName);
+            });
+
+            // Show template modal when clicking on template link
+            $('#btnShowTemplate, #btnViewTemplate').on('click', function(e) {
+                e.preventDefault();
+                $('#uploadExcelModal').modal('hide'); // Hide upload modal if open
+                setTimeout(function() {
+                    $('#templateExcelModal').modal('show');
+                }, 500);
+            });
+
+            // Handle download template button dengan metode yang lebih sederhana
+            $('#btnDownloadTemplate').on('click', function(e) {
+                e.preventDefault();
+                window.open('{{ asset('templates/template_pencatatan.xlsx') }}', '_blank');
+            });
+
+            // Handle form submission with loading indicator
+            $('#formUploadExcel').on('submit', function() {
+                // Show loading spinner
+                $(this).find('button[type="submit"]').html(
+                    '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> ' +
+                    'Mengimport...'
+                ).prop('disabled', true);
+
+                // Continue with form submission
+                return true;
+            });
+
+            // Check if we need to show error modal
+            @if (session('import_errors'))
+                $('#uploadExcelModal').modal('show');
+            @endif
+
             // // Show loading animation
             // $('body').append('<div id="page-loader" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(255,255,255,0.9); z-index: 9999; display: flex; justify-content: center; align-items: center;"><div style="text-align: center;"><div class="spinner-border text-primary" style="width: 3rem; height: 3rem;" role="status"></div><p style="margin-top: 10px; font-weight: bold; color: #4e73df;">Loading...</p></div></div>');
 
@@ -965,7 +1197,7 @@
             if ($.fn.DataTable.isDataTable('#pricingHistoryTable')) {
                 $('#pricingHistoryTable').DataTable().destroy();
             }
-            
+
             $("#pricingHistoryTable").DataTable({
                 "responsive": true,
                 "lengthChange": false,

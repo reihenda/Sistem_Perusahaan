@@ -87,6 +87,10 @@
                                     data-target="#depositHistoryModal">
                                     <i class="fas fa-money-bill-alt mr-1"></i> History Deposit
                                 </button>
+                                <a href="{{ route('data-pencatatan.fob.sync-data', $customer->id) }}"
+                                    class="btn btn-warning btn-sm" onclick="return confirm('Apakah Anda yakin ingin menyinkronkan data rekap pengambilan?')">
+                                    <i class="fas fa-sync mr-1"></i> Sinkronkan Data
+                                </a>
                                 <a href="{{ route('data-pencatatan.fob.create-with-fob', $customer->id) }}"
                                     class="btn btn-info btn-sm">
                                     <i class="fas fa-plus mr-1"></i> Tambah Data

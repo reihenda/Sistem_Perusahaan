@@ -16,6 +16,7 @@ use App\Http\Controllers\KasController;
 use App\Http\Controllers\BankController;
 use App\Http\Controllers\FinancialAccountController;
 use App\Http\Controllers\TransactionDescriptionController;
+use App\Http\Controllers\ExcelImportController;
 
 
 // Rute Autentikasi
@@ -124,6 +125,10 @@ Route::middleware(['auth', 'role:admin,superadmin'])->group(function () {
         ->name('customer.remove-deposit');
     Route::post('/data-pencatatan/{customer}/filter', [DataPencatatanController::class, 'filterByDateRange'])
         ->name('data-pencatatan.filter');
+    Route::post('/data-pencatatan/{customer}/import-excel', [ExcelImportController::class, 'importExcel'])
+        ->name('data-pencatatan.import-excel');
+    Route::get('/data-pencatatan/template-excel', [ExcelImportController::class, 'downloadTemplateExcel'])
+        ->name('data-pencatatan.template-excel');
     Route::get('/data-pencatatan/get-latest-reading', [DataPencatatanController::class, 'getLatestReading'])
         ->name('data-pencatatan.get-latest-reading');
     Route::get('/data-pencatatan/create/{customerId}', [DataPencatatanController::class, 'createWithCustomer'])
@@ -181,6 +186,8 @@ Route::middleware(['auth', 'role:admin,superadmin'])->group(function () {
         ->name('data-pencatatan.fob.store');
     Route::post('/data-pencatatan/fob/{customer}/filter-month-year', [FobController::class, 'filterByMonthYear'])
         ->name('data-pencatatan.fob.filter-month-year');
+    Route::get('/data-pencatatan/fob/{customer}/sync', [FobController::class, 'syncData'])
+        ->name('data-pencatatan.fob.sync-data');
     Route::get('/data-pencatatan/fob/{fob}/debug', function (App\Models\User $fob) {
         return view('data-pencatatan.fob.fob-debug', compact('fob'));
     })->name('fob.debug');

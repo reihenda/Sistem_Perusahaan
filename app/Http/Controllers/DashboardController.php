@@ -156,25 +156,32 @@ class DashboardController extends Controller
             $dataPencatatan = DataPencatatan::where('customer_id', $customer['id'])->get();
 
             // Filter berdasarkan tahun dari data_input, bukan created_at
-            $dataPencatatan = $dataPencatatan->filter(function ($item) use ($tahun) {
+            $dataPencatatan = $dataPencatatan->filter(function ($item) use ($tahun, $customer) {
                 $dataInput = json_decode($item->data_input, true) ?? [];
-
-                // Jika data input kosong atau tidak ada waktu awal, skip
-                if (empty($dataInput) || empty($dataInput['pembacaan_awal']['waktu'])) {
+                
+                // Jika data input kosong, skip
+                if (empty($dataInput)) {
                     return false;
                 }
-
-                // Ambil tahun dari waktu pembacaan awal
-                $dataTahun = Carbon::parse($dataInput['pembacaan_awal']['waktu'])->format('Y');
-
-                // Filter berdasarkan tahun
-                return $dataTahun == $tahun;
+                
+                // Periksa format data berdasarkan role customer
+                if (isset($customer['role']) && $customer['role'] === 'fob' && isset($dataInput['waktu'])) {
+                    // Format FOB - menggunakan kunci 'waktu'
+                    $dataTahun = Carbon::parse($dataInput['waktu'])->format('Y');
+                    return $dataTahun == $tahun;
+                } else if (!empty($dataInput['pembacaan_awal']['waktu'])) {
+                    // Format customer biasa - menggunakan kunci 'pembacaan_awal.waktu'
+                    $dataTahun = Carbon::parse($dataInput['pembacaan_awal']['waktu'])->format('Y');
+                    return $dataTahun == $tahun;
+                }
+                
+                return false; // Skip jika tidak ada data waktu yang valid
             });
 
             foreach ($dataPencatatan as $item) {
                 $dataInput = json_decode($item->data_input, true) ?? [];
 
-                // Periksa apakah ini FOB atau customer biasa berdasarkan format data_input
+                // Periksa apakah ini FOB atau customer biasa berdasarkan format data_input dan role
                 if (isset($customer['role']) && $customer['role'] === 'fob' && isset($dataInput['volume_sm3'])) {
                     // FOB format data (simpler)
                     $volumeSm3 = floatval($dataInput['volume_sm3']);
@@ -215,19 +222,36 @@ class DashboardController extends Controller
             // Ambil semua data pencatatan untuk customer ini
             $dataPencatatan = DataPencatatan::where('customer_id', $customer['id'])->get();
 
-            foreach ($dataPencatatan as $item) {
+            // Filter data berdasarkan bulan dan tahun
+            $filteredPencatatan = $dataPencatatan->filter(function ($item) use ($yearMonth, $customer) {
                 $dataInput = json_decode($item->data_input, true) ?? [];
+                
+                // Jika data input kosong, skip
+                if (empty($dataInput)) {
+                    return false;
+                }
+                
+                // Periksa format data (FOB atau customer biasa)
+                if (isset($customer['role']) && $customer['role'] === 'fob' && isset($dataInput['waktu'])) {
+                    // Format FOB - menggunakan kunci 'waktu'
+                    $waktu = \Carbon\Carbon::parse($dataInput['waktu'])->format('Y-m');
+                    return $waktu === $yearMonth;
+                } else if (!empty($dataInput['pembacaan_awal']['waktu'])) {
+                    // Format customer biasa - menggunakan kunci 'pembacaan_awal.waktu'
+                    $waktuAwal = \Carbon\Carbon::parse($dataInput['pembacaan_awal']['waktu'])->format('Y-m');
+                    return $waktuAwal === $yearMonth;
+                }
+                
+                return false; // Skip jika tidak ada data waktu yang valid
+            });
 
-                // Jika data input kosong atau tidak ada waktu awal, skip
-                if (empty($dataInput) || empty($dataInput['pembacaan_awal']['waktu'])) {
+            foreach ($filteredPencatatan as $item) {
+                $dataInput = json_decode($item->data_input, true) ?? [];
+                
+                // Jika data input kosong, skip
+                if (empty($dataInput)) {
                     continue;
                 }
-
-                // Convert the timestamp to year-month format for comparison
-                $waktuAwal = \Carbon\Carbon::parse($dataInput['pembacaan_awal']['waktu'])->format('Y-m');
-
-                // Filter by year-month
-                if ($waktuAwal === $yearMonth) {
                     if (isset($customer['role']) && $customer['role'] === 'fob' && isset($dataInput['volume_sm3'])) {
                         // FOB format data (simpler)
                         $volumeSm3 = floatval($dataInput['volume_sm3']);
@@ -246,7 +270,6 @@ class DashboardController extends Controller
 
                     $totalPemakaian += $volumeSm3;
                     $totalPembelian += $pembelian; // Gunakan hasil perhitungan bukan harga_final dari database
-                }
             }
         }
 
@@ -275,19 +298,26 @@ class DashboardController extends Controller
             $allDataPencatatan = DataPencatatan::where('customer_id', $customer['id'])->get();
 
             // Filter berdasarkan tahun dari data_input, bukan created_at
-            $dataPencatatanTahun = $allDataPencatatan->filter(function ($item) use ($tahun) {
+            $dataPencatatanTahun = $allDataPencatatan->filter(function ($item) use ($tahun, $customer) {
                 $dataInput = json_decode($item->data_input, true) ?? [];
-
-                // Jika data input kosong atau tidak ada waktu awal, skip
-                if (empty($dataInput) || empty($dataInput['pembacaan_awal']['waktu'])) {
+                
+                // Jika data input kosong, skip
+                if (empty($dataInput)) {
                     return false;
                 }
-
-                // Ambil tahun dari waktu pembacaan awal
-                $dataTahun = Carbon::parse($dataInput['pembacaan_awal']['waktu'])->format('Y');
-
-                // Filter berdasarkan tahun
-                return $dataTahun == $tahun;
+                
+                // Periksa tipe data pencatatan (FOB atau customer biasa)
+                if (isset($customer['role']) && $customer['role'] === 'fob' && isset($dataInput['waktu'])) {
+                    // Format FOB - menggunakan kunci 'waktu'
+                    $dataTahun = Carbon::parse($dataInput['waktu'])->format('Y');
+                    return $dataTahun == $tahun;
+                } else if (!empty($dataInput['pembacaan_awal']['waktu'])) {
+                    // Format customer biasa - menggunakan kunci 'pembacaan_awal.waktu'
+                    $dataTahun = Carbon::parse($dataInput['pembacaan_awal']['waktu'])->format('Y');
+                    return $dataTahun == $tahun;
+                }
+                
+                return false; // Skip jika tidak ada data waktu yang valid
             });
 
             foreach ($dataPencatatanTahun as $item) {
@@ -314,20 +344,27 @@ class DashboardController extends Controller
                 $pembelianTahun += $pembelian;
             }
 
-            // Data untuk bulan - filter berdasarkan waktu pembacaan awal
-            $dataPencatatanBulan = $dataPencatatanTahun->filter(function ($item) use ($yearMonth) {
+            // Data untuk bulan - filter berdasarkan waktu pencatatan
+            $dataPencatatanBulan = $dataPencatatanTahun->filter(function ($item) use ($yearMonth, $customer) {
                 $dataInput = json_decode($item->data_input, true) ?? [];
-
-                // Jika data input kosong atau tidak ada waktu awal, skip
-                if (empty($dataInput) || empty($dataInput['pembacaan_awal']['waktu'])) {
+                
+                // Jika data input kosong, skip
+                if (empty($dataInput)) {
                     return false;
                 }
-
-                // Convert timestamp to year-month format for comparison
-                $waktuAwal = \Carbon\Carbon::parse($dataInput['pembacaan_awal']['waktu'])->format('Y-m');
-
-                // Filter by year-month
-                return $waktuAwal === $yearMonth;
+                
+                // Periksa format data (FOB atau customer biasa)
+                if (isset($customer['role']) && $customer['role'] === 'fob' && isset($dataInput['waktu'])) {
+                    // Format FOB - menggunakan kunci 'waktu'
+                    $waktu = \Carbon\Carbon::parse($dataInput['waktu'])->format('Y-m');
+                    return $waktu === $yearMonth;
+                } else if (!empty($dataInput['pembacaan_awal']['waktu'])) {
+                    // Format customer biasa - menggunakan kunci 'pembacaan_awal.waktu'
+                    $waktuAwal = \Carbon\Carbon::parse($dataInput['pembacaan_awal']['waktu'])->format('Y-m');
+                    return $waktuAwal === $yearMonth;
+                }
+                
+                return false; // Skip jika tidak ada data waktu yang valid
             });
 
             foreach ($dataPencatatanBulan as $item) {
@@ -510,31 +547,48 @@ class DashboardController extends Controller
             $dataPencatatan = DataPencatatan::where('customer_id', $customer['id'])->get();
 
             // Filter berdasarkan tahun dari data_input
-            $dataPencatatan = $dataPencatatan->filter(function ($item) use ($tahun) {
+            $dataPencatatan = $dataPencatatan->filter(function ($item) use ($tahun, $customer) {
                 $dataInput = json_decode($item->data_input, true) ?? [];
 
-                // Jika data input kosong atau tidak ada waktu awal, skip
-                if (empty($dataInput) || empty($dataInput['pembacaan_awal']['waktu'])) {
+                // Jika data input kosong, skip
+                if (empty($dataInput)) {
                     return false;
                 }
 
-                // Ambil tahun dari waktu pembacaan awal
-                $dataTahun = Carbon::parse($dataInput['pembacaan_awal']['waktu'])->format('Y');
+                // Periksa tipe data pencatatan (FOB atau customer biasa)
+                if (isset($customer['role']) && $customer['role'] === 'fob' && isset($dataInput['waktu'])) {
+                    // Format FOB - menggunakan kunci 'waktu'
+                    $dataTahun = Carbon::parse($dataInput['waktu'])->format('Y');
+                    return $dataTahun == $tahun;
+                } else if (!empty($dataInput['pembacaan_awal']['waktu'])) {
+                    // Format customer biasa - menggunakan kunci 'pembacaan_awal.waktu'
+                    $dataTahun = Carbon::parse($dataInput['pembacaan_awal']['waktu'])->format('Y');
+                    return $dataTahun == $tahun;
+                }
 
-                // Filter berdasarkan tahun
-                return $dataTahun == $tahun;
+                return false; // Skip jika tidak ada data waktu yang valid
             });
 
             foreach ($dataPencatatan as $item) {
                 $dataInput = json_decode($item->data_input, true) ?? [];
 
-                // Jika data input kosong atau tidak ada waktu awal, skip
-                if (empty($dataInput) || empty($dataInput['pembacaan_awal']['waktu'])) {
+                // Jika data input kosong, skip
+                if (empty($dataInput)) {
                     continue;
                 }
 
-                // Ambil bulan dari waktu pembacaan awal (index 0-based)
-                $bulanIndex = (int)Carbon::parse($dataInput['pembacaan_awal']['waktu'])->format('n') - 1;
+                // Ambil bulan berdasarkan format data
+                $bulanIndex = -1;
+                
+                if (isset($customer['role']) && $customer['role'] === 'fob' && isset($dataInput['waktu'])) {
+                    // Format FOB - menggunakan kunci 'waktu'
+                    $bulanIndex = (int)Carbon::parse($dataInput['waktu'])->format('n') - 1;
+                } else if (!empty($dataInput['pembacaan_awal']['waktu'])) {
+                    // Format customer biasa - menggunakan kunci 'pembacaan_awal.waktu'
+                    $bulanIndex = (int)Carbon::parse($dataInput['pembacaan_awal']['waktu'])->format('n') - 1;
+                } else {
+                    continue; // Skip jika tidak ada data waktu yang valid
+                }
 
                 // Hitung volume dan harga berdasarkan tipe customer
                 if (isset($customer['role']) && $customer['role'] === 'fob' && isset($dataInput['volume_sm3'])) {
@@ -588,32 +642,50 @@ class DashboardController extends Controller
             $dataPencatatan = DataPencatatan::where('customer_id', $customer['id'])->get();
 
             // Filter data berdasarkan bulan dan tahun
-            $dataPencatatan = $dataPencatatan->filter(function ($item) use ($yearMonth) {
+            $dataPencatatan = $dataPencatatan->filter(function ($item) use ($yearMonth, $customer) {
                 $dataInput = json_decode($item->data_input, true) ?? [];
 
-                // Jika data input kosong atau tidak ada waktu awal, skip
-                if (empty($dataInput) || empty($dataInput['pembacaan_awal']['waktu'])) {
+                // Jika data input kosong, skip
+                if (empty($dataInput)) {
                     return false;
                 }
 
-                // Ambil tahun-bulan dari waktu pembacaan awal
-                $dataYearMonth = Carbon::parse($dataInput['pembacaan_awal']['waktu'])->format('Y-m');
+                // Periksa format data (FOB atau customer biasa)
+                if (isset($customer['role']) && $customer['role'] === 'fob' && isset($dataInput['waktu'])) {
+                    // Format FOB - menggunakan kunci 'waktu'
+                    $dataYearMonth = Carbon::parse($dataInput['waktu'])->format('Y-m');
+                    return $dataYearMonth == $yearMonth;
+                } else if (!empty($dataInput['pembacaan_awal']['waktu'])) {
+                    // Format customer biasa - menggunakan kunci 'pembacaan_awal.waktu'
+                    $dataYearMonth = Carbon::parse($dataInput['pembacaan_awal']['waktu'])->format('Y-m');
+                    return $dataYearMonth == $yearMonth;
+                }
 
-                // Filter berdasarkan tahun-bulan
-                return $dataYearMonth == $yearMonth;
+                return false; // Skip jika tidak ada data waktu yang valid
             });
 
             foreach ($dataPencatatan as $item) {
                 $dataInput = json_decode($item->data_input, true) ?? [];
 
-                // Jika data input kosong atau tidak ada waktu awal, skip
-                if (empty($dataInput) || empty($dataInput['pembacaan_awal']['waktu'])) {
+                // Jika data input kosong, skip
+                if (empty($dataInput)) {
                     continue;
                 }
 
-                // Ambil hari dari waktu pembacaan awal (index 0-based untuk array)
-                $tanggal = Carbon::parse($dataInput['pembacaan_awal']['waktu']);
-                $hariIndex = (int)$tanggal->format('j') - 1; // j gives day without leading zeros (1-31)
+                // Ambil hari berdasarkan format data
+                $hariIndex = -1;
+                
+                if (isset($customer['role']) && $customer['role'] === 'fob' && isset($dataInput['waktu'])) {
+                    // Format FOB - menggunakan kunci 'waktu'
+                    $tanggal = Carbon::parse($dataInput['waktu']);
+                    $hariIndex = (int)$tanggal->format('j') - 1; // j gives day without leading zeros (1-31)
+                } else if (!empty($dataInput['pembacaan_awal']['waktu'])) {
+                    // Format customer biasa - menggunakan kunci 'pembacaan_awal.waktu'
+                    $tanggal = Carbon::parse($dataInput['pembacaan_awal']['waktu']);
+                    $hariIndex = (int)$tanggal->format('j') - 1; // j gives day without leading zeros (1-31)
+                } else {
+                    continue; // Skip jika tidak ada data waktu yang valid
+                }
 
                 // Hitung volume dan harga berdasarkan tipe customer
                 if (isset($customer['role']) && $customer['role'] === 'fob' && isset($dataInput['volume_sm3'])) {

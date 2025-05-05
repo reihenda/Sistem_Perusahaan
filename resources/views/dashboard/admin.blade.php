@@ -22,12 +22,15 @@
     <div class="row mb-4">
         <div class="col-md-12">
             <div class="card">
-                <div class="card-header bg-light">
+                <div class="card-header bg-light d-flex justify-content-between align-items-center">
                     <h3 class="card-title"><i class="fas fa-filter mr-2"></i>Filter Data</h3>
+                    <a href="{{ route('rekap.penjualan.cetak', ['tahun' => $selectedTahun]) }}" class="btn btn-success btn-sm" target="_blank">
+                        <i class="fas fa-print mr-1"></i> Cetak Rekap Penjualan
+                    </a>
                 </div>
                 <div class="card-body py-3">
-                    <form action="{{ route('admin.dashboard') }}" method="GET" class="d-flex align-items-center flex-wrap">
-                        <div class="d-flex align-items-center mr-4 mb-2">
+                    <form action="{{ route('admin.dashboard') }}" method="GET" class="d-flex align-items-center">
+                        <div class="d-flex align-items-center mr-4">
                             <label for="tahun" class="mb-0 mr-2 font-weight-bold">Tahun:</label>
                             <select name="tahun" id="tahun" class="form-control form-control-sm" style="width: 100px;"
                                 onchange="this.form.submit()">
@@ -38,7 +41,7 @@
                             </select>
                         </div>
 
-                        <div class="d-flex align-items-center mb-2">
+                        <div class="d-flex align-items-center">
                             <label for="bulan" class="mb-0 mr-2 font-weight-bold">Bulan:</label>
                             <select name="bulan" id="bulan" class="form-control form-control-sm" style="width: 150px;"
                                 onchange="this.form.submit()">
@@ -73,12 +76,7 @@
                     <div class="tab-content">
                         <!-- Tab Rekap Penjualan -->
                         <div class="tab-pane active" id="rekap-penjualan">
-                            <!-- Tombol Cetak Rekap Penjualan -->
-                            <div class="mb-3 text-right">
-                                <a href="{{ route('rekap.penjualan.cetak', ['tahun' => $selectedTahun]) }}" class="btn btn-success btn-sm" target="_blank">
-                                    <i class="fas fa-print mr-1"></i> Cetak Rekap Penjualan
-                                </a>
-                            </div>
+                
                             <!-- Yearly Summary -->
                             <div class="row">
                                 <div class="col-md-12">
