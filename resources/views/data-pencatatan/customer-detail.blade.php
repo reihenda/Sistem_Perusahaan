@@ -456,6 +456,8 @@
                                                     onsubmit="return confirm('Apakah Anda yakin ingin menghapus data ini?');">
                                                     @csrf
                                                     @method('DELETE')
+                                                    <input type="hidden" name="bulan" value="{{ $selectedBulan }}">
+                                                    <input type="hidden" name="tahun" value="{{ $selectedTahun }}">
                                                     <button type="submit" class="btn btn-danger btn-sm">
                                                         <i class="fas fa-trash"></i>
                                                     </button>

@@ -982,19 +982,25 @@ class DataPencatatanController extends Controller
     }
 
     // Hapus data
-    public function destroy(DataPencatatan $dataPencatatan)
-    {
-        $customer_id = $dataPencatatan->customer_id;
-        $dataPencatatan->delete();
+public function destroy(Request $request, DataPencatatan $dataPencatatan)
+{
+    $customer_id = $dataPencatatan->customer_id;
+    $dataPencatatan->delete();
 
-        // Rekalkulasi total pembelian customer setelah menghapus data
-        app(UserController::class)->rekalkulasiTotalPembelian(User::findOrFail($customer_id));
+    // Rekalkulasi total pembelian customer setelah menghapus data
+    app(UserController::class)->rekalkulasiTotalPembelian(User::findOrFail($customer_id));
 
-        return redirect()->route('data-pencatatan.customer-detail', [
-            'customer' => $customer_id,
-            'refresh' => true
-        ])->with('success', 'Data berhasil dihapus');
-    }
+    // Ambil bulan dan tahun dari request jika ada
+    $bulan = $request->input('bulan', date('m'));
+    $tahun = $request->input('tahun', date('Y'));
+
+    return redirect()->route('data-pencatatan.customer-detail', [
+        'customer' => $customer_id,
+        'bulan' => $bulan,
+        'tahun' => $tahun,
+        'refresh' => true
+    ])->with('success', 'Data berhasil dihapus');
+}
     // Method untuk mencetak billing dalam bentuk HTML (dapat diprint oleh browser)
     public function printBilling(Request $request, User $customer)
     {
