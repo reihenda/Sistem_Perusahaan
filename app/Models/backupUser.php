@@ -17,6 +17,8 @@ class User extends Authenticatable
     const ROLE_ADMIN = 'admin';
     const ROLE_SUPER_ADMIN = 'superadmin';
     const ROLE_CUSTOMER = 'customer';
+    const ROLE_FOB = 'fob';
+    const ROLE_DEMO = 'demo';
 
     /**
      * The attributes that are mass assignable.
@@ -65,6 +67,23 @@ class User extends Authenticatable
         'deposit_history' => 'array',
         'pricing_history' => 'array'
     ];
+
+    /**
+     * Helper function to ensure data is always an array
+     */
+    private function ensureArray($data)
+    {
+        if (is_string($data)) {
+            return json_decode($data, true) ?? [];
+        }
+
+        if (is_array($data)) {
+            return $data;
+        }
+
+        return [];
+    }
+
     public function getTotalVolumeSm3($startDate = null, $endDate = null)
     {
         $query = $this->dataPencatatan();
@@ -89,11 +108,9 @@ class User extends Authenticatable
         // Hitung total volume SM3
         $totalVolumeSm3 = 0;
         foreach ($dataPencatatan as $item) {
-            $dataInput = is_string($item->data_input)
-                ? json_decode($item->data_input, true)
-                : (is_array($item->data_input) ? $item->data_input : []);
+            $dataInput = $this->ensureArray($item->data_input);
 
-            $volumeFlowMeter = $dataInput['volume_flow_meter'] ?? 0;
+            $volumeFlowMeter = floatval($dataInput['volume_flow_meter'] ?? 0);
 
             // Gunakan koreksi meter dari pricing history jika ada
             $koreksiMeter = $this->getKoreksiMeterForDate($item->created_at);
@@ -111,7 +128,33 @@ class User extends Authenticatable
         try {
             DB::beginTransaction();
 
-            $pricingDate = $customDate ? $customDate : now();
+            // Debug - Log input parameters
+            \Log::info('addPricingHistory called', [
+                'user_id' => $this->id,
+                'role' => $this->role,
+                'harga_input' => $hargaPerMeterKubik,
+                'harga_input_type' => gettype($hargaPerMeterKubik),
+                'tekanan_input' => $tekananKeluar,
+                'suhu_input' => $suhu,
+                'koreksi_input' => $koreksiMeter,
+                'date' => $customDate ? $customDate->format('Y-m-d H:i:s') : 'now'
+            ]);
+
+            // Ensure all values are numeric and properly formatted
+            $hargaPerMeterKubik = floatval(str_replace(',', '.', $hargaPerMeterKubik));
+            $tekananKeluar = floatval(str_replace(',', '.', $tekananKeluar));
+            $suhu = floatval(str_replace(',', '.', $suhu));
+            $koreksiMeter = floatval(str_replace(',', '.', $koreksiMeter));
+
+            // Log the converted values
+            \Log::info('Converted pricing values', [
+                'harga_converted' => $hargaPerMeterKubik,
+                'tekanan_converted' => $tekananKeluar,
+                'suhu_converted' => $suhu,
+                'koreksi_converted' => $koreksiMeter
+            ]);
+
+            $pricingDate = $customDate ?: now();
             $yearMonth = $pricingDate->format('Y-m');
 
             // Prepare pricing entry
@@ -125,16 +168,10 @@ class User extends Authenticatable
             ];
 
             // Get current pricing history
-            $pricingHistory = $this->pricing_history;
+            $pricingHistory = $this->ensureArray($this->pricing_history);
 
-            if (is_string($pricingHistory)) {
-                $pricingHistory = json_decode($pricingHistory, true) ?? [];
-            }
-
-            // If it's still not an array (could be null), make it an empty array
-            if (!is_array($pricingHistory)) {
-                $pricingHistory = [];
-            }
+            // Debug - Log current pricing history
+            \Log::info('Current pricing history', ['history' => $pricingHistory]);
 
             // Cek apakah sudah ada entri untuk bulan dan tahun yang sama
             $existingIndex = null;
@@ -147,28 +184,155 @@ class User extends Authenticatable
 
             // Update jika sudah ada, tambahkan jika belum
             if ($existingIndex !== null) {
+                \Log::info('Updating existing pricing entry', ['index' => $existingIndex]);
                 $pricingHistory[$existingIndex] = $pricingEntry;
             } else {
+                \Log::info('Adding new pricing entry');
                 $pricingHistory[] = $pricingEntry;
             }
 
-            // Update pricing history
-            $this->pricing_history = $pricingHistory;
+            // Update pricing history - tambahkan flag untuk memastikan tidak ada perubahan format
+            $this->setAttribute('pricing_history', $pricingHistory);
 
-            // Update current values
-            $this->harga_per_meter_kubik = $hargaPerMeterKubik;
-            $this->tekanan_keluar = $tekananKeluar;
-            $this->suhu = $suhu;
-            $this->koreksi_meter = $koreksiMeter;
+            // Update current values untuk bulan berjalan
+            $currentMonth = now()->format('Y-m');
+            if ($yearMonth === $currentMonth) {
+                \Log::info('Updating current month values');
+                $this->setAttribute('harga_per_meter_kubik', $hargaPerMeterKubik);
+                $this->setAttribute('tekanan_keluar', $tekananKeluar);
+                $this->setAttribute('suhu', $suhu);
+                $this->setAttribute('koreksi_meter', $koreksiMeter);
+            }
+
+            // Debug - Log before save
+            \Log::info('Before saving user', [
+                'user_id' => $this->id,
+                'new_pricing_history' => $this->pricing_history,
+                'new_harga' => $this->harga_per_meter_kubik
+            ]);
 
             // Save the user
-            $this->save();
+            $result = $this->save();
+
+            // Debug - Log save result
+            \Log::info('Save result', [
+                'result' => $result ? 'success' : 'failed',
+                'user_id' => $this->id
+            ]);
 
             DB::commit();
 
-            return true;
+            return $result;
         } catch (\Exception $e) {
             DB::rollBack();
+            \Log::error('Error in addPricingHistory', [
+                'user_id' => $this->id,
+                'error' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            return false;
+        }
+    }
+    public function addPricingHistoryfob($hargaPerMeterKubik, $customDate = null)
+    {
+        try {
+            DB::beginTransaction();
+
+            // Debug - Log input parameters
+            \Log::info('addPricingHistory called', [
+                'user_id' => $this->id,
+                'role' => $this->role,
+                'harga_input' => $hargaPerMeterKubik,
+                'harga_input_type' => gettype($hargaPerMeterKubik),
+
+                'date' => $customDate ? $customDate->format('Y-m-d H:i:s') : 'now'
+            ]);
+
+            // Ensure all values are numeric and properly formatted
+            $hargaPerMeterKubik = floatval(str_replace(',', '.', $hargaPerMeterKubik));
+
+
+            // Log the converted values
+            \Log::info('Converted pricing values', [
+                'harga_converted' => $hargaPerMeterKubik,
+
+            ]);
+
+            $pricingDate = $customDate ?: now();
+            $yearMonth = $pricingDate->format('Y-m');
+
+            // Prepare pricing entry
+            $pricingEntry = [
+                'date' => $pricingDate->format('Y-m-d H:i:s'),
+                'year_month' => $yearMonth,
+                'harga_per_meter_kubik' => round($hargaPerMeterKubik, 2),
+
+            ];
+
+            // Get current pricing history
+            $pricingHistory = $this->ensureArray($this->pricing_history);
+
+            // Debug - Log current pricing history
+            \Log::info('Current pricing history', ['history' => $pricingHistory]);
+
+            // Cek apakah sudah ada entri untuk bulan dan tahun yang sama
+            $existingIndex = null;
+            foreach ($pricingHistory as $index => $entry) {
+                if (isset($entry['year_month']) && $entry['year_month'] === $yearMonth) {
+                    $existingIndex = $index;
+                    break;
+                }
+            }
+
+            // Update jika sudah ada, tambahkan jika belum
+            if ($existingIndex !== null) {
+                \Log::info('Updating existing pricing entry', ['index' => $existingIndex]);
+                $pricingHistory[$existingIndex] = $pricingEntry;
+            } else {
+                \Log::info('Adding new pricing entry');
+                $pricingHistory[] = $pricingEntry;
+            }
+
+            // Update pricing history - tambahkan flag untuk memastikan tidak ada perubahan format
+            $this->setAttribute('pricing_history', $pricingHistory);
+
+            // Update current values untuk bulan berjalan
+            $currentMonth = now()->format('Y-m');
+            if ($yearMonth === $currentMonth) {
+                \Log::info('Updating current month values');
+                $this->setAttribute('harga_per_meter_kubik', $hargaPerMeterKubik);
+            }
+
+            // Debug - Log before save
+            \Log::info('Before saving user', [
+                'user_id' => $this->id,
+                'new_pricing_history' => $this->pricing_history,
+                'new_harga' => $this->harga_per_meter_kubik
+            ]);
+
+            // Save the user
+            $result = $this->save();
+
+            // Debug - Log save result
+            \Log::info('Save result', [
+                'result' => $result ? 'success' : 'failed',
+                'user_id' => $this->id
+            ]);
+
+            DB::commit();
+
+            return $result;
+        } catch (\Exception $e) {
+            DB::rollBack();
+            \Log::error('Error in addPricingHistory', [
+                'user_id' => $this->id,
+                'error' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'trace' => $e->getTraceAsString()
+            ]);
             return false;
         }
     }
@@ -176,17 +340,7 @@ class User extends Authenticatable
     // Mendapatkan data pricing untuk bulan dan tahun tertentu
     public function getPricingForYearMonth($yearMonth)
     {
-        $pricingHistory = $this->pricing_history;
-
-        // Ensure pricing_history is an array before looping
-        if (is_string($pricingHistory)) {
-            $pricingHistory = json_decode($pricingHistory, true) ?? [];
-        }
-
-        // If it's still not an array (could be null), make it an empty array
-        if (!is_array($pricingHistory)) {
-            $pricingHistory = [];
-        }
+        $pricingHistory = $this->ensureArray($this->pricing_history);
 
         foreach ($pricingHistory as $entry) {
             if (isset($entry['year_month']) && $entry['year_month'] === $yearMonth) {
@@ -210,7 +364,7 @@ class User extends Authenticatable
         $yearMonth = $carbonDate->format('Y-m');
 
         $pricingData = $this->getPricingForYearMonth($yearMonth);
-        return $pricingData['koreksi_meter'] ?? $this->koreksi_meter;
+        return floatval($pricingData['koreksi_meter'] ?? $this->koreksi_meter);
     }
 
     // Mendapatkan harga per meter kubik untuk tanggal tertentu
@@ -220,8 +374,9 @@ class User extends Authenticatable
         $yearMonth = $carbonDate->format('Y-m');
 
         $pricingData = $this->getPricingForYearMonth($yearMonth);
-        return $pricingData['harga_per_meter_kubik'] ?? $this->harga_per_meter_kubik;
+        return floatval($pricingData['harga_per_meter_kubik'] ?? $this->harga_per_meter_kubik);
     }
+
     /**
      * Relationship with Data Pencatatan
      */
@@ -244,6 +399,8 @@ class User extends Authenticatable
             DB::beginTransaction();
             $depositDate = $customDate ? $customDate : now();
 
+            // Ensure amount is numeric
+            $amount = floatval($amount);
 
             // Prepare deposit entry
             $depositEntry = [
@@ -253,14 +410,7 @@ class User extends Authenticatable
             ];
 
             // Get current deposit history and ensure it's an array
-            $depositHistory = $this->deposit_history;
-
-            // Convert to array if it's a string or null
-            if (is_string($depositHistory)) {
-                $depositHistory = json_decode($depositHistory, true) ?? [];
-            } else if ($depositHistory === null) {
-                $depositHistory = [];
-            }
+            $depositHistory = $this->ensureArray($this->deposit_history);
 
             // Add new deposit to history
             $depositHistory[] = $depositEntry;
@@ -282,13 +432,14 @@ class User extends Authenticatable
             return false;
         }
     }
+
     public function removeDeposit($index)
     {
         try {
             DB::beginTransaction();
 
             // Get current deposit history
-            $depositHistory = $this->deposit_history ?? [];
+            $depositHistory = $this->ensureArray($this->deposit_history);
 
             // Validate index
             if (!isset($depositHistory[$index])) {
@@ -296,7 +447,7 @@ class User extends Authenticatable
             }
 
             // Subtract the amount from total deposit
-            $this->total_deposit -= $depositHistory[$index]['amount'];
+            $this->total_deposit -= floatval($depositHistory[$index]['amount']);
 
             // Remove the specific deposit entry
             array_splice($depositHistory, $index, 1);
@@ -321,6 +472,9 @@ class User extends Authenticatable
         try {
             DB::beginTransaction();
 
+            // Ensure amount is numeric
+            $amount = floatval($amount);
+
             // Update total purchases
             $this->total_purchases += $amount;
 
@@ -338,8 +492,9 @@ class User extends Authenticatable
 
     public function getCurrentBalance()
     {
-        return $this->total_deposit - $this->total_purchases;
+        return floatval($this->total_deposit) - floatval($this->total_purchases);
     }
+
     public function isAdmin()
     {
         return $this->role === self::ROLE_ADMIN;
@@ -359,5 +514,27 @@ class User extends Authenticatable
     public function isCustomer()
     {
         return $this->role === self::ROLE_CUSTOMER;
+    }
+
+    // Fungsi untuk bisa menampilkan data FOB di dashboard
+    public function isCustomerOrFOB()
+    {
+        return $this->role === self::ROLE_CUSTOMER || $this->role === self::ROLE_FOB;
+    }
+
+    /**
+     * Check if user is demo
+     */
+    public function isDemo()
+    {
+        return $this->role === self::ROLE_DEMO;
+    }
+
+    /**
+     * Check if user is FOB
+     */
+    public function isFOB()
+    {
+        return $this->role === self::ROLE_FOB;
     }
 }

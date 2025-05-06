@@ -8,6 +8,11 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
+use PhpOffice\PhpSpreadsheet\IOFactory;
+use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
+use PhpOffice\PhpSpreadsheet\Spreadsheet;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Validator;
 
 class DataPencatatanController extends Controller
 {
@@ -108,6 +113,125 @@ class DataPencatatanController extends Controller
             'totalTagihan' => $customer->dataPencatatan()->where('status_pembayaran', 'belum_lunas')->sum('harga_final')
         ]);
     }
+
+    /**
+     * Download template Excel untuk import data pencatatan
+     *
+     * @return \Symfony\Component\HttpFoundation\BinaryFileResponse
+     */
+    public function downloadTemplateExcel()
+    {
+        try {
+            // Buat spreadsheet baru
+            $spreadsheet = new Spreadsheet();
+            $sheet = $spreadsheet->getActiveSheet();
+
+            // Set judul sheet
+            $sheet->setTitle('Template Pencatatan');
+
+            // Header row 1
+            $sheet->setCellValue('A1', 'No');
+            $sheet->setCellValue('B1', 'Pembacaan Awal');
+            $sheet->setCellValue('E1', 'Pembacaan Akhir');
+            $sheet->mergeCells('B1:D1');
+            $sheet->mergeCells('E1:G1');
+
+            // Header row 2
+            $sheet->setCellValue('A2', '');
+            $sheet->setCellValue('B2', 'Tanggal');
+            $sheet->setCellValue('C2', 'Jam');
+            $sheet->setCellValue('D2', 'Meter');
+            $sheet->setCellValue('E2', 'Tanggal');
+            $sheet->setCellValue('F2', 'Jam');
+            $sheet->setCellValue('G2', 'Meter');
+
+            // Contoh data
+            $sheet->setCellValue('A3', '1');
+            $sheet->setCellValue('B3', '1-May-24');
+            $sheet->setCellValue('C3', '7:00');
+            $sheet->setCellValue('D3', '1928.20');
+            $sheet->setCellValue('E3', '1-May-24');
+            $sheet->setCellValue('F3', '18:00');
+            $sheet->setCellValue('G3', '1928.20');
+
+            $sheet->setCellValue('A4', '2');
+            $sheet->setCellValue('B4', '2-May-24');
+            $sheet->setCellValue('C4', '7:00');
+            $sheet->setCellValue('D4', '1928.20');
+            $sheet->setCellValue('E4', '2-May-24');
+            $sheet->setCellValue('F4', '18:00');
+            $sheet->setCellValue('G4', '2057.98');
+
+            // Style untuk header
+            $headerStyle = [
+                'font' => [
+                    'bold' => true,
+                ],
+                'alignment' => [
+                    'horizontal' => \PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER,
+                    'vertical' => \PhpOffice\PhpSpreadsheet\Style\Alignment::VERTICAL_CENTER,
+                ],
+                'borders' => [
+                    'allBorders' => [
+                        'borderStyle' => \PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN,
+                    ],
+                ],
+                'fill' => [
+                    'fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID,
+                    'startColor' => [
+                        'rgb' => 'D9EAD3',
+                    ],
+                ],
+            ];
+
+            // Style untuk baris data
+            $dataStyle = [
+                'borders' => [
+                    'allBorders' => [
+                        'borderStyle' => \PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN,
+                    ],
+                ],
+            ];
+
+            // Style untuk header row 1
+            $sheet->getStyle('A1:G1')->applyFromArray($headerStyle);
+
+            // Style untuk header row 2
+            $sheet->getStyle('A2:G2')->applyFromArray($headerStyle);
+
+            // Style untuk contoh data
+            $sheet->getStyle('A3:G4')->applyFromArray($dataStyle);
+
+            // Set lebar kolom
+            $sheet->getColumnDimension('A')->setWidth(5);
+            $sheet->getColumnDimension('B')->setWidth(12);
+            $sheet->getColumnDimension('C')->setWidth(8);
+            $sheet->getColumnDimension('D')->setWidth(12);
+            $sheet->getColumnDimension('E')->setWidth(12);
+            $sheet->getColumnDimension('F')->setWidth(8);
+            $sheet->getColumnDimension('G')->setWidth(12);
+
+            // Set format angka untuk kolom meter
+            $sheet->getStyle('D3:D1000')->getNumberFormat()->setFormatCode('#,##0.00');
+            $sheet->getStyle('G3:G1000')->getNumberFormat()->setFormatCode('#,##0.00');
+
+            // Tulis file ke tmp dan kirim ke browser
+            $writer = new Xlsx($spreadsheet);
+            $filename = 'template_data_pencatatan_' . date('Ymd') . '.xlsx';
+            $temp_file = tempnam(sys_get_temp_dir(), $filename);
+            $writer->save($temp_file);
+
+            return response()->download($temp_file, $filename, [
+                'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            ])->deleteFileAfterSend(true);
+        } catch (\Exception $e) {
+            Log::error('Error creating Excel template: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return redirect()->back()->with('error', 'Gagal membuat template Excel: ' . $e->getMessage());
+        }
+    }
     // Menampilkan daftar customer dan FOB
     public function index()
     {
@@ -199,21 +323,25 @@ class DataPencatatanController extends Controller
             return $volumeSm3 * floatval($pricingInfo['harga_per_meter_kubik'] ?? $customer->harga_per_meter_kubik);
         });
 
-        // Calculate total deposits for the filtered period
+        // Calculate total deposits for the filtered period (current month only)
         $filteredTotalDeposits = 0;
         $depositHistory = $this->ensureArray($customer->deposit_history);
+
+        // Format bulan saat ini untuk perbandingan konsisten
+        $currentYearMonth = $tahun . '-' . str_pad($bulan, 2, '0', STR_PAD_LEFT);
 
         foreach ($depositHistory as $deposit) {
             if (isset($deposit['date'])) {
                 $depositDate = Carbon::parse($deposit['date']);
-                if ($depositDate->month == $bulan && $depositDate->year == $tahun) {
+                // Pastikan hanya deposit pada bulan dan tahun yang dipilih menggunakan format yang konsisten
+                if ($depositDate->format('Y-m') === $currentYearMonth) {
                     $filteredTotalDeposits += floatval($deposit['amount'] ?? 0);
                 }
             }
         }
 
         // Calculate saldo periode bulanan
-        // Mengambil bulan sebelumnya
+        // Mendapatkan bulan sebelumnya
         $prevDate = Carbon::createFromDate($tahun, $bulan, 1)->subMonth();
         $prevMonthYear = $prevDate->format('Y-m');
 
@@ -225,7 +353,8 @@ class DataPencatatanController extends Controller
         foreach ($depositHistory as $deposit) {
             if (isset($deposit['date'])) {
                 $depositDate = Carbon::parse($deposit['date']);
-                if ($depositDate < Carbon::createFromDate($tahun, $bulan, 1)) {
+                // Pastikan hanya menghitung deposit dari bulan-bulan sebelumnya (tidak termasuk bulan ini)
+                if ($depositDate->format('Y-m') < $tahun . '-' . str_pad($bulan, 2, '0', STR_PAD_LEFT)) {
                     $prevTotalDeposits += floatval($deposit['amount'] ?? 0);
                 }
             }
@@ -852,7 +981,7 @@ class DataPencatatanController extends Controller
     }
 
     // Hapus data
-    public function destroy(DataPencatatan $dataPencatatan)
+    public function destroy(Request $request, DataPencatatan $dataPencatatan)
     {
         $customer_id = $dataPencatatan->customer_id;
         $dataPencatatan->delete();
@@ -860,8 +989,14 @@ class DataPencatatanController extends Controller
         // Rekalkulasi total pembelian customer setelah menghapus data
         app(UserController::class)->rekalkulasiTotalPembelian(User::findOrFail($customer_id));
 
+        // Ambil bulan dan tahun dari request jika ada
+        $bulan = $request->input('bulan', date('m'));
+        $tahun = $request->input('tahun', date('Y'));
+
         return redirect()->route('data-pencatatan.customer-detail', [
             'customer' => $customer_id,
+            'bulan' => $bulan,
+            'tahun' => $tahun,
             'refresh' => true
         ])->with('success', 'Data berhasil dihapus');
     }
@@ -1016,5 +1151,135 @@ class DataPencatatanController extends Controller
         // Return view HTML yang dapat dicetak
         return view('pdf.billing', $data);
     }    // Method untuk mencetak billing dalam bentuk PDF
+    // Method untuk mencetak invoice dalam bentuk HTML (dapat diprint oleh browser)
+    public function printInvoice(Request $request, User $customer)
+    {
+        // Get filter parameters
+        $bulan = $request->input('bulan', now()->month);
+        $tahun = $request->input('tahun', now()->year);
 
+        // Format filter untuk query
+        $yearMonth = $tahun . '-' . str_pad($bulan, 2, '0', STR_PAD_LEFT);
+
+        // Get pricing info for selected month
+        $pricingInfo = $customer->getPricingForYearMonth($yearMonth);
+
+        // Base query
+        $query = $customer->dataPencatatan();
+
+        // Ambil semua data dulu
+        $dataPencatatan = $query->get();
+
+        // Filter data berdasarkan bulan dan tahun dari pembacaan awal
+        $dataPencatatan = $dataPencatatan->filter(function ($item) use ($yearMonth) {
+            $dataInput = $this->ensureArray($item->data_input);
+
+            // Jika data input kosong atau tidak ada waktu awal, skip
+            if (empty($dataInput) || empty($dataInput['pembacaan_awal']['waktu'])) {
+                return false;
+            }
+
+            // Convert the timestamp to year-month format for comparison
+            $waktuAwal = Carbon::parse($dataInput['pembacaan_awal']['waktu'])->format('Y-m');
+
+            // Filter by year-month
+            return $waktuAwal === $yearMonth;
+        });
+
+        // Perhitungan untuk volume dan biaya pemakaian gas
+        $pemakaianGas = [];
+        $totalVolume = 0;
+        $totalBiaya = 0;
+
+        $i = 1;
+        foreach ($dataPencatatan as $item) {
+            $dataInput = $this->ensureArray($item->data_input);
+            $volumeFlowMeter = floatval($dataInput['volume_flow_meter'] ?? 0);
+            $volumeSm3 = $volumeFlowMeter * floatval($pricingInfo['koreksi_meter'] ?? $customer->koreksi_meter);
+            $hargaGas = floatval($pricingInfo['harga_per_meter_kubik'] ?? $customer->harga_per_meter_kubik);
+            $biayaPemakaian = $volumeSm3 * $hargaGas;
+
+            // Format periode pemakaian
+            $periode = Carbon::parse($dataInput['pembacaan_awal']['waktu'] ?? now())->format('d/m/Y');
+            $periodePemakaian = Carbon::parse($dataInput['pembacaan_awal']['waktu'] ?? now())->format('1 F') . " - " .
+                Carbon::parse($dataInput['pembacaan_awal']['waktu'] ?? now())->endOfMonth()->format('d F Y');
+
+            $pemakaianGas[] = [
+                'no' => $i++,
+                'periode_pemakaian' => $periodePemakaian,
+                'volume_sm3' => $volumeSm3,
+                'harga_gas' => $hargaGas,
+                'biaya_pemakaian' => $biayaPemakaian
+            ];
+
+            $totalVolume += $volumeSm3;
+            $totalBiaya += $biayaPemakaian;
+        }
+
+        // Generate nomor invoice
+        $nomorInvoice = sprintf('%03d/MPS/INV-NOMI/II/%s', $i, date('Y'));
+
+        // Generate tanggal jatuh tempo (10 hari dari tanggal cetak)
+        $tanggalCetak = Carbon::now()->format('d-M-Y');
+        $tanggalJatuhTempo = Carbon::now()->addDays(10)->format('d-M-Y');
+
+        // Generate nomor kontrak
+        $noKontrak = sprintf('001/PJBG-MPS/I/%s', date('Y'));
+
+        // Generate ID Pelanggan (contoh format)
+        $idPelanggan = sprintf('03C%04d', $customer->id);
+
+        // Terbilang untuk total tagihan
+        $terbilang = $this->terbilang($totalBiaya);
+
+        // Setup data untuk HTML Invoice
+        $data = [
+            'customer' => $customer,
+            'periode_bulan' => Carbon::createFromDate($tahun, $bulan, 1)->format('F Y'),
+            'pemakaian_gas' => $pemakaianGas,
+            'total_volume' => $totalVolume,
+            'total_biaya' => $totalBiaya,
+            'nomor_invoice' => $nomorInvoice,
+            'tanggal_cetak' => $tanggalCetak,
+            'tanggal_jatuh_tempo' => $tanggalJatuhTempo,
+            'no_kontrak' => $noKontrak,
+            'id_pelanggan' => $idPelanggan,
+            'terbilang' => $terbilang
+        ];
+
+        // Return view HTML yang dapat dicetak
+        return view('pdf.invoice', $data);
+    }
+
+    // Helper function untuk mengubah angka menjadi kata-kata dalam bahasa Indonesia
+    private function terbilang($angka)
+    {
+        $angka = abs($angka);
+        $baca = array('', 'satu', 'dua', 'tiga', 'empat', 'lima', 'enam', 'tujuh', 'delapan', 'sembilan', 'sepuluh', 'sebelas');
+        $terbilang = '';
+
+        if ($angka < 12) {
+            $terbilang = ' ' . $baca[$angka];
+        } elseif ($angka < 20) {
+            $terbilang = $this->terbilang($angka - 10) . ' belas';
+        } elseif ($angka < 100) {
+            $terbilang = $this->terbilang((int)($angka / 10)) . ' puluh' . $this->terbilang($angka % 10);
+        } elseif ($angka < 200) {
+            $terbilang = ' seratus' . $this->terbilang($angka - 100);
+        } elseif ($angka < 1000) {
+            $terbilang = $this->terbilang((int)($angka / 100)) . ' ratus' . $this->terbilang($angka % 100);
+        } elseif ($angka < 2000) {
+            $terbilang = ' seribu' . $this->terbilang($angka - 1000);
+        } elseif ($angka < 1000000) {
+            $terbilang = $this->terbilang((int)($angka / 1000)) . ' ribu' . $this->terbilang($angka % 1000);
+        } elseif ($angka < 1000000000) {
+            $terbilang = $this->terbilang((int)($angka / 1000000)) . ' juta' . $this->terbilang($angka % 1000000);
+        } elseif ($angka < 1000000000000) {
+            $terbilang = $this->terbilang((int)($angka / 1000000000)) . ' milyar' . $this->terbilang($angka % 1000000000);
+        } elseif ($angka < 1000000000000000) {
+            $terbilang = $this->terbilang((int)($angka / 1000000000000)) . ' trilyun' . $this->terbilang($angka % 1000000000000);
+        }
+
+        return $terbilang;
+    }
 }

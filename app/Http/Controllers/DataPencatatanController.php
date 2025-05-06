@@ -71,7 +71,7 @@ class DataPencatatanController extends Controller
             // Filter by year-month
             return $waktuAwal === $yearMonth;
         });
-        
+
         // Urutkan data berdasarkan tanggal pembacaan awal
         $dataPencatatan = $dataPencatatan->sortBy(function ($item) {
             $dataInput = $this->ensureArray($item->data_input);
@@ -224,7 +224,6 @@ class DataPencatatanController extends Controller
             return response()->download($temp_file, $filename, [
                 'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
             ])->deleteFileAfterSend(true);
-
         } catch (\Exception $e) {
             Log::error('Error creating Excel template: ' . $e->getMessage(), [
                 'trace' => $e->getTraceAsString()
@@ -341,51 +340,28 @@ class DataPencatatanController extends Controller
             }
         }
 
-        // Calculate saldo periode bulanan
+        // Menggunakan saldo bulanan dari database
         // Mendapatkan bulan sebelumnya
         $prevDate = Carbon::createFromDate($tahun, $bulan, 1)->subMonth();
-        $prevMonthYear = $prevDate->format('Y-m');
+        $prevYearMonth = $prevDate->format('Y-m');
+        $currentYearMonth = $tahun . '-' . str_pad($bulan, 2, '0', STR_PAD_LEFT);
 
-        // Mendapatkan deposit dan pembelian pada semua periode sebelumnya
-        $prevTotalDeposits = 0;
-        $prevTotalPurchases = 0;
-
-        // Menghitung deposit seluruh periode sebelumnya
-        foreach ($depositHistory as $deposit) {
-            if (isset($deposit['date'])) {
-                $depositDate = Carbon::parse($deposit['date']);
-                // Pastikan hanya menghitung deposit dari bulan-bulan sebelumnya (tidak termasuk bulan ini)
-                if ($depositDate->format('Y-m') < $tahun . '-' . str_pad($bulan, 2, '0', STR_PAD_LEFT)) {
-                    $prevTotalDeposits += floatval($deposit['amount'] ?? 0);
-                }
-            }
+        // Pastikan saldo bulanan sudah terupdate
+        if (!isset($customer->monthly_balances[$currentYearMonth])) {
+            $customer->updateMonthlyBalances($prevYearMonth);
+            // Reload customer untuk mendapatkan data terbaru
+            $customer = User::findOrFail($customer->id);
         }
 
-        // Menghitung pembelian seluruh periode sebelumnya
-        $allData = $customer->dataPencatatan()->get();
-        foreach ($allData as $item) {
-            $dataInput = $this->ensureArray($item->data_input);
+        // Ambil saldo bulanan
+        $monthlyBalances = $customer->monthly_balances ?: [];
 
-            // Jika data input kosong atau tidak ada waktu awal, skip
-            if (empty($dataInput) || empty($dataInput['pembacaan_awal']['waktu'])) {
-                continue;
-            }
+        // Ambil saldo bulan sebelumnya dan bulan ini
+        $prevMonthBalance = isset($monthlyBalances[$prevYearMonth]) ?
+            floatval($monthlyBalances[$prevYearMonth]) : 0;
 
-            $itemDate = Carbon::parse($dataInput['pembacaan_awal']['waktu']);
-            if ($itemDate < Carbon::createFromDate($tahun, $bulan, 1)) {
-                $volumeFlowMeter = floatval($dataInput['volume_flow_meter'] ?? 0);
-                $itemYearMonth = $itemDate->format('Y-m');
-                $itemPricingInfo = $customer->getPricingForYearMonth($itemYearMonth);
-                $volumeSm3 = $volumeFlowMeter * floatval($itemPricingInfo['koreksi_meter'] ?? $customer->koreksi_meter);
-                $prevTotalPurchases += $volumeSm3 * floatval($itemPricingInfo['harga_per_meter_kubik'] ?? $customer->harga_per_meter_kubik);
-            }
-        }
-
-        // Menghitung saldo bulan sebelumnya
-        $prevMonthBalance = $prevTotalDeposits - $prevTotalPurchases;
-
-        // Menghitung saldo bulan ini
-        $currentMonthBalance = $prevMonthBalance + $filteredTotalDeposits - $filteredTotalPurchases;
+        $currentMonthBalance = isset($monthlyBalances[$currentYearMonth]) ?
+            floatval($monthlyBalances[$currentYearMonth]) : ($prevMonthBalance + $filteredTotalDeposits - $filteredTotalPurchases);
 
         $yearlyData = $this->calculateYearlyData($customer, $tahun);
 
@@ -608,6 +584,13 @@ class DataPencatatanController extends Controller
         // Rekalkulasi total pembelian customer setelah menambah data baru
         app(UserController::class)->rekalkulasiTotalPembelian($customer);
 
+        // Ambil waktu pembacaan awal untuk menentukan bulan mulai update saldo
+        $waktuPencatatan = Carbon::parse($sanitizedDataInput['pembacaan_awal']['waktu']);
+        $startMonth = $waktuPencatatan->format('Y-m');
+
+        // Update saldo bulanan mulai dari bulan data baru
+        $customer->updateMonthlyBalances($startMonth);
+
         return redirect()->route('data-pencatatan.customer-detail', [
             'customer' => $validatedData['customer_id'],
             'refresh' => true
@@ -734,12 +717,19 @@ class DataPencatatanController extends Controller
         // Validate specific input requirements
         $this->validateDataInput($sanitizedDataInput);
 
+        // Simpan data lama untuk perbandingan
+        $oldData = $this->ensureArray($dataPencatatan->data_input);
+        $oldMonth = !empty($oldData['pembacaan_awal']['waktu'])
+            ? Carbon::parse($oldData['pembacaan_awal']['waktu'])->format('Y-m')
+            : null;
+
         // Konversi data input ke JSON
         $dataInput = json_encode($sanitizedDataInput);
 
+        $customer = User::findOrFail($validatedData['customer_id']);
         $dataPencatatan->customer_id = $validatedData['customer_id'];
         $dataPencatatan->data_input = $dataInput;
-        $dataPencatatan->nama_customer = User::findOrFail($validatedData['customer_id'])->name;
+        $dataPencatatan->nama_customer = $customer->name;
 
         // Hitung ulang harga
         $dataPencatatan->hitungHarga();
@@ -747,7 +737,17 @@ class DataPencatatanController extends Controller
         $dataPencatatan->save();
 
         // Rekalkulasi total pembelian customer setelah update data
-        app(UserController::class)->rekalkulasiTotalPembelian(User::findOrFail($validatedData['customer_id']));
+        app(UserController::class)->rekalkulasiTotalPembelian($customer);
+
+        // Ambil waktu pembacaan awal baru untuk menentukan bulan mulai update saldo
+        $waktuPencatatan = Carbon::parse($sanitizedDataInput['pembacaan_awal']['waktu']);
+        $newMonth = $waktuPencatatan->format('Y-m');
+
+        // Tentukan bulan mulai untuk update saldo (pilih yang lebih awal)
+        $startMonth = $oldMonth && $oldMonth < $newMonth ? $oldMonth : $newMonth;
+
+        // Update saldo bulanan mulai dari bulan data
+        $customer->updateMonthlyBalances($startMonth);
 
         return redirect()->route('data-pencatatan.customer-detail', [
             'customer' => $validatedData['customer_id'],
@@ -982,25 +982,42 @@ class DataPencatatanController extends Controller
     }
 
     // Hapus data
-public function destroy(Request $request, DataPencatatan $dataPencatatan)
-{
-    $customer_id = $dataPencatatan->customer_id;
-    $dataPencatatan->delete();
+    public function destroy(Request $request, DataPencatatan $dataPencatatan)
+    {
+        // Ambil informasi tanggal sebelum data dihapus
+        $dataInput = $this->ensureArray($dataPencatatan->data_input);
+        $customer_id = $dataPencatatan->customer_id;
+        $customer = User::findOrFail($customer_id);
 
-    // Rekalkulasi total pembelian customer setelah menghapus data
-    app(UserController::class)->rekalkulasiTotalPembelian(User::findOrFail($customer_id));
+        // Ambil waktu pembacaan awal untuk menentukan bulan mulai update saldo
+        $startMonth = null;
+        if (!empty($dataInput['pembacaan_awal']['waktu'])) {
+            $waktuPencatatan = Carbon::parse($dataInput['pembacaan_awal']['waktu']);
+            $startMonth = $waktuPencatatan->format('Y-m');
+        }
 
-    // Ambil bulan dan tahun dari request jika ada
-    $bulan = $request->input('bulan', date('m'));
-    $tahun = $request->input('tahun', date('Y'));
+        // Hapus data
+        $dataPencatatan->delete();
 
-    return redirect()->route('data-pencatatan.customer-detail', [
-        'customer' => $customer_id,
-        'bulan' => $bulan,
-        'tahun' => $tahun,
-        'refresh' => true
-    ])->with('success', 'Data berhasil dihapus');
-}
+        // Rekalkulasi total pembelian customer setelah menghapus data
+        app(UserController::class)->rekalkulasiTotalPembelian($customer);
+
+        // Update saldo bulanan mulai dari bulan data yang dihapus
+        if ($startMonth) {
+            $customer->updateMonthlyBalances($startMonth);
+        }
+
+        // Ambil bulan dan tahun dari request jika ada
+        $bulan = $request->input('bulan', date('m'));
+        $tahun = $request->input('tahun', date('Y'));
+
+        return redirect()->route('data-pencatatan.customer-detail', [
+            'customer' => $customer_id,
+            'bulan' => $bulan,
+            'tahun' => $tahun,
+            'refresh' => true
+        ])->with('success', 'Data berhasil dihapus');
+    }
     // Method untuk mencetak billing dalam bentuk HTML (dapat diprint oleh browser)
     public function printBilling(Request $request, User $customer)
     {
