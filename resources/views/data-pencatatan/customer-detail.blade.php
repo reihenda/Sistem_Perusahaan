@@ -279,7 +279,8 @@
                                 <div class="mobile-summary-card">
                                     <strong><i class="fas fa-balance-scale mr-1"></i> Saldo Bulan Ini</strong>
                                     <p class="text-muted mb-0">
-                                        Rp {{ number_format($currentMonthBalance, 0) }}
+                                        Rp
+                                        {{ number_format($filteredTotalDeposits - $filteredTotalPurchases + $prevMonthBalance, 0) }}
                                     </p>
                                 </div>
                             </div>
@@ -306,9 +307,85 @@
                                                     <td>- Pembelian Bulan Ini</td>
                                                     <td>Rp {{ number_format($filteredTotalPurchases, 0) }}</td>
                                                 </tr>
+                                                @php
+                                                    // Definisikan variabel currentYearMonth terlebih dahulu
+                                                    $currentYearMonth = \Carbon\Carbon::createFromDate(
+                                                        $selectedTahun,
+                                                        $selectedBulan,
+                                                        1,
+                                                    )->format('Y-m');
+
+                                                    // Hitung ulang saldo bulan ini secara real-time
+                                                    $realTimeFilteredTotalPurchases = 0;
+                                                    $realTimeFilteredDeposits = 0;
+
+                                                    // Hitung pembelian bulan ini
+                                                    foreach ($dataPencatatan as $purchaseItem) {
+                                                        $itemDataInput = is_string($purchaseItem->data_input)
+                                                            ? json_decode($purchaseItem->data_input, true)
+                                                            : $purchaseItem->data_input;
+                                                        if (
+                                                            empty($itemDataInput) ||
+                                                            empty($itemDataInput['pembacaan_awal']['waktu'])
+                                                        ) {
+                                                            continue;
+                                                        }
+
+                                                        $itemWaktuAwal = Carbon\Carbon::parse(
+                                                            $itemDataInput['pembacaan_awal']['waktu'],
+                                                        );
+                                                        $volumeFlowMeter = floatval(
+                                                            $itemDataInput['volume_flow_meter'] ?? 0,
+                                                        );
+
+                                                        // Ambil pricing yang sesuai (bulanan atau periode khusus)
+                                                        $itemYearMonth = $itemWaktuAwal->format('Y-m');
+                                                        $itemPricingInfo = $customer->getPricingForYearMonth(
+                                                            $itemYearMonth,
+                                                            $itemWaktuAwal,
+                                                        );
+
+                                                        // Hitung volume dan harga
+                                                        $itemKoreksiMeter = floatval(
+                                                            $itemPricingInfo['koreksi_meter'] ??
+                                                                $customer->koreksi_meter,
+                                                        );
+                                                        $itemHargaPerM3 = floatval(
+                                                            $itemPricingInfo['harga_per_meter_kubik'] ??
+                                                                $customer->harga_per_meter_kubik,
+                                                        );
+                                                        $itemVolumeSm3 = $volumeFlowMeter * $itemKoreksiMeter;
+                                                        $itemHarga = $itemVolumeSm3 * $itemHargaPerM3;
+
+                                                        $realTimeFilteredTotalPurchases += $itemHarga;
+                                                    }
+
+                                                    // Hitung deposit bulan ini
+                                                    $deposits = is_string($customer->deposit_history)
+                                                        ? json_decode($customer->deposit_history, true)
+                                                        : $customer->deposit_history;
+                                                    if (is_array($deposits)) {
+                                                        foreach ($deposits as $deposit) {
+                                                            if (isset($deposit['date'])) {
+                                                                $depositDate = Carbon\Carbon::parse($deposit['date']);
+                                                                if ($depositDate->format('Y-m') === $currentYearMonth) {
+                                                                    $realTimeFilteredDeposits += floatval(
+                                                                        $deposit['amount'] ?? 0,
+                                                                    );
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+
+                                                    // Hitung saldo bulan ini
+                                                    $realTimeCurrentMonthBalance =
+                                                        $prevMonthBalance +
+                                                        $realTimeFilteredDeposits -
+                                                        $realTimeFilteredTotalPurchases;
+                                                @endphp
                                                 <tr class="font-weight-bold">
                                                     <td>= Saldo Bulan Ini</td>
-                                                    <td>Rp {{ number_format($currentMonthBalance, 0) }}</td>
+                                                    <td>Rp {{ number_format($realTimeCurrentMonthBalance, 0) }}</td>
                                                 </tr>
                                             </table>
                                         </div>
@@ -411,9 +488,15 @@
                                     $waktuAwalYearMonth = $waktuAwalTimestamp
                                         ? date('Y-m', $waktuAwalTimestamp)
                                         : date('Y-m');
+                                    $waktuAwalDatetime = $waktuAwalTimestamp
+                                        ? Carbon\Carbon::createFromTimestamp($waktuAwalTimestamp)
+                                        : null;
 
-                                    // Dapatkan pricing info berdasarkan periode bulan
-                                    $itemPricingInfo = $customer->getPricingForYearMonth($waktuAwalYearMonth);
+                                    // Dapatkan pricing info berdasarkan periode bulan dan tanggal spesifik
+                                    $itemPricingInfo = $customer->getPricingForYearMonth(
+                                        $waktuAwalYearMonth,
+                                        $waktuAwalDatetime,
+                                    );
 
                                     // Hitung Volume Sm³ dengan koreksi meter yang sesuai periode
                                     $koreksiMeter = floatval(
@@ -646,6 +729,12 @@
                             <span aria-hidden="true">&times;</span>
                         </button>
                     </div>
+                    <!-- Button Buat Periode Khusus di luar form -->
+                    <div class="text-right p-3 bg-light">
+                        <button type="button" class="btn btn-info" id="btnBuatPeriodeKhusus">
+                            <i class="fas fa-calendar-alt mr-1"></i> Buat Periode Khusus
+                        </button>
+                    </div>
                     <form action="{{ route('user.update-pricing', $customer->id) }}" method="POST" id="pricingForm">
                         @csrf
                         <div class="modal-body">
@@ -700,7 +789,7 @@
                                     <div class="form-group">
                                         <label for="modalTekananKeluar"><strong>Tekanan Keluar (Bar)</strong></label>
                                         <div class="input-group">
-                                            <input type="number" step="0.001" name="tekanan_keluar"
+                                            <input type="number" step="0.0000000001" name="tekanan_keluar"
                                                 id="modalTekananKeluar"
                                                 class="form-control @error('tekanan_keluar') is-invalid @enderror"
                                                 value="{{ old('tekanan_keluar', $customer->tekanan_keluar ?? 0) }}"
@@ -772,6 +861,167 @@
                 </div>
             </div>
         </div>
+
+        <!-- Modal untuk Setting Periode Khusus -->
+        <div class="modal fade" id="setPeriodeKhususModal" tabindex="-1" role="dialog"
+            aria-labelledby="setPeriodeKhususModalLabel" aria-hidden="true">
+            <div class="modal-dialog modal-lg" role="document">
+                <div class="modal-content">
+                    <div class="modal-header bg-info text-white">
+                        <h5 class="modal-title" id="setPeriodeKhususModalLabel">
+                            <i class="fas fa-calendar-alt mr-2"></i>Atur Harga & Koreksi Meter untuk Periode Khusus
+                        </h5>
+                        <button type="button" class="close text-white" data-dismiss="modal" aria-label="Close">
+                            <span aria-hidden="true">&times;</span>
+                        </button>
+                    </div>
+                    <form action="{{ route('user.update-pricing-khusus', $customer->id) }}" method="POST"
+                        id="pricingKhususForm">
+                        @csrf
+                        <div class="modal-body">
+                            <div class="alert alert-info">
+                                <i class="fas fa-info-circle mr-2"></i>
+                                Pengaturan harga dan koreksi meter ini akan disimpan untuk periode khusus yang dipilih dan
+                                akan
+                                berlaku untuk pencatatan pada rentang tanggal tersebut. Pengaturan ini lebih prioritas
+                                dibandingkan
+                                pengaturan periode bulanan.
+                            </div>
+
+                            <!-- Periode Khusus -->
+                            <div class="form-group">
+                                <label for="rangeDatePicker"><strong>Rentang Tanggal</strong></label>
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <div class="input-group">
+                                            <div class="input-group-prepend">
+                                                <span class="input-group-text"><i class="fas fa-calendar"></i></span>
+                                            </div>
+                                            <input type="date" name="start_date" id="startDate"
+                                                class="form-control @error('start_date') is-invalid @enderror"
+                                                value="{{ now()->format('Y-m-d') }}" required>
+                                            @error('start_date')
+                                                <div class="invalid-feedback">{{ $message }}</div>
+                                            @enderror
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <div class="input-group">
+                                            <div class="input-group-prepend">
+                                                <span class="input-group-text"><i class="fas fa-calendar"></i></span>
+                                            </div>
+                                            <input type="date" name="end_date" id="endDate"
+                                                class="form-control @error('end_date') is-invalid @enderror"
+                                                value="{{ now()->format('Y-m-d') }}" required>
+                                            @error('end_date')
+                                                <div class="invalid-feedback">{{ $message }}</div>
+                                            @enderror
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="row">
+                                <!-- Harga per meter kubik -->
+                                <div class="col-md-6">
+                                    <div class="form-group">
+                                        <label for="modalHargaPerM3Khusus"><strong>Harga per m³</strong></label>
+                                        <div class="input-group">
+                                            <div class="input-group-prepend">
+                                                <span class="input-group-text">Rp</span>
+                                            </div>
+                                            <input type="number" step="0.01" name="harga_per_meter_kubik"
+                                                id="modalHargaPerM3Khusus"
+                                                class="form-control @error('harga_per_meter_kubik') is-invalid @enderror"
+                                                value="{{ old('harga_per_meter_kubik', $customer->harga_per_meter_kubik ?? 0) }}"
+                                                placeholder="Masukkan harga per m³" required>
+                                            <div class="input-group-append">
+                                                <span class="input-group-text">/m³</span>
+                                            </div>
+                                            @error('harga_per_meter_kubik')
+                                                <div class="invalid-feedback">{{ $message }}</div>
+                                            @enderror
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Tekanan keluar -->
+                                <div class="col-md-6">
+                                    <div class="form-group">
+                                        <label for="modalTekananKeluarKhusus"><strong>Tekanan Keluar (Bar)</strong></label>
+                                        <div class="input-group">
+                                            <input type="number" step="0.0000000001" name="tekanan_keluar"
+                                                id="modalTekananKeluarKhusus"
+                                                class="form-control @error('tekanan_keluar') is-invalid @enderror"
+                                                value="{{ old('tekanan_keluar', $customer->tekanan_keluar ?? 0) }}"
+                                                placeholder="Tekanan Keluar" required>
+                                            <div class="input-group-append">
+                                                <span class="input-group-text">Bar</span>
+                                            </div>
+                                            @error('tekanan_keluar')
+                                                <div class="invalid-feedback">{{ $message }}</div>
+                                            @enderror
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="row">
+                                <!-- Suhu -->
+                                <div class="col-md-6">
+                                    <div class="form-group">
+                                        <label for="modalSuhuKhusus"><strong>Suhu (°C)</strong></label>
+                                        <div class="input-group">
+                                            <input type="number" step="0.1" name="suhu" id="modalSuhuKhusus"
+                                                class="form-control @error('suhu') is-invalid @enderror"
+                                                value="{{ old('suhu', $customer->suhu ?? 0) }}" placeholder="Suhu"
+                                                required>
+                                            <div class="input-group-append">
+                                                <span class="input-group-text">°C</span>
+                                            </div>
+                                            @error('suhu')
+                                                <div class="invalid-feedback">{{ $message }}</div>
+                                            @enderror
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Hasil koreksi meter -->
+                                <div class="col-md-6">
+                                    <div class="form-group">
+                                        <label for="modalHasilKoreksiKhusus">
+                                            <strong>Hasil Koreksi Meter</strong>
+                                            <i class="fas fa-info-circle text-info" data-toggle="tooltip"
+                                                title="Koreksi meter dihitung otomatis berdasarkan tekanan keluar dan suhu"></i>
+                                        </label>
+                                        <div class="input-group">
+                                            <input type="number" step="0.0001" name="koreksi_meter"
+                                                id="modalHasilKoreksiKhusus"
+                                                class="form-control @error('koreksi_meter') is-invalid @enderror"
+                                                value="{{ old('koreksi_meter', $customer->koreksi_meter ?? 1) }}"
+                                                readonly>
+                                            @error('koreksi_meter')
+                                                <div class="invalid-feedback">{{ $message }}</div>
+                                            @enderror
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Footer dengan tombol aksi -->
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-dismiss="modal">
+                                <i class="fas fa-times mr-1"></i>Batal
+                            </button>
+                            <button type="submit" class="btn btn-info">
+                                <i class="fas fa-save mr-1"></i>Simpan Periode Khusus
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
     @endif
 
     {{-- History Pricing Modal --}}
@@ -793,6 +1043,7 @@
                             <thead>
                                 <tr>
                                     <th>No</th>
+                                    <th>Tipe</th>
                                     <th>Periode</th>
                                     <th>Harga per m³</th>
                                     <th>Tekanan (Bar)</th>
@@ -818,10 +1069,26 @@
                                     <tr>
                                         <td>{{ $no++ }}</td>
                                         <td>
-                                            @if (isset($pricing['date']))
-                                                {{ \Carbon\Carbon::parse($pricing['date'])->format('F Y') }}
+                                            @if (isset($pricing['type']) && $pricing['type'] === 'custom_period')
+                                                <span class="badge badge-info">Periode Khusus</span>
                                             @else
-                                                Periode tidak tersedia
+                                                <span class="badge badge-primary">Bulanan</span>
+                                            @endif
+                                        </td>
+                                        <td>
+                                            @if (isset($pricing['type']) && $pricing['type'] === 'custom_period')
+                                                @if (isset($pricing['start_date']) && isset($pricing['end_date']))
+                                                    {{ \Carbon\Carbon::parse($pricing['start_date'])->format('d M Y') }} -
+                                                    {{ \Carbon\Carbon::parse($pricing['end_date'])->format('d M Y') }}
+                                                @else
+                                                    Periode khusus tidak tersedia
+                                                @endif
+                                            @else
+                                                @if (isset($pricing['date']))
+                                                    {{ \Carbon\Carbon::parse($pricing['date'])->format('F Y') }}
+                                                @else
+                                                    Periode tidak tersedia
+                                                @endif
                                             @endif
                                         </td>
                                         <td>Rp {{ number_format($pricing['harga_per_meter_kubik'] ?? 0, 2) }}</td>
@@ -1113,6 +1380,35 @@
                 window.open('{{ asset('templates/template_pencatatan.xlsx') }}', '_blank');
             });
 
+            // Tombol untuk membuka modal periode khusus - pastikan event handler bekerja
+            $(document).on('click', '#btnBuatPeriodeKhusus', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                console.log('Tombol periode khusus diklik');
+                $('#setPricingModal').modal('hide');
+                setTimeout(function() {
+                    $('#setPeriodeKhususModal').modal('show');
+                }, 500);
+            });
+
+            // Menangani penutupan modal periode khusus
+            $('#setPeriodeKhususModal').on('hidden.bs.modal', function(e) {
+                // Hapus semua backdrop modal yang mungkin tersisa
+                $('.modal-backdrop').remove();
+                $('body').removeClass('modal-open');
+                $('body').css('padding-right', '');
+            });
+
+            // Tombol batal pada modal periode khusus
+            $(document).on('click', '#setPeriodeKhususModal button[data-dismiss="modal"]', function(e) {
+                e.preventDefault();
+                $('#setPeriodeKhususModal').modal('hide');
+                // Hapus backdrop dan kembalikan halaman ke normal
+                $('.modal-backdrop').remove();
+                $('body').removeClass('modal-open');
+                $('body').css('padding-right', '');
+            });
+
             // Handle form submission with loading indicator
             $('#formUploadExcel').on('submit', function() {
                 // Show loading spinner
@@ -1310,6 +1606,98 @@
                 '<i class="fas fa-history mr-1"></i> Riwayat Harga' +
                 '</button>'
             );
+
+            // Menghitung koreksi meter untuk modal periode khusus
+            function hitungKoreksiMeterKhusus() {
+                // Ambil nilai tekanan keluar dan suhu
+                const tekananKeluar = parseFloat($('#modalTekananKeluarKhusus').val()) || 0;
+                const suhu = parseFloat($('#modalSuhuKhusus').val()) || 0;
+
+                // Perhitungan koreksi meter
+                const A = (tekananKeluar + 1.01325) / 1.01325;
+                const B = 300 / (suhu + 273);
+                const C = 1 + (0.002 * tekananKeluar);
+
+                const hasilKoreksi = A * B * C;
+
+                // Update readonly field
+                $('#modalHasilKoreksiKhusus').val(hasilKoreksi.toFixed(8));
+            }
+
+            // Trigger calculation on input changes in modal periode khusus
+            $('#modalTekananKeluarKhusus, #modalSuhuKhusus').on('input', function() {
+                hitungKoreksiMeterKhusus();
+            });
+
+            // Trigger initial calculation when modal opens
+            $('#setPeriodeKhususModal').on('show.bs.modal', function() {
+                hitungKoreksiMeterKhusus();
+
+                // Set tanggal default (hari ini sampai akhir bulan)
+                const today = new Date();
+                const endOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+
+                $('#startDate').val(today.toISOString().split('T')[0]);
+                $('#endDate').val(endOfMonth.toISOString().split('T')[0]);
+            });
+
+            // Validasi form periode khusus
+            $('#pricingKhususForm').on('submit', function(e) {
+                const startDate = new Date($('#startDate').val());
+                const endDate = new Date($('#endDate').val());
+                const hargaPerM3 = parseFloat($('#modalHargaPerM3Khusus').val());
+                const tekananKeluar = parseFloat($('#modalTekananKeluarKhusus').val());
+                const suhu = parseFloat($('#modalSuhuKhusus').val());
+
+                let hasError = false;
+
+                // Validasi tanggal
+                if (startDate > endDate) {
+                    $('#startDate, #endDate').addClass('is-invalid');
+                    alert('Tanggal awal tidak boleh lebih besar dari tanggal akhir');
+                    hasError = true;
+                } else {
+                    $('#startDate, #endDate').removeClass('is-invalid');
+                }
+
+                // Validasi harga
+                if (isNaN(hargaPerM3) || hargaPerM3 < 0) {
+                    $('#modalHargaPerM3Khusus').addClass('is-invalid');
+                    hasError = true;
+                } else {
+                    $('#modalHargaPerM3Khusus').removeClass('is-invalid');
+                }
+
+                // Validasi tekanan
+                if (isNaN(tekananKeluar) || tekananKeluar < 0) {
+                    $('#modalTekananKeluarKhusus').addClass('is-invalid');
+                    hasError = true;
+                } else {
+                    $('#modalTekananKeluarKhusus').removeClass('is-invalid');
+                }
+
+                // Validasi suhu
+                if (isNaN(suhu)) {
+                    $('#modalSuhuKhusus').addClass('is-invalid');
+                    hasError = true;
+                } else {
+                    $('#modalSuhuKhusus').removeClass('is-invalid');
+                }
+
+                if (hasError) {
+                    e.preventDefault();
+                    return false;
+                }
+
+                // Tambahan: bersihkan backdrop modal saat form di-submit
+                $(this).find('button[type="submit"]').html(
+                    '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> ' +
+                    'Menyimpan...'
+                ).prop('disabled', true);
+
+                // Hapus event listener default agar tidak terjadi konflik
+                $('#setPeriodeKhususModal').off('hidden.bs.modal');
+            });
 
             // Add animations to cards on hover
             $('.card').css('opacity', 0); // Initially hide

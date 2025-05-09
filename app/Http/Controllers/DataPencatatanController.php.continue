@@ -1,4 +1,6 @@
     // Process skipped dates and create entries for them
+    // Tambahkan Illuminate\Http\Request
+    // Komentar ini ditambahkan sebagai penanda untuk import yang diperlukan
     private function processSkippedDates(User $customer, array $currentData)
     {
         // Mendapatkan data pencatatan terakhir sebelum data saat ini
@@ -365,18 +367,6 @@
         return redirect()->back()->with('success', 'Pembayaran berhasil diproses');
     }
 
-    // Hapus data
-    public function destroy(DataPencatatan $dataPencatatan)
-    {
-        $customer_id = $dataPencatatan->customer_id;
-        $dataPencatatan->delete();
-
-        // Rekalkulasi total pembelian customer setelah menghapus data
-        app(UserController::class)->rekalkulasiTotalPembelian(User::findOrFail($customer_id));
-
-        return redirect()->route('data-pencatatan.customer-detail', [
-            'customer' => $customer_id,
-            'refresh' => true
-        ])->with('success', 'Data berhasil dihapus');
-    }
+    // Untuk kompatibilitas dengan .continue, destroy method dihapus dari file ini
+    // Karena implementasi satu method destroy sudah berada di DataPencatatanController.php utama
 }

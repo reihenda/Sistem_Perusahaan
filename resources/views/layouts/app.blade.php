@@ -519,9 +519,10 @@
                 }
             });
             // Inisialisasi komponen AdminLTE
-            if (typeof $.fn.dataTable !== 'undefined') {
-                $('.dataTable').dataTable();
-            }
+            // Only initialize DataTables that don't already have specific initialization
+if (typeof $.fn.dataTable !== 'undefined') {
+    $('.dataTable:not(.custom-datatable)').dataTable();
+}
 
             // Inisialisasi lainnya yang mungkin diperlukan
             if (typeof $.fn.daterangepicker !== 'undefined') {

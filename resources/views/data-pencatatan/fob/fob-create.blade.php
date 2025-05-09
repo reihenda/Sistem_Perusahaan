@@ -14,6 +14,11 @@
                             <i class="fas fa-plus-circle mr-2"></i>
                             Tambah Data Pencatatan FOB
                         </h3>
+                        <div class="card-tools">
+                            <a href="{{ route('nomor-polisi.index') }}" class="btn btn-info btn-sm">
+                                <i class="fas fa-truck mr-1"></i> Halaman Nomor Polisi
+                            </a>
+                        </div>
                     </div>
                     <form action="{{ route('data-pencatatan.fob.store') }}" method="POST" id="formTambahData">
                         @csrf
@@ -110,6 +115,15 @@
                                                 <span class="input-group-text">Sm³</span>
                                             </div>
                                         </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="form-group">
+                                        <label for="alamat_pengambilan">Alamat Pengambilan</label>
+                                        <input type="text" class="form-control" id="alamat_pengambilan"
+                                            name="alamat_pengambilan" 
+                                            value="{{ old('alamat_pengambilan') }}"
+                                            placeholder="Masukkan alamat lokasi pengambilan">
                                     </div>
                                 </div>
                             </div>

@@ -48,7 +48,7 @@ Route::middleware(['auth', 'role:admin,superadmin'])->group(function () {
 
     Route::get('/admin/dashboard', [DashboardController::class, 'adminDashboard'])
         ->name('admin.dashboard');
-        
+
     // Rute untuk kelola user
     Route::get('/kelola-user', [UserController::class, 'index'])->name('user.index');
     Route::post('/tambah-user', [AuthController::class, 'tambahUser'])->name('tambah.user');
@@ -58,7 +58,7 @@ Route::middleware(['auth', 'role:admin,superadmin'])->group(function () {
 
     // Rute untuk Keuangan
     Route::get('/keuangan', [KeuanganController::class, 'index'])->name('keuangan.index');
-    
+
     // Rute untuk Financial Accounts
     Route::get('/keuangan/accounts', [FinancialAccountController::class, 'index'])->name('keuangan.accounts.index');
     Route::get('/keuangan/accounts/create', [FinancialAccountController::class, 'create'])->name('keuangan.accounts.create');
@@ -66,7 +66,7 @@ Route::middleware(['auth', 'role:admin,superadmin'])->group(function () {
     Route::get('/keuangan/accounts/{account}/edit', [FinancialAccountController::class, 'edit'])->name('keuangan.accounts.edit');
     Route::put('/keuangan/accounts/{account}', [FinancialAccountController::class, 'update'])->name('keuangan.accounts.update');
     Route::delete('/keuangan/accounts/{account}', [FinancialAccountController::class, 'destroy'])->name('keuangan.accounts.destroy');
-    
+
     // Rute untuk Transaction Descriptions
     Route::get('/keuangan/descriptions', [TransactionDescriptionController::class, 'index'])->name('keuangan.descriptions.index');
     Route::get('/keuangan/descriptions/create', [TransactionDescriptionController::class, 'create'])->name('keuangan.descriptions.create');
@@ -75,7 +75,7 @@ Route::middleware(['auth', 'role:admin,superadmin'])->group(function () {
     Route::put('/keuangan/descriptions/{description}', [TransactionDescriptionController::class, 'update'])->name('keuangan.descriptions.update');
     Route::delete('/keuangan/descriptions/{description}', [TransactionDescriptionController::class, 'destroy'])->name('keuangan.descriptions.destroy');
     Route::get('/api/descriptions/category', [TransactionDescriptionController::class, 'getByCategory'])->name('keuangan.descriptions.by-category');
-    
+
     // Rute untuk Kas
     Route::get('/keuangan/kas', [KasController::class, 'index'])->name('keuangan.kas.index');
     Route::get('/keuangan/kas/create', [KasController::class, 'create'])->name('keuangan.kas.create');
@@ -83,7 +83,7 @@ Route::middleware(['auth', 'role:admin,superadmin'])->group(function () {
     Route::get('/keuangan/kas/{transaction}/edit', [KasController::class, 'edit'])->name('keuangan.kas.edit');
     Route::put('/keuangan/kas/{transaction}', [KasController::class, 'update'])->name('keuangan.kas.update');
     Route::delete('/keuangan/kas/{transaction}', [KasController::class, 'destroy'])->name('keuangan.kas.destroy');
-    
+
     // Rute untuk Bank
     Route::get('/keuangan/bank', [BankController::class, 'index'])->name('keuangan.bank.index');
     Route::get('/keuangan/bank/create', [BankController::class, 'create'])->name('keuangan.bank.create');
@@ -117,6 +117,8 @@ Route::middleware(['auth', 'role:admin,superadmin'])->group(function () {
         ->name('data-pencatatan.customer-detail');
     Route::post('/user/customer/{customer}/update-pricing', [UserController::class, 'updateCustomerPricing'])
         ->name('user.update-pricing');
+    Route::post('/user/customer/{customer}/update-pricing-khusus', [UserController::class, 'updateCustomerPricingKhusus'])
+        ->name('user.update-pricing-khusus');
     Route::get('/data-pencatatan/customer/{customer}/details', [DataPencatatanController::class, 'getCustomerDetails'])
         ->name('data-pencatatan.customer-details');
     Route::post('/customer/{userId}/add-deposit', [UserController::class, 'addDeposit'])
@@ -154,7 +156,7 @@ Route::middleware(['auth', 'role:admin,superadmin'])->group(function () {
     Route::resource('nomor-polisi', NomorPolisiController::class);
     // Make sure the route name matches what's being used in the view
     Route::get('/api/nomor-polisi/get-all', [NomorPolisiController::class, 'getAll'])->name('nomor-polisi.getAll');
-    
+
     // Rute untuk mengelola ukuran
     Route::get('/api/ukuran/get-all', [UkuranController::class, 'getAll'])->name('ukuran.getAll');
     Route::post('/api/ukuran', [UkuranController::class, 'store'])->name('ukuran.store');

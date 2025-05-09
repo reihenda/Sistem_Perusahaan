@@ -67,7 +67,7 @@ class DataPencatatan extends Model
 
         // Get pricing for the date
         $yearMonth = $waktuPencatatanAwal->format('Y-m');
-        $pricingInfo = $customer->getPricingForYearMonth($yearMonth);
+        $pricingInfo = $customer->getPricingForYearMonth($yearMonth, $waktuPencatatanAwal);
 
         // Calculate volume SM3
         $koreksiMeter = floatval($pricingInfo['koreksi_meter'] ?? $customer->koreksi_meter);
@@ -83,6 +83,10 @@ class DataPencatatan extends Model
 
         // Record purchase to customer
         $customer->recordPurchase($harga);
+        
+        // Update monthly balances immediately
+        $startMonth = $waktuPencatatanAwal->format('Y-m');
+        $customer->updateMonthlyBalances($startMonth);
 
         return $harga;
     }

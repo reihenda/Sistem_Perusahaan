@@ -21,26 +21,26 @@ class UserController extends Controller
     {
         // Query dasar
         $query = User::query()->orderBy('role');
-        
+
         // Filter berdasarkan pencarian jika ada
         if ($request->has('search') && !empty($request->search)) {
             $searchTerm = $request->search;
-            $query->where(function($q) use ($searchTerm) {
+            $query->where(function ($q) use ($searchTerm) {
                 $q->where('name', 'like', '%' . $searchTerm . '%')
-                  ->orWhere('email', 'like', '%' . $searchTerm . '%')
-                  ->orWhere('role', 'like', '%' . $searchTerm . '%');
+                    ->orWhere('email', 'like', '%' . $searchTerm . '%')
+                    ->orWhere('role', 'like', '%' . $searchTerm . '%');
             });
         }
-        
+
         $users = $query->get();
-        
+
         // Deteksi jika request adalah AJAX untuk pencarian real-time
         if ($request->ajax()) {
             return response()->json([
                 'html' => view('user.partials.user-table', compact('users'))->render(),
             ]);
         }
-        
+
         return view('user.index', compact('users'));
     }
 
@@ -161,8 +161,29 @@ class UserController extends Controller
                 $pricingDate
             );
 
-            // Re-kalkulasi total pembelian berdasarkan pricing history baru
+            // Rekalkulasi total pembelian untuk semua data
             $this->rekalkulasiTotalPembelian($customer);
+
+            // Update saldo bulanan mulai dari bulan periode pricing
+            $yearMonth = $pricingDate->format('Y-m');
+            $customer->updateMonthlyBalances($yearMonth);
+
+            // Rekalkulasi harga untuk setiap data pencatatan dalam periode pricing
+            $dataPencatatans = $customer->dataPencatatan()->get();
+            foreach ($dataPencatatans as $dataPencatatan) {
+                $dataInput = $this->ensureArray($dataPencatatan->data_input);
+                if (empty($dataInput) || empty($dataInput['pembacaan_awal']['waktu'])) {
+                    continue;
+                }
+
+                $waktuPencatatan = Carbon::parse($dataInput['pembacaan_awal']['waktu']);
+                $waktuPencatatanYM = $waktuPencatatan->format('Y-m');
+
+                // Jika data berada dalam bulan yang sama dengan pricing, hitung ulang harga
+                if ($waktuPencatatanYM === $yearMonth) {
+                    $dataPencatatan->hitungHarga();
+                }
+            }
 
             DB::commit();
 
@@ -177,10 +198,147 @@ class UserController extends Controller
         }
     }
 
+    /**
+     * Update pricing untuk periode khusus (rentang tanggal)
+     */
+    public function updateCustomerPricingKhusus(Request $request, $customerId)
+    {
+        // Pastikan hanya admin atau super admin yang bisa mengakses
+        if (!Auth::user()->isAdmin() && !Auth::user()->isSuperAdmin()) {
+            return redirect()->back()->with('error', 'Anda tidak memiliki izin');
+        }
+
+        // Validasi input untuk periode khusus
+        $validator = Validator::make($request->all(), [
+            'harga_per_meter_kubik' => 'required|numeric|min:0',
+            'tekanan_keluar' => 'required|numeric|min:0',
+            'suhu' => 'required|numeric',
+            'start_date' => 'required|date',
+            'end_date' => 'required|date|after_or_equal:start_date',
+        ], [
+            'harga_per_meter_kubik.required' => 'Harga per m³ harus diisi',
+            'harga_per_meter_kubik.numeric' => 'Harga per m³ harus berupa angka',
+            'harga_per_meter_kubik.min' => 'Harga per m³ tidak boleh kurang dari 0',
+            'tekanan_keluar.required' => 'Tekanan keluar harus diisi',
+            'tekanan_keluar.numeric' => 'Tekanan keluar harus berupa angka',
+            'tekanan_keluar.min' => 'Tekanan keluar tidak boleh kurang dari 0',
+            'suhu.required' => 'Suhu harus diisi',
+            'suhu.numeric' => 'Suhu harus berupa angka',
+            'start_date.required' => 'Tanggal awal harus diisi',
+            'start_date.date' => 'Format tanggal awal tidak valid',
+            'end_date.required' => 'Tanggal akhir harus diisi',
+            'end_date.date' => 'Format tanggal akhir tidak valid',
+            'end_date.after_or_equal' => 'Tanggal akhir harus setelah atau sama dengan tanggal awal',
+        ]);
+
+        // Jika validasi gagal
+        if ($validator->fails()) {
+            return redirect()->back()
+                ->withErrors($validator)
+                ->withInput();
+        }
+
+        try {
+            DB::beginTransaction();
+
+            // Cari customer
+            $customer = User::findOrFail($customerId);
+
+            // Hitung koreksi meter
+            $koreksiMeter = self::hitungKoreksiMeter(
+                floatval($request->input('tekanan_keluar')),
+                floatval($request->input('suhu'))
+            );
+
+            // Parse tanggal awal dan akhir
+            $startDate = Carbon::parse($request->input('start_date'))->startOfDay();
+            $endDate = Carbon::parse($request->input('end_date'))->endOfDay();
+
+            // Tambahkan periode khusus ke pricing history
+            $customer->addCustomPeriodPricing(
+                floatval($request->input('harga_per_meter_kubik')),
+                floatval($request->input('tekanan_keluar')),
+                floatval($request->input('suhu')),
+                $koreksiMeter,
+                $startDate,
+                $endDate
+            );
+
+            // Rekalkulasi total pembelian untuk semua data
+            $this->rekalkulasiTotalPembelian($customer);
+
+            // Update saldo bulanan mulai dari bulan awal periode khusus
+            $startMonthYear = $startDate->format('Y-m');
+            
+            // PERBAIKAN: Panggil updateMonthlyBalances dengan logging tambahan
+            \Log::info('Menjalankan updateMonthlyBalances setelah tambah periode khusus', [
+                'user_id' => $customer->id,
+                'startMonth' => $startMonthYear,
+                'periode_khusus' => [
+                    'start_date' => $startDate->format('Y-m-d'),
+                    'end_date' => $endDate->format('Y-m-d'),
+                    'harga_per_m3' => $request->input('harga_per_meter_kubik'),
+                    'koreksi_meter' => $koreksiMeter
+                ]
+            ]);
+            
+            $updateResult = $customer->updateMonthlyBalances($startMonthYear);
+            
+            \Log::info('Hasil updateMonthlyBalances setelah tambah periode khusus', [
+                'user_id' => $customer->id,
+                'result' => $updateResult
+            ]);
+
+            // Rekalkulasi harga untuk setiap data pencatatan dalam periode khusus
+            $dataPencatatans = $customer->dataPencatatan()->get();
+            
+            foreach ($dataPencatatans as $dataPencatatan) {
+                $dataInput = $this->ensureArray($dataPencatatan->data_input);
+                if (empty($dataInput) || empty($dataInput['pembacaan_awal']['waktu'])) {
+                    continue;
+                }
+
+                $waktuPencatatan = Carbon::parse($dataInput['pembacaan_awal']['waktu']);
+
+                // Jika data berada dalam periode khusus, hitung ulang harga
+                if ($waktuPencatatan->between($startDate, $endDate)) {
+                    $dataPencatatan->hitungHarga();
+                }
+            }
+            
+            // Panggil kembali rekalkulasiTotalPembelian untuk memastikan total
+            // pembelian terperbarui dengan benar setelah seluruh perhitungan dilakukan
+            $finalPurchaseResult = $this->rekalkulasiTotalPembelian($customer);
+            
+            // Update saldo bulanan lagi untuk memastikan konsistensi data
+            $customer->updateMonthlyBalances($startMonthYear);
+
+            DB::commit();
+
+            // Format rentang tanggal untuk pesan sukses
+            $dateRangeString = $startDate->format('d M Y') . ' sampai ' . $endDate->format('d M Y');
+
+            // Redirect dengan refresh data
+            return redirect()->route('data-pencatatan.customer-detail', [
+                'customer' => $customer->id,
+                'refresh' => true
+            ])->with('success', 'Harga dan koreksi meter untuk periode khusus ' . $dateRangeString . ' berhasil disimpan');
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return redirect()->back()->with('error', 'Gagal menyimpan periode khusus: ' . $e->getMessage());
+        }
+    }
+
     public function rekalkulasiTotalPembelian($customer)
     {
         try {
             DB::beginTransaction();
+
+            // Log awal proses rekalkulasi
+            \Log::info('Memulai rekalkulasiTotalPembelian', [
+                'user_id' => $customer->id,
+                'name' => $customer->name
+            ]);
 
             // Reset total pembelian
             $customer->total_purchases = 0;
@@ -203,8 +361,8 @@ class UserController extends Controller
                 if ($waktuAwal) {
                     $yearMonth = $waktuAwal->format('Y-m');
 
-                    // Ambil pricing info untuk bulan tersebut
-                    $pricingInfo = $customer->getPricingForYearMonth($yearMonth);
+                    // PERBAIKAN: Gunakan tanggal spesifik untuk mendapatkan pricing yang tepat
+                    $pricingInfo = $customer->getPricingForYearMonth($yearMonth, $waktuAwal);
 
                     // Hitung dengan pricing yang sesuai
                     $koreksiMeter = floatval($pricingInfo['koreksi_meter'] ?? $customer->koreksi_meter);
@@ -213,8 +371,17 @@ class UserController extends Controller
                     $volumeSm3 = $volumeFlowMeter * $koreksiMeter;
                     $pembelian = $volumeSm3 * $hargaPerM3;
 
-                    // Debugging - uncomment to check values
-                    // error_log("Data ID: {$dataPencatatan->id}, Volume: {$volumeFlowMeter}, Koreksi: {$koreksiMeter}, Harga: {$hargaPerM3}, Pembelian: {$pembelian}");
+                    // Logging untuk debugging
+                    \Log::debug('Perhitungan item pembelian dalam rekalkulasi', [
+                        'record_id' => $dataPencatatan->id,
+                        'date' => $waktuAwal->format('Y-m-d H:i:s'),
+                        'volumeFlowMeter' => $volumeFlowMeter,
+                        'koreksiMeter' => $koreksiMeter,
+                        'hargaPerM3' => $hargaPerM3,
+                        'volumeSm3' => $volumeSm3,
+                        'pembelian' => $pembelian,
+                        'is_periode_khusus' => isset($pricingInfo['type']) && $pricingInfo['type'] === 'custom_period'
+                    ]);
 
                     $totalPembelian += $pembelian;
                 }
@@ -222,14 +389,29 @@ class UserController extends Controller
 
             // Update total pembelian - pastikan numerik
             $customer->total_purchases = floatval($totalPembelian);
-            $customer->save();
+            $result = $customer->save();
+
+            \Log::info('Hasil rekalkulasi total pembelian', [
+                'user_id' => $customer->id,
+                'total_pembelian' => $totalPembelian,
+                'save_result' => $result
+            ]);
+
+            // Update saldo bulanan setelah perhitungan ulang total pembelian
+            $customer->updateMonthlyBalances();
 
             DB::commit();
 
             return $totalPembelian;
         } catch (\Exception $e) {
             DB::rollBack();
-            error_log("Error in rekalkulasiTotalPembelian: " . $e->getMessage());
+            \Log::error('Error in rekalkulasiTotalPembelian: ' . $e->getMessage(), [
+                'user_id' => $customer->id,
+                'error' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'trace' => $e->getTraceAsString()
+            ]);
             return 0;
         }
     }
@@ -380,7 +562,7 @@ class UserController extends Controller
 
         return $A * $B * $C;
     }
-    
+
     /**
      * Show the form for editing the specified user.
      *
@@ -393,12 +575,12 @@ class UserController extends Controller
         if (!Auth::user()->isAdmin() && !Auth::user()->isSuperAdmin()) {
             return response()->json(['error' => 'Anda tidak memiliki izin'], 403);
         }
-        
+
         return response()->json([
             'user' => $user
         ]);
     }
-    
+
     /**
      * Update the specified user in storage.
      *
@@ -412,7 +594,7 @@ class UserController extends Controller
         if (!Auth::user()->isAdmin() && !Auth::user()->isSuperAdmin()) {
             return redirect()->back()->with('error', 'Anda tidak memiliki izin');
         }
-        
+
         // Validasi data input
         $validator = Validator::make($request->all(), [
             'name' => 'required|string|max:255',
@@ -434,30 +616,30 @@ class UserController extends Controller
                 ->withErrors($validator)
                 ->withInput();
         }
-        
+
         try {
             DB::beginTransaction();
-            
+
             // Update data user
             $user->name = $request->name;
             $user->email = $request->email;
             $user->role = $request->role;
-            
+
             // Update password jika diisi
             if ($request->filled('password')) {
                 $user->password = Hash::make($request->password);
             }
-            
+
             $user->save();
             DB::commit();
-            
+
             return redirect()->route('user.index')->with('success', 'User berhasil diperbarui');
         } catch (\Exception $e) {
             DB::rollBack();
             return redirect()->back()->with('error', 'Gagal memperbarui user: ' . $e->getMessage());
         }
     }
-    
+
     /**
      * Remove the specified user from storage.
      *
@@ -473,7 +655,7 @@ class UserController extends Controller
             }
             return redirect()->route('user.index')->with('error', 'Anda tidak memiliki izin');
         }
-        
+
         // Cek apakah user yang dihapus adalah superadmin
         if ($user->role === 'superadmin') {
             if ($request->ajax() || $request->wantsJson()) {
@@ -481,7 +663,7 @@ class UserController extends Controller
             }
             return redirect()->route('user.index')->with('error', 'User superadmin tidak dapat dihapus');
         }
-        
+
         // Cek apakah user yang dihapus adalah user yang sedang login
         if ($user->id === Auth::id()) {
             if ($request->ajax() || $request->wantsJson()) {
@@ -489,22 +671,22 @@ class UserController extends Controller
             }
             return redirect()->route('user.index')->with('error', 'Anda tidak dapat menghapus akun yang sedang digunakan');
         }
-        
+
         try {
             DB::beginTransaction();
-            
+
             // Hapus user
             $user->delete();
-            
+
             DB::commit();
-            
+
             if ($request->ajax() || $request->wantsJson()) {
                 return response()->json(['success' => 'User berhasil dihapus']);
             }
             return redirect()->route('user.index')->with('success', 'User berhasil dihapus');
         } catch (\Exception $e) {
             DB::rollBack();
-            
+
             if ($request->ajax() || $request->wantsJson()) {
                 return response()->json(['error' => 'Gagal menghapus user: ' . $e->getMessage()], 500);
             }

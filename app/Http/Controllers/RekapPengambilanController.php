@@ -28,8 +28,8 @@ class RekapPengambilanController extends Controller
         // Get data berdasarkan filter dengan paginasi
         $rekapPengambilan = RekapPengambilan::filterByMonthYear($bulan, $tahun)
             ->with('customer')
-            ->orderBy('tanggal', 'desc')
-            ->paginate(20);
+            ->get()
+            ->sortBy('customer.name'); // Sort by customer name ascending
 
         // Hitung total volume bulanan
         $totalVolumeBulanan = RekapPengambilan::getTotalVolumeMonthly($bulan, $tahun);
@@ -80,10 +80,16 @@ class RekapPengambilanController extends Controller
 
         // Jika customer adalah FOB, tambahkan juga ke data_pencatatan untuk sinkronisasi data
         if ($customer->isFOB()) {
-            // Hitung harga
+            // Ambil waktu untuk mendapatkan pricing yang tepat
+            $waktuDateTime = Carbon::parse($validatedBase['tanggal']);
+            $waktuYearMonth = $waktuDateTime->format('Y-m');
+            
+            // Ambil pricing info berdasarkan tanggal spesifik
+            $pricingInfo = $customer->getPricingForYearMonth($waktuYearMonth, $waktuDateTime);
+            
+            // Hitung harga dengan pricing yang tepat untuk periode ini
             $volumeSm3 = floatval($validatedBase['volume']);
-            $hargaPerM3 = floatval($customer->harga_per_meter_kubik) > 0 ?
-                floatval($customer->harga_per_meter_kubik) : 0;
+            $hargaPerM3 = floatval($pricingInfo['harga_per_meter_kubik'] ?? $customer->harga_per_meter_kubik);
             $hargaFinal = $volumeSm3 * $hargaPerM3;
 
             // Format data untuk FOB
@@ -93,13 +99,16 @@ class RekapPengambilanController extends Controller
                 'keterangan' => $validatedBase['keterangan'] ?? null
             ];
 
-            // Tambahkan log untuk melihat data yang disimpan
+            // Tambahkan log untuk melihat data yang disimpan dan perhitungan harga
             \Log::info('Menyimpan data FOB dari RekapPengambilan', [
                 'customer_id' => $validatedBase['customer_id'],
                 'tanggal' => $validatedBase['tanggal'],
                 'volume' => $validatedBase['volume'],
                 'keterangan' => $validatedBase['keterangan'] ?? null,
-                'dataInput' => $dataInput
+                'dataInput' => $dataInput,
+                'pricing_info' => $pricingInfo,
+                'harga_per_m3' => $hargaPerM3,
+                'harga_final' => $hargaFinal
             ]);
 
             // Buat data pencatatan baru
@@ -117,6 +126,7 @@ class RekapPengambilanController extends Controller
                 'customer_id' => $dataPencatatan->customer_id,
                 'nama_customer' => $dataPencatatan->nama_customer,
                 'data_input' => json_decode($dataPencatatan->data_input, true),
+                'harga_final' => $dataPencatatan->harga_final,
                 'created_at' => $dataPencatatan->created_at
             ]);
 
@@ -167,10 +177,16 @@ class RekapPengambilanController extends Controller
 
         // Jika customer adalah FOB, update atau buat data_pencatatan untuk sinkronisasi
         if ($customer->isFOB()) {
-            // Hitung harga
+            // Ambil waktu untuk mendapatkan pricing yang tepat
+            $waktuDateTime = Carbon::parse($validatedBase['tanggal']);
+            $waktuYearMonth = $waktuDateTime->format('Y-m');
+            
+            // Ambil pricing info berdasarkan tanggal spesifik
+            $pricingInfo = $customer->getPricingForYearMonth($waktuYearMonth, $waktuDateTime);
+            
+            // Hitung harga dengan pricing yang tepat
             $volumeSm3 = floatval($validatedBase['volume']);
-            $hargaPerM3 = floatval($customer->harga_per_meter_kubik) > 0 ?
-                floatval($customer->harga_per_meter_kubik) : 0;
+            $hargaPerM3 = floatval($pricingInfo['harga_per_meter_kubik'] ?? $customer->harga_per_meter_kubik);
             $hargaFinal = $volumeSm3 * $hargaPerM3;
 
             // Format data untuk FOB
@@ -179,6 +195,17 @@ class RekapPengambilanController extends Controller
                 'volume_sm3' => $validatedBase['volume'],
                 'keterangan' => $validatedBase['keterangan'] ?? null
             ];
+            
+            // Log info untuk debugging
+            \Log::info('Updating FOB data from rekap_pengambilan', [
+                'rekap_id' => $rekapPengambilan->id,
+                'customer_id' => $customer->id,
+                'tanggal' => $validatedBase['tanggal'],
+                'pricing_info' => $pricingInfo,
+                'harga_per_m3' => $hargaPerM3,
+                'volume' => $volumeSm3,
+                'harga_final' => $hargaFinal
+            ]);
 
             // Cari data pencatatan yang terkait berdasarkan tanggal
             // Karena kita tidak memiliki relasi langsung antara RekapPengambilan dan DataPencatatan
@@ -193,6 +220,11 @@ class RekapPengambilanController extends Controller
                 $dataPencatatan->data_input = json_encode($dataInput);
                 $dataPencatatan->harga_final = $hargaFinal;
                 $dataPencatatan->save();
+                
+                \Log::info('Updated existing data_pencatatan', [
+                    'data_pencatatan_id' => $dataPencatatan->id,
+                    'harga_final' => $hargaFinal
+                ]);
             } else {
                 // Buat data pencatatan baru jika tidak ditemukan
                 $dataPencatatan = new \App\Models\DataPencatatan();
@@ -202,11 +234,20 @@ class RekapPengambilanController extends Controller
                 $dataPencatatan->status_pembayaran = 'belum_lunas'; // Default status
                 $dataPencatatan->harga_final = $hargaFinal;
                 $dataPencatatan->save();
+                
+                \Log::info('Created new data_pencatatan', [
+                    'data_pencatatan_id' => $dataPencatatan->id,
+                    'harga_final' => $hargaFinal
+                ]);
             }
 
             // Rekalkulasi total pembelian customer
             $userController = new UserController();
             $userController->rekalkulasiTotalPembelianFob($customer);
+            
+            // Update saldo bulanan mulai dari bulan data
+            $startMonth = $waktuYearMonth;
+            $customer->updateMonthlyBalances($startMonth);
         }
 
         return redirect()->route('rekap-pengambilan.index')
@@ -223,13 +264,24 @@ class RekapPengambilanController extends Controller
             // Cari dan hapus data pencatatan terkait berdasarkan customer_id dan tanggal
             // Format tanggal Y-m-d untuk pencarian JSON substring (lebih fleksibel dari whereJsonContains)
             $tanggalSearch = Carbon::parse($tanggal)->format('Y-m-d');
-            \App\Models\DataPencatatan::where('customer_id', $customer->id)
+            $deleteResult = \App\Models\DataPencatatan::where('customer_id', $customer->id)
                 ->where('data_input', 'like', '%"waktu":"%' . $tanggalSearch . '%"%')
                 ->delete();
+
+            // Log penghapusan data
+            \Illuminate\Support\Facades\Log::info('Menghapus data pencatatan FOB dari rekap pengambilan', [
+                'customer_id' => $customer->id,
+                'tanggal' => $tanggalSearch,
+                'deleted_count' => $deleteResult
+            ]);
 
             // Rekalkulasi total pembelian customer
             $userController = new UserController();
             $userController->rekalkulasiTotalPembelianFob($customer);
+            
+            // Update saldo bulanan dari bulan data yang dihapus
+            $startMonth = Carbon::parse($tanggal)->format('Y-m');
+            $customer->updateMonthlyBalances($startMonth);
         }
 
         // Hapus rekap pengambilan

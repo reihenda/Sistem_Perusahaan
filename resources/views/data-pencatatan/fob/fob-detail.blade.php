@@ -80,6 +80,10 @@
                         </h3>
                         <div class="card-tools">
                             @if (Auth::user()->isAdmin() || Auth::user()->isSuperAdmin())
+                                <button class="btn btn-info btn-sm mr-2" data-toggle="modal"
+                                    data-target="#pricingHistoryModal">
+                                    <i class="fas fa-history mr-1"></i> Riwayat Harga
+                                </button>
                                 <button class="btn btn-primary btn-sm" data-toggle="modal" data-target="#setPricingModal">
                                     <i class="fas fa-cog mr-1"></i> Atur Harga
                                 </button>
@@ -88,8 +92,9 @@
                                     <i class="fas fa-money-bill-alt mr-1"></i> History Deposit
                                 </button>
                                 <a href="{{ route('data-pencatatan.fob.sync-data', $customer->id) }}"
-                                    class="btn btn-warning btn-sm" onclick="return confirm('Apakah Anda yakin ingin menyinkronkan data rekap pengambilan?')">
-                                    <i class="fas fa-sync mr-1"></i> Sinkronkan Data
+                                    class="btn btn-warning btn-sm font-weight-bold"
+                                    onclick="return confirm('Apakah Anda yakin ingin menyinkronkan data rekap pengambilan? Operasi ini akan memastikan data pada periode {{ \Carbon\Carbon::createFromDate($selectedTahun, $selectedBulan, 1)->format('F Y') }} terupdate dengan benar.')">
+                                    <i class="fas fa-sync mr-1"></i> <strong>Sinkronkan Data Periode Ini</strong>
                                 </a>
                                 <a href="{{ route('data-pencatatan.fob.create-with-fob', $customer->id) }}"
                                     class="btn btn-info btn-sm">
@@ -99,6 +104,13 @@
                         </div>
                     </div>
                     <div class="card-body">
+                        @if ($selectedBulan == date('m') && $selectedTahun == date('Y'))
+                            <div class="alert alert-info">
+                                <i class="fas fa-info-circle mr-2"></i>
+                                <strong>Periode Saat Ini:</strong> Data yang ditampilkan hanya mencakup aktivitas FOB dalam bulan {{ \Carbon\Carbon::createFromDate($selectedTahun, $selectedBulan, 1)->format('F Y') }}.
+                                Jika ada ketidaksesuaian, gunakan tombol <strong>"Sinkronkan Data Periode Ini"</strong> untuk memastikan semua data sudah sinkron.
+                            </div>
+                        @endif
                         <div class="row">
                             <div class="col-md-3 col-sm-6">
                                 <div class="mobile-summary-card">
@@ -234,6 +246,51 @@
                 </div>
             </div>
 
+            {{-- Period Information Card (Bulanan) --}}
+            <div class="col-md-12">
+                <div class="card card-primary card-outline">
+                    <div class="card-header">
+                        <h3 class="card-title">
+                            <i class="fas fa-chart-line mr-2"></i>
+                            Informasi Periode:
+                            {{ \Carbon\Carbon::createFromDate($selectedTahun, $selectedBulan, 1)->format('F Y') }}
+                            @if ($selectedBulan == date('m') && $selectedTahun == date('Y'))
+                                <span class="badge badge-success ml-2">Periode Saat Ini</span>
+                            @endif
+                        </h3>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-4 col-sm-6">
+                                <div class="mobile-summary-card">
+                                    <strong><i class="fas fa-money-bill-wave mr-1"></i> Harga per Sm³</strong>
+                                    <p class="text-muted mb-0">
+                                        Rp
+                                        {{ number_format($pricingInfo['harga_per_meter_kubik'] ?? ($customer->harga_per_meter_kubik ?? 0), 2) }}
+                                    </p>
+                                </div>
+                            </div>
+                            <div class="col-md-4 col-sm-6">
+                                <div class="mobile-summary-card">
+                                    <strong><i class="fas fa-gas-pump mr-1"></i> Volume Periode Ini</strong>
+                                    <p class="text-muted mb-0">
+                                        {{ number_format($filteredVolumeSm3, 2) }} Sm³
+                                    </p>
+                                </div>
+                            </div>
+                            <div class="col-md-4 col-sm-6">
+                                <div class="mobile-summary-card">
+                                    <strong><i class="fas fa-money-bill-wave mr-1"></i> Pembelian Periode Ini</strong>
+                                    <p class="text-muted mb-0">
+                                        Rp {{ number_format($filteredTotalPurchases, 0) }}
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             {{-- Data Pencatatan Table for FOB (simplified) --}}
             <div class="col-md-12">
                 <div class="card">
@@ -244,19 +301,24 @@
                         </h3>
                     </div>
                     <div class="card-body table-responsive p-0">
-                        <table class="table table-bordered table-striped" id="dataPencatatanTable">
+                        <table class="table table-bordered table-striped custom-datatable" id="dataPencatatanTable">
                             <thead>
                                 <tr>
                                     <th>No</th>
                                     <th>Tanggal</th>
                                     <th>Volume Sm³</th>
+                                    <th>Alamat Pengambilan</th>
                                     <th>Rupiah</th>
                                     <th>Aksi</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 @php $no = 1; @endphp
-                                @foreach ($dataPencatatan as $item)
+                                @foreach ($dataPencatatan->sortBy(function($item) {
+                                    $dataInput = is_string($item->data_input) ? json_decode($item->data_input, true) : (is_array($item->data_input) ? $item->data_input : []);
+                                    $waktuTimestamp = strtotime($dataInput['waktu'] ?? '');
+                                    return $waktuTimestamp ? $waktuTimestamp : 0;
+                                }) as $item)
                                     @php
                                         $dataInput = is_string($item->data_input)
                                             ? json_decode($item->data_input, true)
@@ -266,18 +328,35 @@
 
                                         $volumeSm3 = $dataInput['volume_sm3'] ?? 0;
 
-                                        // Hitung Pembelian
-                                        $pembelian = $volumeSm3 * $customer->harga_per_meter_kubik;
-
                                         // Get the timestamp for data-filter attribute
                                         $waktuTimestamp = strtotime($dataInput['waktu'] ?? '');
                                         $tanggalFilter = $waktuTimestamp ? date('Y-m-d', $waktuTimestamp) : '';
+
+                                        // Ambil waktu untuk mendapatkan pricing yang tepat
+                                        $waktuDateTime = $waktuTimestamp
+                                            ? \Carbon\Carbon::createFromTimestamp($waktuTimestamp)
+                                            : null;
+                                        $waktuYearMonth = $waktuTimestamp ? date('Y-m', $waktuTimestamp) : date('Y-m');
+
+                                        // Ambil pricing info berdasarkan tanggal spesifik
+                                        $itemPricingInfo = $customer->getPricingForYearMonth(
+                                            $waktuYearMonth,
+                                            $waktuDateTime,
+                                        );
+
+                                        // Hitung Pembelian dengan harga sesuai periode
+                                        $hargaPerM3 = floatval(
+                                            $itemPricingInfo['harga_per_meter_kubik'] ??
+                                                $customer->harga_per_meter_kubik,
+                                        );
+                                        $pembelian = $volumeSm3 * $hargaPerM3;
                                     @endphp
                                     <tr data-tanggal="{{ $tanggalFilter }}">
                                         <td>{{ $no++ }}</td>
                                         <td>{{ isset($dataInput['waktu']) ? \Carbon\Carbon::parse($dataInput['waktu'])->format('d M Y H:i') : '-' }}
                                         </td>
                                         <td>{{ number_format($volumeSm3, 2) }}</td>
+                                        <td>{{ $dataInput['alamat_pengambilan'] ?? '-' }}</td>
                                         <td>Rp {{ number_format($pembelian, 2) }}</td>
                                         <td>
                                             <div class="btn-group">
@@ -295,6 +374,11 @@
                                                         onsubmit="return confirm('Apakah Anda yakin ingin menghapus data ini?');">
                                                         @csrf
                                                         @method('DELETE')
+                                                        <input type="hidden" name="bulan"
+                                                            value="{{ $selectedBulan }}">
+                                                        <input type="hidden" name="tahun"
+                                                            value="{{ $selectedTahun }}">
+                                                        <input type="hidden" name="fob" value="1">
                                                         <button type="submit" class="btn btn-danger btn-sm">
                                                             <i class="fas fa-trash"></i>
                                                         </button>
@@ -354,7 +438,6 @@
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        @php $no = 1; @endphp
                                         @php
                                             // Ensure deposit_history is an array before looping
                                             $depositHistory = $customer->deposit_history;
@@ -367,7 +450,23 @@
                                             }
                                         @endphp
 
-                                        @foreach ($depositHistory as $index => $deposit)
+                                        @php
+                                            $no = 1;
+                                            // Sort deposit history by date (newest first)
+                                            $sortedDeposits = collect($depositHistory)
+                                                ->map(function ($deposit, $index) {
+                                                    return [
+                                                        'index' => $index,
+                                                        'date' => $deposit['date'] ?? '',
+                                                        'amount' => $deposit['amount'] ?? 0,
+                                                        'description' => $deposit['description'] ?? '-',
+                                                    ];
+                                                })
+                                                ->sortByDesc('date')
+                                                ->values();
+                                        @endphp
+
+                                        @foreach ($sortedDeposits as $deposit)
                                             <tr>
                                                 <td>{{ $no++ }}</td>
                                                 <td>
@@ -386,7 +485,7 @@
                                                         @csrf
                                                         @method('DELETE')
                                                         <input type="hidden" name="deposit_index"
-                                                            value="{{ $index }}">
+                                                            value="{{ $deposit['index'] }}">
                                                         <button type="submit" class="btn btn-danger btn-sm">
                                                             <i class="fas fa-trash"></i>
                                                         </button>
@@ -447,6 +546,69 @@
                                 </button>
                             </div>
                         </form>
+                    </div>
+                </div>
+            </div>
+            {{-- Riwayat Harga FOB Modal --}}
+            <div class="modal fade" id="pricingHistoryModal" tabindex="-1" role="dialog"
+                aria-labelledby="pricingHistoryModalLabel" aria-hidden="true">
+                <div class="modal-dialog modal-lg" role="document">
+                    <div class="modal-content">
+                        <div class="modal-header bg-info text-white">
+                            <h5 class="modal-title" id="pricingHistoryModalLabel">
+                                <i class="fas fa-history mr-2"></i>Riwayat Harga
+                            </h5>
+                            <button type="button" class="close text-white" data-dismiss="modal" aria-label="Close">
+                                <span aria-hidden="true">&times;</span>
+                            </button>
+                        </div>
+                        <div class="modal-body">
+                            <table class="table table-bordered table-striped" id="pricingHistoryTable">
+                                <thead>
+                                    <tr>
+                                        <th>No</th>
+                                        <th>Periode</th>
+                                        <th>Harga per m³</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @php
+                                        // Ensure pricing_history is an array before looping
+                                        $pricingHistory = $customer->pricing_history;
+                                        if (is_string($pricingHistory)) {
+                                            $pricingHistory = json_decode($pricingHistory, true) ?? [];
+                                        }
+                                        // If it's still not an array (could be null), make it an empty array
+if (!is_array($pricingHistory)) {
+    $pricingHistory = [];
+}
+
+// Sort by date (newest first)
+usort($pricingHistory, function ($a, $b) {
+    $dateA = isset($a['date']) ? strtotime($a['date']) : 0;
+    $dateB = isset($b['date']) ? strtotime($b['date']) : 0;
+                                            return $dateB - $dateA;
+                                        });
+
+                                        $no = 1;
+                                    @endphp
+
+                                    @foreach ($pricingHistory as $pricing)
+                                        <tr>
+                                            <td>{{ $no++ }}</td>
+                                            <td>
+                                                @if (isset($pricing['date']))
+                                                    {{ \Carbon\Carbon::parse($pricing['date'])->format('F Y') }}
+                                                @else
+                                                    Periode tidak tersedia
+                                                @endif
+                                            </td>
+                                            <td>Rp {{ number_format($pricing['harga_per_meter_kubik'] ?? 0, 2) }}</td>
+                                        </tr>
+                                    @endforeach
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -615,10 +777,7 @@
                 "responsive": true,
                 "lengthChange": false,
                 "autoWidth": false,
-                "ordering": true,
-                "order": [
-                    [1, 'desc']
-                ],
+                "ordering": false, // Disable client-side ordering since we're using server-side ordering
                 "language": {
                     "emptyTable": "Tidak ada data pencatatan tersedia",
                     "zeroRecords": "Tidak ada data yang cocok ditemukan",
@@ -632,6 +791,12 @@
                         "next": "Selanjutnya",
                         "previous": "Sebelumnya"
                     }
+                },
+                "paging": true,
+                "info": true,
+                "searching": true,
+                "initComplete": function(settings, json) {
+                    console.log("DataTable initialized with ordering by date (ascending)");
                 }
             });
 
@@ -646,6 +811,21 @@
                 ],
                 "language": {
                     "emptyTable": "Tidak ada riwayat deposit",
+                    "search": "Cari:"
+                }
+            });
+
+            // Initialize DataTable for pricing history modal
+            $("#pricingHistoryTable").DataTable({
+                "responsive": true,
+                "lengthChange": false,
+                "autoWidth": false,
+                "ordering": true,
+                "order": [
+                    [0, 'asc']
+                ],
+                "language": {
+                    "emptyTable": "Tidak ada riwayat harga",
                     "search": "Cari:"
                 }
             });

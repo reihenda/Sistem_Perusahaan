@@ -98,7 +98,7 @@
                         </h3>
                     </div>
                     <div class="card-body table-responsive p-0">
-                        <table class="table table-hover text-nowrap" id="rekapPengambilanTable">
+                        <table class="table table-hover text-nowrap custom-datatable" id="rekapPengambilanTable">
                             <thead>
                                 <tr>
                                     <th>No</th>
@@ -112,7 +112,7 @@
                             </thead>
                             <tbody>
                                 @if (count($rekapPengambilan) > 0)
-                                    @php $no = ($rekapPengambilan->currentPage()-1) * $rekapPengambilan->perPage() + 1; @endphp
+                                    @php $no = 1; @endphp
                                     @foreach ($rekapPengambilan as $rekap)
                                         <tr>
                                             <td>{{ $no++ }}</td>
@@ -153,9 +153,6 @@
                         </table>
                     </div>
                     <div class="card-footer clearfix">
-                        <div class="float-right">
-                            {{ $rekapPengambilan->appends(request()->except('page'))->links() }}
-                        </div>
                     </div>
                 </div>
             </div>
@@ -166,6 +163,34 @@
 @section('js')
     <script>
         $(function() {
+            // DataTables initialization
+            $("#rekapPengambilanTable").DataTable({
+                "responsive": true,
+                "lengthChange": false,
+                "autoWidth": false,
+                "ordering": false, // Disable client-side ordering since we're doing server-side sorting
+                "language": {
+                    "emptyTable": "Tidak ada data rekap pengambilan tersedia",
+                    "zeroRecords": "Tidak ada data yang cocok ditemukan",
+                    "info": "Menampilkan _START_ hingga _END_ dari _TOTAL_ entri",
+                    "infoEmpty": "Menampilkan 0 hingga 0 dari 0 entri",
+                    "infoFiltered": "(disaring dari _MAX_ total entri)",
+                    "search": "Cari:",
+                    "paginate": {
+                        "first": "Pertama",
+                        "last": "Terakhir",
+                        "next": "Selanjutnya",
+                        "previous": "Sebelumnya"
+                    }
+                },
+                "paging": true,
+                "info": true,
+                "searching": true,
+                "initComplete": function(settings, json) {
+                    console.log("DataTable initialized with ordering by customer name (ascending)");
+                }
+            });
+            
             // Auto submit form when date changes
             $('#tanggal').on('change', function() {
                 $(this).closest('form').submit();
