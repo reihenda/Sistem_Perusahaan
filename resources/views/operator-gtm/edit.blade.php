@@ -46,6 +46,15 @@
                             @enderror
                         </div>
                     </div>
+                    
+                    <div class="form-group">
+                        <label for="tanggal_bergabung">Tanggal Bergabung <span class="text-danger">*</span></label>
+                        <input type="date" class="form-control @error('tanggal_bergabung') is-invalid @enderror" id="tanggal_bergabung" name="tanggal_bergabung" value="{{ old('tanggal_bergabung', $operatorGtm->tanggal_bergabung ?? date('Y-m-d')) }}" required>
+                        @error('tanggal_bergabung')
+                            <div class="invalid-feedback">{{ $message }}</div>
+                        @enderror
+                        <small class="form-text text-muted">Tanggal bergabung akan digunakan untuk perhitungan gaji pada periode pertama.</small>
+                    </div>
                 </div>
                 <!-- /.card-body -->
 

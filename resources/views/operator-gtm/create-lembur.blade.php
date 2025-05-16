@@ -24,7 +24,7 @@
                     
                     <div class="form-group">
                         <label for="tanggal">Tanggal <span class="text-danger">*</span></label>
-                        <input type="date" class="form-control @error('tanggal') is-invalid @enderror" id="tanggal" name="tanggal" value="{{ old('tanggal', date('Y-m-d')) }}" required>
+                        <input type="date" class="form-control @error('tanggal') is-invalid @enderror" id="tanggal" name="tanggal" value="{{ old('tanggal', $tanggal) }}" required>
                         @error('tanggal')
                             <div class="invalid-feedback">{{ $message }}</div>
                         @enderror

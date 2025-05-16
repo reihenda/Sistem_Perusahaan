@@ -36,6 +36,7 @@ class OperatorGtmController extends Controller
             'nama' => 'required|string|max:255',
             'lokasi_kerja' => 'required|string|max:255',
             'gaji_pokok' => 'required|numeric|min:0',
+            'tanggal_bergabung' => 'required|date',
         ]);
 
         OperatorGtm::create($validatedData);
@@ -49,15 +50,25 @@ class OperatorGtmController extends Controller
      */
     public function show(Request $request, OperatorGtm $operatorGtm)
     {
-        // Ambil data lembur untuk operator ini
-        $query = $operatorGtm->lemburRecords()->orderBy('tanggal', 'desc');
+        // Ambil semua data lembur untuk operator ini (tidak difilter di database)
+        $lemburRecords = $operatorGtm->lemburRecords()->orderBy('tanggal', 'asc')->get();
         
-        // Filter berdasarkan range tanggal jika ada
-        if ($request->has('start_date') && $request->has('end_date') && $request->start_date && $request->end_date) {
-            $query->whereBetween('tanggal', [$request->start_date, $request->end_date]);
+        // Log untuk debugging
+        \Log::info('Total data lembur operator: ' . count($lemburRecords));
+        foreach ($lemburRecords as $record) {
+            \Log::info('Record: ID=' . $record->id . ' | Tanggal=' . $record->tanggal . ' | Format=' . date('Y-m-d', strtotime($record->tanggal)) . 
+            ' | Raw=' . var_export($record->getOriginal('tanggal'), true));
         }
         
-        $lemburRecords = $query->get();
+        // Jika ada parameter bulan dan tahun
+        if ($request->has('month') && $request->has('year') && $request->month && $request->year) {
+            // Hitung range tanggal dari tanggal 26 bulan sebelumnya sampai tanggal 25 bulan yang dipilih
+            $selectedMonth = $request->month;
+            $selectedYear = $request->year;
+            
+            // Log untuk debugging
+            \Log::info('Filter periode - bulan: ' . $selectedMonth . ', tahun: ' . $selectedYear);
+        }
             
         return view('operator-gtm.show', compact('operatorGtm', 'lemburRecords'));
     }
@@ -79,6 +90,7 @@ class OperatorGtmController extends Controller
             'nama' => 'required|string|max:255',
             'lokasi_kerja' => 'required|string|max:255',
             'gaji_pokok' => 'required|numeric|min:0',
+            'tanggal_bergabung' => 'required|date',
         ]);
 
         $operatorGtm->update($validatedData);
@@ -101,9 +113,12 @@ class OperatorGtmController extends Controller
     /**
      * Menampilkan form untuk tambah data lembur
      */
-    public function createLembur(OperatorGtm $operatorGtm)
+    public function createLembur(Request $request, OperatorGtm $operatorGtm)
     {
-        return view('operator-gtm.create-lembur', compact('operatorGtm'));
+        // Periksa apakah ada parameter tanggal di URL
+        $tanggal = $request->query('tanggal') ?: date('Y-m-d');
+        
+        return view('operator-gtm.create-lembur', compact('operatorGtm', 'tanggal'));
     }
 
     /**

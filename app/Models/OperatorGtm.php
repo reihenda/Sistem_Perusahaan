@@ -15,6 +15,7 @@ class OperatorGtm extends Model
         'nama',
         'lokasi_kerja',
         'gaji_pokok',
+        'tanggal_bergabung',
     ];
 
     /**
