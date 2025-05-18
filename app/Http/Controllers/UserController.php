@@ -347,6 +347,12 @@ class UserController extends Controller
             $dataPencatatans = $customer->dataPencatatan()->get();
 
             $totalPembelian = 0;
+            
+            // Logging untuk debugging
+            \Log::info('Jumlah data pencatatan untuk rekalkulasi', [
+                'user_id' => $customer->id,
+                'total_data' => count($dataPencatatans)
+            ]);
 
             foreach ($dataPencatatans as $dataPencatatan) {
                 $dataInput = $this->ensureArray($dataPencatatan->data_input);
@@ -370,6 +376,10 @@ class UserController extends Controller
 
                     $volumeSm3 = $volumeFlowMeter * $koreksiMeter;
                     $pembelian = $volumeSm3 * $hargaPerM3;
+                    
+                    // Update juga harga final di data pencatatan
+                    $dataPencatatan->harga_final = round($pembelian, 2);
+                    $dataPencatatan->save();
 
                     // Logging untuk debugging
                     \Log::debug('Perhitungan item pembelian dalam rekalkulasi', [
@@ -380,6 +390,7 @@ class UserController extends Controller
                         'hargaPerM3' => $hargaPerM3,
                         'volumeSm3' => $volumeSm3,
                         'pembelian' => $pembelian,
+                        'harga_final_updated' => $dataPencatatan->harga_final,
                         'is_periode_khusus' => isset($pricingInfo['type']) && $pricingInfo['type'] === 'custom_period'
                     ]);
 

@@ -440,6 +440,14 @@ class User extends Authenticatable
         if ($specificDate) {
             // Jika ada tanggal spesifik, konversi ke objek Carbon
             $specificDateTime = $specificDate instanceof Carbon ? $specificDate : Carbon::parse($specificDate);
+            
+            // Log untuk debugging
+            \Log::debug('getPricingForYearMonth dengan tanggal spesifik', [
+                'user_id' => $this->id,
+                'yearMonth' => $yearMonth,
+                'specificDate' => $specificDateTime->format('Y-m-d H:i:s'),
+                'pricingHistory_count' => count($pricingHistory)
+            ]);
         }
         
         // Periksa terlebih dahulu apakah ada periode khusus yang mencakup tanggal spesifik
@@ -451,6 +459,12 @@ class User extends Authenticatable
                     
                     // Jika tanggal spesifik berada dalam rentang periode khusus
                     if ($specificDateTime->between($startDate, $endDate)) {
+                        \Log::debug('Menemukan periode khusus yang cocok', [
+                            'start_date' => $startDate->format('Y-m-d'),
+                            'end_date' => $endDate->format('Y-m-d'),
+                            'harga_per_meter_kubik' => $entry['harga_per_meter_kubik'],
+                            'koreksi_meter' => $entry['koreksi_meter']
+                        ]);
                         return $entry;
                     }
                 }
@@ -460,17 +474,30 @@ class User extends Authenticatable
         // Jika tidak ada periode khusus yang cocok, cari berdasarkan year_month
         foreach ($pricingHistory as $entry) {
             if (isset($entry['year_month']) && $entry['year_month'] === $yearMonth) {
+                \Log::debug('Menemukan pricing bulanan yang cocok', [
+                    'year_month' => $yearMonth,
+                    'harga_per_meter_kubik' => $entry['harga_per_meter_kubik'],
+                    'koreksi_meter' => $entry['koreksi_meter']
+                ]);
                 return $entry;
             }
         }
 
         // Jika tidak ditemukan, kembalikan data pricing terakhir
-        return [
+        $defaultPricing = [
             'harga_per_meter_kubik' => $this->harga_per_meter_kubik,
             'tekanan_keluar' => $this->tekanan_keluar,
             'suhu' => $this->suhu,
             'koreksi_meter' => $this->koreksi_meter
         ];
+        
+        \Log::debug('Menggunakan default pricing', [
+            'year_month' => $yearMonth,
+            'harga_per_meter_kubik' => $defaultPricing['harga_per_meter_kubik'],
+            'koreksi_meter' => $defaultPricing['koreksi_meter']
+        ]);
+        
+        return $defaultPricing;
     }
 
     // Mendapatkan koreksi meter untuk tanggal tertentu
@@ -722,27 +749,32 @@ class User extends Authenticatable
 
                     $recordDate = Carbon::parse($dataInput['pembacaan_awal']['waktu']);
                     if ($recordDate < $startDate) {
-                        $volumeFlowMeter = floatval($dataInput['volume_flow_meter'] ?? 0);
-                        $recordYearMonth = $recordDate->format('Y-m');
+                        // Untuk perhitungan yang lebih akurat, gunakan harga_final dari record
+                        // Ini akan memastikan konsistensi dengan saldo total
+                        $itemPurchase = floatval($record->harga_final ?? 0);
                         
-                        // PERBAIKAN: Gunakan tanggal spesifik untuk mendapatkan pricing yang tepat
-                        $pricingInfo = $this->getPricingForYearMonth($recordYearMonth, $recordDate);
-                        
-                        $koreksiMeter = floatval($pricingInfo['koreksi_meter'] ?? $this->koreksi_meter);
-                        $hargaPerM3 = floatval($pricingInfo['harga_per_meter_kubik'] ?? $this->harga_per_meter_kubik);
+                        // Fallback ke perhitungan manual jika harga_final tidak tersedia atau nol
+                        if ($itemPurchase <= 0) {
+                            $volumeFlowMeter = floatval($dataInput['volume_flow_meter'] ?? 0);
+                            $recordYearMonth = $recordDate->format('Y-m');
+                            
+                            // PERBAIKAN: Gunakan tanggal spesifik untuk mendapatkan pricing yang tepat
+                            $pricingInfo = $this->getPricingForYearMonth($recordYearMonth, $recordDate);
+                            
+                            $koreksiMeter = floatval($pricingInfo['koreksi_meter'] ?? $this->koreksi_meter);
+                            $hargaPerM3 = floatval($pricingInfo['harga_per_meter_kubik'] ?? $this->harga_per_meter_kubik);
 
-                        $volumeSm3 = $volumeFlowMeter * $koreksiMeter;
-                        $itemPurchase = $volumeSm3 * $hargaPerM3;
+                            $volumeSm3 = $volumeFlowMeter * $koreksiMeter;
+                            $itemPurchase = $volumeSm3 * $hargaPerM3;
+                        }
+                        
                         $prevPurchases += $itemPurchase;
                         
                         \Log::debug('Perhitungan item pembelian sebelumnya', [
                             'record_id' => $record->id,
                             'date' => $recordDate->format('Y-m-d H:i:s'),
-                            'volumeFlowMeter' => $volumeFlowMeter,
-                            'koreksiMeter' => $koreksiMeter,
-                            'hargaPerM3' => $hargaPerM3,
-                            'volumeSm3' => $volumeSm3,
-                            'pembelian' => $itemPurchase
+                            'harga_final' => $record->harga_final,
+                            'calculated_purchase' => $itemPurchase
                         ]);
                     }
                 }
@@ -792,27 +824,32 @@ class User extends Authenticatable
 
                     $recordDate = Carbon::parse($dataInput['pembacaan_awal']['waktu']);
                     if ($recordDate->format('Y-m') === $currentYM) {
-                        $volumeFlowMeter = floatval($dataInput['volume_flow_meter'] ?? 0);
+                        // Untuk perhitungan yang lebih akurat, gunakan harga_final dari record
+                        // Ini akan memastikan konsistensi dengan saldo total
+                        $itemPurchase = floatval($record->harga_final ?? 0);
                         
-                        // PERBAIKAN: Gunakan tanggal spesifik untuk mendapatkan pricing yang tepat
-                        $pricingInfo = $this->getPricingForYearMonth($currentYM, $recordDate);
-                        
-                        $koreksiMeter = floatval($pricingInfo['koreksi_meter'] ?? $this->koreksi_meter);
-                        $hargaPerM3 = floatval($pricingInfo['harga_per_meter_kubik'] ?? $this->harga_per_meter_kubik);
+                        // Fallback ke perhitungan manual jika harga_final tidak tersedia atau nol
+                        if ($itemPurchase <= 0) {
+                            $volumeFlowMeter = floatval($dataInput['volume_flow_meter'] ?? 0);
+                            
+                            // PERBAIKAN: Gunakan tanggal spesifik untuk mendapatkan pricing yang tepat
+                            $pricingInfo = $this->getPricingForYearMonth($currentYM, $recordDate);
+                            
+                            $koreksiMeter = floatval($pricingInfo['koreksi_meter'] ?? $this->koreksi_meter);
+                            $hargaPerM3 = floatval($pricingInfo['harga_per_meter_kubik'] ?? $this->harga_per_meter_kubik);
 
-                        $volumeSm3 = $volumeFlowMeter * $koreksiMeter;
-                        $itemPurchase = $volumeSm3 * $hargaPerM3;
+                            $volumeSm3 = $volumeFlowMeter * $koreksiMeter;
+                            $itemPurchase = $volumeSm3 * $hargaPerM3;
+                        }
+                        
                         $monthPurchase += $itemPurchase;
                         
                         \Log::debug('Perhitungan item pembelian bulan ini', [
                             'record_id' => $record->id,
                             'date' => $recordDate->format('Y-m-d H:i:s'),
-                            'volumeFlowMeter' => $volumeFlowMeter,
-                            'koreksiMeter' => $koreksiMeter,
-                            'hargaPerM3' => $hargaPerM3,
-                            'volumeSm3' => $volumeSm3,
-                            'pembelian' => $itemPurchase,
-                            'is_periode_khusus' => isset($pricingInfo['type']) && $pricingInfo['type'] === 'custom_period'
+                            'harga_final' => $record->harga_final,
+                            'calculated_purchase' => $itemPurchase,
+                            'is_periode_khusus' => isset($pricingInfo) && isset($pricingInfo['type']) && $pricingInfo['type'] === 'custom_period'
                         ]);
                     }
                 }
@@ -831,6 +868,19 @@ class User extends Authenticatable
 
                 // Pindah ke bulan berikutnya
                 $currentDate->addMonth();
+            }
+
+            // Kunci tambahan untuk memastikan saldo total sesuai dengan perhitungan real-time
+            // Mencatat saldo untuk bulan berjalan (untuk halaman detail customer)
+            $currentMonth = now()->format('Y-m');
+            if (isset($monthlyBalances[$currentMonth])) {
+                \Log::info('Saldo bulan berjalan', [
+                    'month' => $currentMonth,
+                    'balance' => $monthlyBalances[$currentMonth],
+                    'total_deposit' => $this->total_deposit,
+                    'total_purchases' => $this->total_purchases,
+                    'saldo_total' => $this->total_deposit - $this->total_purchases
+                ]);
             }
 
             // Simpan saldo bulanan yang sudah diupdate

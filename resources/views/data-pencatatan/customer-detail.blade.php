@@ -98,10 +98,11 @@
                             </div>
                             <div class="col-md-3 col-sm-6">
                                 <div class="mobile-summary-card">
-                                    <strong><i class="fas fa-wallet mr-1"></i> Saldo</strong>
+                                    <strong><i class="fas fa-wallet mr-1"></i> Saldo Total</strong>
                                     <p class="text-muted mb-0">
                                         Rp
                                         {{ number_format(($customer->total_deposit ?? 0) - ($customer->total_purchases ?? 0), 0) }}
+                                        <span class="badge badge-info" title="Saldo total dari seluruh periode"><i class="fas fa-info-circle"></i></span>
                                     </p>
                                 </div>
                             </div>
@@ -180,6 +181,16 @@
                             <i class="fas fa-calendar-alt mr-2"></i>
                             Informasi Periode Tahunan: {{ $selectedTahun }}
                         </h3>
+                        <div class="card-tools">
+                            <a href="{{ route('data-pencatatan.customer-detail', [
+                                'customer' => $customer->id,
+                                'bulan' => $selectedBulan,
+                                'tahun' => $selectedTahun,
+                                'refresh' => true
+                            ]) }}" class="btn btn-warning btn-sm">
+                                <i class="fas fa-sync-alt mr-1"></i> Selaraskan Data
+                            </a>
+                        </div>
                     </div>
                     <div class="card-body">
                         <div class="row">
@@ -277,10 +288,11 @@
                             </div>
                             <div class="col-md-3 col-sm-6">
                                 <div class="mobile-summary-card">
-                                    <strong><i class="fas fa-balance-scale mr-1"></i> Saldo Bulan Ini</strong>
+                                    <strong><i class="fas fa-balance-scale mr-1"></i> Saldo Periode Bulan Ini</strong>
                                     <p class="text-muted mb-0">
                                         Rp
                                         {{ number_format($filteredTotalDeposits - $filteredTotalPurchases + $prevMonthBalance, 0) }}
+                                        <span class="badge badge-info" title="Saldo untuk periode bulan yang dipilih saja"><i class="fas fa-info-circle"></i></span>
                                     </p>
                                 </div>
                             </div>
@@ -291,8 +303,18 @@
                                     style="background-color: #f8fafc; border: 1px solid #e2e8f0;">
                                     <span class="info-box-icon bg-info"><i class="fas fa-calculator"></i></span>
                                     <div class="info-box-content">
-                                        <span class="info-box-text">Informasi Saldo Bulan
+                                        <span class="info-box-text d-flex justify-content-between align-items-center">
+                                            <span>Informasi Saldo Bulan
                                             {{ \Carbon\Carbon::createFromDate($selectedTahun, $selectedBulan, 1)->format('F Y') }}</span>
+                                            <a href="{{ route('data-pencatatan.customer-detail', [
+                                                'customer' => $customer->id,
+                                                'bulan' => $selectedBulan,
+                                                'tahun' => $selectedTahun,
+                                                'refresh' => true
+                                            ]) }}" class="btn btn-warning btn-sm" title="Selaraskan Data">
+                                                <i class="fas fa-sync-alt"></i>
+                                            </a>
+                                        </span>
                                         <div class="table-responsive mt-2">
                                             <table class="table table-sm table-bordered">
                                                 <tr>
@@ -384,8 +406,11 @@
                                                         $realTimeFilteredTotalPurchases;
                                                 @endphp
                                                 <tr class="font-weight-bold">
-                                                    <td>= Saldo Bulan Ini</td>
+                                                    <td>= Sisa Saldo Periode Bulan Ini</td>
                                                     <td>Rp {{ number_format($realTimeCurrentMonthBalance, 0) }}</td>
+                                                </tr>
+                                                <tr>
+                                                    <td colspan="2" class="text-muted"><small>* Saldo ini hanya menunjukkan saldo untuk periode {{ \Carbon\Carbon::createFromDate($selectedTahun, $selectedBulan, 1)->format('F Y') }} saja</small></td>
                                                 </tr>
                                             </table>
                                         </div>
@@ -1334,6 +1359,23 @@
             border-color: #80bdff;
             box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
         }
+        
+        /* Styling untuk badge info */
+        .badge-info {
+            background-color: #17a2b8;
+            color: white;
+            cursor: help;
+            margin-left: 5px;
+            padding: 2px 5px;
+        }
+        
+        /* Styling untuk tombol selaraskan data */
+        .btn-warning.btn-sm {
+            padding: 0.25rem 0.5rem;
+            font-size: 0.765625rem;
+            line-height: 1.5;
+            border-radius: 0.2rem;
+        }
 
         /* Memperbaiki tampilan input type="month" pada berbagai browser */
         input[type="month"] {
@@ -1364,6 +1406,9 @@
                 let fileName = $(this).val().split('\\').pop();
                 $(this).next('.custom-file-label').addClass('selected').html(fileName);
             });
+
+            // Initialize tooltips
+            $('[data-toggle="tooltip"], [title]').tooltip();
 
             // Show template modal when clicking on template link
             $('#btnShowTemplate, #btnViewTemplate').on('click', function(e) {

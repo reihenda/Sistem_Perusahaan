@@ -65,6 +65,14 @@ class DataPencatatan extends Model
             return false;
         }
 
+        // Log untuk debugging
+        \Log::debug('Memulai perhitungan harga_final di hitungHarga()', [
+            'record_id' => $this->id,
+            'customer_id' => $customer->id,
+            'date' => $waktuPencatatanAwal->format('Y-m-d H:i:s'),
+            'volume_flow_meter' => $volumeFlowMeter,
+        ]);
+
         // Get pricing for the date
         $yearMonth = $waktuPencatatanAwal->format('Y-m');
         $pricingInfo = $customer->getPricingForYearMonth($yearMonth, $waktuPencatatanAwal);
@@ -76,6 +84,16 @@ class DataPencatatan extends Model
         // Calculate price
         $hargaPerM3 = floatval($pricingInfo['harga_per_meter_kubik'] ?? $customer->harga_per_meter_kubik);
         $harga = $volumeSm3 * $hargaPerM3;
+
+        // Log hasil perhitungan untuk verifikasi
+        \Log::debug('Hasil perhitungan harga', [
+            'record_id' => $this->id,
+            'koreksi_meter' => $koreksiMeter,
+            'volume_sm3' => $volumeSm3,
+            'harga_per_m3' => $hargaPerM3,
+            'hasil_harga' => $harga,
+            'is_periode_khusus' => isset($pricingInfo['type']) && $pricingInfo['type'] === 'custom_period'
+        ]);
 
         // Set harga_final
         $this->harga_final = round($harga, 2);

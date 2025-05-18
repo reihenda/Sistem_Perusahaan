@@ -260,6 +260,39 @@ class DataPencatatanController extends Controller
         // Cek apakah perlu refresh data
         $refresh = $request->has('refresh');
 
+        // Jika ada request refresh, rekalkulasi total_purchases dan update saldo bulanan
+        if ($refresh) {
+            \Log::info('Melakukan rekalkulasi data karena parameter refresh', [
+                'customer_id' => $customer->id,
+                'bulan' => $bulan,
+                'tahun' => $tahun
+            ]);
+            
+            // Rekalkulasi total_purchases
+            $newTotal = app(UserController::class)->rekalkulasiTotalPembelian($customer);
+            
+            \Log::info('Hasil rekalkulasi total_purchases', [
+                'customer_id' => $customer->id,
+                'total_purchases' => $newTotal
+            ]);
+            
+            // Update saldo bulanan
+            $updateResult = $customer->updateMonthlyBalances();
+            
+            \Log::info('Hasil update bulanan', [
+                'customer_id' => $customer->id,
+                'success' => $updateResult
+            ]);
+            
+            // Reload customer untuk mendapatkan data terbaru
+            $customer = User::findOrFail($customer->id);
+            
+            // Tambahkan pesan sukses jika refresh dilakukan
+            if (!$request->has('skip_flash')) {
+                \Session::flash('success', 'Data berhasil diselaraskan');
+            }
+        }
+
         // Selalu refresh data jika ada perubahan harga atau deposit
         $customer->updateMonthlyBalances();
 
@@ -600,6 +633,17 @@ class DataPencatatanController extends Controller
 
         // Update saldo bulanan mulai dari bulan data baru
         $customer->updateMonthlyBalances($startMonth);
+        
+        // Logging untuk debug
+        \Log::info('Data pencatatan berhasil disimpan', [
+            'record_id' => $dataPencatatan->id,
+            'customer_id' => $customer->id,
+            'date' => $waktuPencatatan->format('Y-m-d H:i:s'),
+            'harga_final' => $dataPencatatan->harga_final,
+            'customer_total_purchases' => $customer->total_purchases,
+            'customer_total_deposit' => $customer->total_deposit,
+            'customer_saldo' => $customer->total_deposit - $customer->total_purchases
+        ]);
 
         return redirect()->route('data-pencatatan.customer-detail', [
             'customer' => $validatedData['customer_id'],
@@ -733,6 +777,15 @@ class DataPencatatanController extends Controller
             ? Carbon::parse($oldData['pembacaan_awal']['waktu'])->format('Y-m')
             : null;
 
+        // Logging data lama untuk debugging
+        \Log::debug('Data lama sebelum update', [
+            'record_id' => $dataPencatatan->id,
+            'old_data' => $oldData,
+            'old_volume_flow_meter' => floatval($oldData['volume_flow_meter'] ?? 0),
+            'old_harga_final' => $dataPencatatan->harga_final,
+            'old_month' => $oldMonth
+        ]);
+        
         // Konversi data input ke JSON
         $dataInput = json_encode($sanitizedDataInput);
 
@@ -741,10 +794,21 @@ class DataPencatatanController extends Controller
         $dataPencatatan->data_input = $dataInput;
         $dataPencatatan->nama_customer = $customer->name;
 
+        // Simpan harga lama sebelum dihitung ulang
+        $oldHarga = $dataPencatatan->harga_final;
+
         // Hitung ulang harga
         $dataPencatatan->hitungHarga();
 
         $dataPencatatan->save();
+
+        // Logging data baru untuk debugging
+        \Log::debug('Data baru setelah update', [
+            'record_id' => $dataPencatatan->id,
+            'new_volume_flow_meter' => floatval($sanitizedDataInput['volume_flow_meter'] ?? 0),
+            'new_harga_final' => $dataPencatatan->harga_final,
+            'harga_difference' => $dataPencatatan->harga_final - $oldHarga
+        ]);
 
         // Rekalkulasi total pembelian customer setelah update data
         app(UserController::class)->rekalkulasiTotalPembelian($customer);
@@ -758,6 +822,16 @@ class DataPencatatanController extends Controller
 
         // Update saldo bulanan mulai dari bulan data
         $customer->updateMonthlyBalances($startMonth);
+        
+        // Logging untuk debug
+        \Log::info('Data pencatatan berhasil diupdate', [
+            'record_id' => $dataPencatatan->id,
+            'customer_id' => $customer->id,
+            'new_date' => $waktuPencatatan->format('Y-m-d H:i:s'),
+            'customer_total_purchases' => $customer->total_purchases,
+            'customer_total_deposit' => $customer->total_deposit,
+            'customer_saldo' => $customer->total_deposit - $customer->total_purchases
+        ]);
 
         return redirect()->route('data-pencatatan.customer-detail', [
             'customer' => $validatedData['customer_id'],
@@ -998,6 +1072,14 @@ class DataPencatatanController extends Controller
         $dataInput = $this->ensureArray($dataPencatatan->data_input);
         $customer_id = $dataPencatatan->customer_id;
         $customer = User::findOrFail($customer_id);
+        
+        // Logging data yang akan dihapus
+        \Log::info('Menghapus data pencatatan', [
+            'record_id' => $dataPencatatan->id,
+            'customer_id' => $customer_id,
+            'harga_final' => $dataPencatatan->harga_final,
+            'data_input' => $dataInput
+        ]);
 
         // Ambil waktu pembacaan awal untuk menentukan bulan mulai update saldo
         $startMonth = null;
@@ -1025,16 +1107,29 @@ class DataPencatatanController extends Controller
                 ]);
             }
         }
+        
+        // Ambil nilai total sebelum penghapusan untuk perbandingan
+        $oldTotalPurchases = $customer->total_purchases;
 
         // Hapus data pencatatan
         $dataPencatatan->delete();
 
         // Rekalkulasi total pembelian customer setelah menghapus data
+        $newTotalPurchases = 0;
         if ($customer->isFOB()) {
-            app(UserController::class)->rekalkulasiTotalPembelianFob($customer);
+            $newTotalPurchases = app(UserController::class)->rekalkulasiTotalPembelianFob($customer);
         } else {
-            app(UserController::class)->rekalkulasiTotalPembelian($customer);
+            $newTotalPurchases = app(UserController::class)->rekalkulasiTotalPembelian($customer);
         }
+        
+        // Logging perubahan total
+        \Log::info('Perubahan total setelah hapus data', [
+            'customer_id' => $customer_id,
+            'old_total_purchases' => $oldTotalPurchases,
+            'new_total_purchases' => $newTotalPurchases,
+            'difference' => $oldTotalPurchases - $newTotalPurchases,
+            'deleted_harga_final' => $dataPencatatan->harga_final
+        ]);
 
         // Update saldo bulanan mulai dari bulan data yang dihapus
         if ($startMonth) {
