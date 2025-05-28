@@ -129,18 +129,18 @@
                                     <div class="form-group">
                                         <label>Bulan:</label>
                                         <select class="form-control" name="month" id="month">
-                                            <option value="01" {{ request('month') == '01' ? 'selected' : '' }}>Januari</option>
-                                            <option value="02" {{ request('month') == '02' ? 'selected' : '' }}>Februari</option>
-                                            <option value="03" {{ request('month') == '03' ? 'selected' : '' }}>Maret</option>
-                                            <option value="04" {{ request('month') == '04' ? 'selected' : '' }}>April</option>
-                                            <option value="05" {{ request('month') == '05' ? 'selected' : '' }}>Mei</option>
-                                            <option value="06" {{ request('month') == '06' ? 'selected' : '' }}>Juni</option>
-                                            <option value="07" {{ request('month') == '07' ? 'selected' : '' }}>Juli</option>
-                                            <option value="08" {{ request('month') == '08' ? 'selected' : '' }}>Agustus</option>
-                                            <option value="09" {{ request('month') == '09' ? 'selected' : '' }}>September</option>
-                                            <option value="10" {{ request('month') == '10' ? 'selected' : '' }}>Oktober</option>
-                                            <option value="11" {{ request('month') == '11' ? 'selected' : '' }}>November</option>
-                                            <option value="12" {{ request('month') == '12' ? 'selected' : '' }}>Desember</option>
+                                            <option value="01" {{ ($selectedMonth ?? request('month')) == '01' ? 'selected' : '' }}>Januari</option>
+                                            <option value="02" {{ ($selectedMonth ?? request('month')) == '02' ? 'selected' : '' }}>Februari</option>
+                                            <option value="03" {{ ($selectedMonth ?? request('month')) == '03' ? 'selected' : '' }}>Maret</option>
+                                            <option value="04" {{ ($selectedMonth ?? request('month')) == '04' ? 'selected' : '' }}>April</option>
+                                            <option value="05" {{ ($selectedMonth ?? request('month')) == '05' ? 'selected' : '' }}>Mei</option>
+                                            <option value="06" {{ ($selectedMonth ?? request('month')) == '06' ? 'selected' : '' }}>Juni</option>
+                                            <option value="07" {{ ($selectedMonth ?? request('month')) == '07' ? 'selected' : '' }}>Juli</option>
+                                            <option value="08" {{ ($selectedMonth ?? request('month')) == '08' ? 'selected' : '' }}>Agustus</option>
+                                            <option value="09" {{ ($selectedMonth ?? request('month')) == '09' ? 'selected' : '' }}>September</option>
+                                            <option value="10" {{ ($selectedMonth ?? request('month')) == '10' ? 'selected' : '' }}>Oktober</option>
+                                            <option value="11" {{ ($selectedMonth ?? request('month')) == '11' ? 'selected' : '' }}>November</option>
+                                            <option value="12" {{ ($selectedMonth ?? request('month')) == '12' ? 'selected' : '' }}>Desember</option>
                                         </select>
                                     </div>
                                 </div>
@@ -154,7 +154,7 @@
                                                 $endYear = $currentYear + 5;
                                             @endphp
                                             @for($year = $startYear; $year <= $endYear; $year++)
-                                                <option value="{{ $year }}" {{ (request('year') == $year || (!request('year') && $year == $currentYear)) ? 'selected' : '' }}>{{ $year }}</option>
+                                                <option value="{{ $year }}" {{ (($selectedYear ?? request('year')) == $year || (!request('year') && !isset($selectedYear) && $year == $currentYear)) ? 'selected' : '' }}>{{ $year }}</option>
                                             @endfor
                                         </select>
                                     </div>
@@ -190,21 +190,20 @@
                         <h3 class="card-title">
                             <i class="fas fa-chart-line mr-2"></i>
                             Ringkasan Lembur
-                            @if(request('month') && request('year'))
-                                @php
-                                    $selectedMonth = request('month');
-                                    $selectedYear = request('year');
-                                    
-                                    // Tanggal 26 bulan sebelumnya
-                                    $prevMonth = $selectedMonth == '01' ? '12' : str_pad((int)$selectedMonth - 1, 2, '0', STR_PAD_LEFT);
-                                    $prevYear = $selectedMonth == '01' ? $selectedYear - 1 : $selectedYear;
-                                    $startDate = Carbon\Carbon::createFromFormat('Y-m-d', $prevYear . '-' . $prevMonth . '-26');
-                                    
-                                    // Tanggal 25 bulan yang dipilih
-                                    $endDate = Carbon\Carbon::createFromFormat('Y-m-d', $selectedYear . '-' . $selectedMonth . '-25');
-                                @endphp
-                                - {{ $startDate->format('d M Y') }} s/d {{ $endDate->format('d M Y') }}
-                            @endif
+                            @php
+                                // Set default jika tidak ada nilai dari controller
+                                $displayMonth = $selectedMonth ?? date('m');
+                                $displayYear = $selectedYear ?? date('Y');
+                                
+                                // Tanggal 26 bulan sebelumnya
+                                $prevMonth = $displayMonth == '01' ? '12' : str_pad((int)$displayMonth - 1, 2, '0', STR_PAD_LEFT);
+                                $prevYear = $displayMonth == '01' ? $displayYear - 1 : $displayYear;
+                                $startDate = Carbon\Carbon::createFromFormat('Y-m-d', $prevYear . '-' . $prevMonth . '-26');
+                                
+                                // Tanggal 25 bulan yang dipilih
+                                $endDate = Carbon\Carbon::createFromFormat('Y-m-d', $displayYear . '-' . $displayMonth . '-25');
+                            @endphp
+                            - {{ $startDate->format('d M Y') }} s/d {{ $endDate->format('d M Y') }}
                         </h3>
                     </div>
                     <div class="card-body">
@@ -215,44 +214,40 @@
                                     <div class="info-box-content">
                                         <span class="info-box-text">Total Jam Lembur</span>
                                         <span class="info-box-number">
-                                            @if(request('month') && request('year'))
-                                                @php
-                                                    // Debug filtering process
-                                                    echo "<!-- DEBUG Filtering Process -->";
-                                                    
-                                                    // Buat string tanggal yang pasti untuk perbandingan
-                                                    $startDateStr = $startDate->format('Y-m-d');  
-                                                    $endDateStr = $endDate->format('Y-m-d');
-                                                    echo "<!-- START: $startDateStr, END: $endDateStr -->";
-                                                    
-                                                    // Gunakan metode yang sama dengan logika yang digunakan untuk tabel
-                                                    $filteredRecords = collect([]);
-                                                    foreach ($lemburRecords as $record) {
-                                                        $recordDateStr = date('Y-m-d', strtotime($record->tanggal));
-                                                        // Pembandingan langsung dengan string tanggal
-                                                        if ($recordDateStr >= $startDateStr && $recordDateStr <= $endDateStr) {
+                                            @php
+                                                // Debug filtering process
+                                                echo "<!-- DEBUG Filtering Process -->";
+                                                
+                                                // Buat string tanggal yang pasti untuk perbandingan
+                                                $startDateStr = $startDate->format('Y-m-d');  
+                                                $endDateStr = $endDate->format('Y-m-d');
+                                                echo "<!-- START: $startDateStr, END: $endDateStr -->";
+                                                
+                                                // Gunakan metode yang sama dengan logika yang digunakan untuk tabel
+                                                $filteredRecords = collect([]);
+                                                foreach ($lemburRecords as $record) {
+                                                    $recordDateStr = date('Y-m-d', strtotime($record->tanggal));
+                                                    // Pembandingan langsung dengan string tanggal
+                                                    if ($recordDateStr >= $startDateStr && $recordDateStr <= $endDateStr) {
+                                                        $filteredRecords->push($record);
+                                                        echo "<!-- Including Record ID: " . $record->id . " | Date: " . $recordDateStr . " -->";
+                                                    } else {
+                                                        echo "<!-- Excluding Record ID: " . $record->id . " | Date: " . $recordDateStr . " -->";
+                                                        // Cek if dates are close (within 1 day)
+                                                        $startDiff = abs(strtotime($recordDateStr) - strtotime($startDateStr));
+                                                        $endDiff = abs(strtotime($recordDateStr) - strtotime($endDateStr));
+                                                        if ($startDiff < 86400 || $endDiff < 86400) {
+                                                            echo "<!-- But it's a close match, including anyway -->";
                                                             $filteredRecords->push($record);
-                                                            echo "<!-- Including Record ID: " . $record->id . " | Date: " . $recordDateStr . " -->";
-                                                        } else {
-                                                            echo "<!-- Excluding Record ID: " . $record->id . " | Date: " . $recordDateStr . " -->";
-                                                            // Cek if dates are close (within 1 day)
-                                                            $startDiff = abs(strtotime($recordDateStr) - strtotime($startDateStr));
-                                                            $endDiff = abs(strtotime($recordDateStr) - strtotime($endDateStr));
-                                                            if ($startDiff < 86400 || $endDiff < 86400) {
-                                                                echo "<!-- But it's a close match, including anyway -->";
-                                                                $filteredRecords->push($record);
-                                                            }
                                                         }
                                                     }
-                                                    
-                                                    echo "<!-- FILTERED RECORDS COUNT: " . count($filteredRecords) . " -->";
-                                                    
-                                                    $totalJamLembur = $filteredRecords->sum('total_jam_lembur');
-                                                    echo floor($totalJamLembur / 60) . ' jam ' . ($totalJamLembur % 60) . ' menit';
-                                                @endphp
-                                            @else
-                                                <span class="text-muted">Pilih periode terlebih dahulu</span>
-                                            @endif
+                                                }
+                                                
+                                                echo "<!-- FILTERED RECORDS COUNT: " . count($filteredRecords) . " -->";
+                                                
+                                                $totalJamLembur = $filteredRecords->sum('total_jam_lembur');
+                                                echo floor($totalJamLembur / 60) . ' jam ' . ($totalJamLembur % 60) . ' menit';
+                                            @endphp
                                         </span>
                                     </div>
                                 </div>
@@ -263,14 +258,10 @@
                                     <div class="info-box-content">
                                         <span class="info-box-text">Total Upah Lembur</span>
                                         <span class="info-box-number">
-                                            @if(request('month') && request('year'))
-                                                @php
-                                                    $totalUpahLembur = $filteredRecords->sum('upah_lembur');
-                                                @endphp
-                                                Rp {{ number_format($totalUpahLembur, 0, ',', '.') }}
-                                            @else
-                                                <span class="text-muted">Pilih periode terlebih dahulu</span>
-                                            @endif
+                                            @php
+                                                $totalUpahLembur = $filteredRecords->sum('upah_lembur');
+                                            @endphp
+                                            Rp {{ number_format($totalUpahLembur, 0, ',', '.') }}
                                         </span>
                                     </div>
                                 </div>
@@ -286,36 +277,26 @@
                                             @php
                                                 // Default gaji pokok penuh
                                                 $gajiPokok = $operatorGtm->gaji_pokok;
-                                                $totalUpahLembur = 0;
                                                 
-                                                if (request('month') && request('year')) {
                                                 // Tanggal bergabung operator
-                                                    $tanggalBergabung = $operatorGtm->tanggal_bergabung 
-                                                        ? \Carbon\Carbon::parse($operatorGtm->tanggal_bergabung)
-                                                        : \Carbon\Carbon::parse($operatorGtm->created_at);
+                                                $tanggalBergabung = $operatorGtm->tanggal_bergabung 
+                                                    ? \Carbon\Carbon::parse($operatorGtm->tanggal_bergabung)
+                                                    : \Carbon\Carbon::parse($operatorGtm->created_at);
+                                                
+                                                // Jika tanggal bergabung ada di antara periode yang dipilih
+                                                if ($tanggalBergabung->gt($startDate) && $tanggalBergabung->lte($endDate)) {
+                                                    // Hitung proporsi gaji berdasarkan jumlah hari aktif
+                                                    $totalHariPeriode = $startDate->diffInDays($endDate) + 1;
+                                                    $hariAktif = $tanggalBergabung->diffInDays($endDate) + 1;
                                                     
-                                                    // Jika tanggal bergabung ada di antara periode yang dipilih
-                                                    if (isset($startDate) && isset($endDate)) {
-                                                        if ($tanggalBergabung->gt($startDate) && $tanggalBergabung->lte($endDate)) {
-                                                            // Hitung proporsi gaji berdasarkan jumlah hari aktif
-                                                            $totalHariPeriode = $startDate->diffInDays($endDate) + 1;
-                                                            $hariAktif = $tanggalBergabung->diffInDays($endDate) + 1;
-                                                            
-                                                            // Proporsi gaji pokok berdasarkan jumlah hari aktif
-                                                            $gajiPokok = ($operatorGtm->gaji_pokok / $totalHariPeriode) * $hariAktif;
-                                                        }
-                                                        // Jika tanggal bergabung setelah periode, gaji pokok = 0
-                                                        else if ($tanggalBergabung->gt($endDate)) {
-                                                            $gajiPokok = 0;
-                                                        }
-                                                        // Jika tanggal bergabung sebelum periode, gaji pokok penuh (sudah di-set di awal)
-                                                    }
-                                                    
-                                                    // Ambil total upah lembur dari periode yang dipilih
-                                                    if (isset($filteredRecords)) {
-                                                        $totalUpahLembur = $filteredRecords->sum('upah_lembur');
-                                                    }
+                                                    // Proporsi gaji pokok berdasarkan jumlah hari aktif
+                                                    $gajiPokok = ($operatorGtm->gaji_pokok / $totalHariPeriode) * $hariAktif;
                                                 }
+                                                // Jika tanggal bergabung setelah periode, gaji pokok = 0
+                                                else if ($tanggalBergabung->gt($endDate)) {
+                                                    $gajiPokok = 0;
+                                                }
+                                                // Jika tanggal bergabung sebelum periode, gaji pokok penuh (sudah di-set di awal)
                                                 
                                                 $totalPembayaran = $gajiPokok + $totalUpahLembur;
                                             @endphp
@@ -331,16 +312,26 @@
             </div>
 
             {{-- Data Lembur Table --}}
-            @if(request('month') && request('year'))
             <div class="col-md-12">
                 <div class="card card-primary">
                     <div class="card-header">
                         <h3 class="card-title">
                             <i class="fas fa-list-alt mr-2"></i>
                             Data Lembur
-                            @if(isset($startDate) && isset($endDate))
+                            @php
+                                // Set default jika tidak ada nilai dari controller
+                                $displayMonth = $selectedMonth ?? date('m');
+                                $displayYear = $selectedYear ?? date('Y');
+                                
+                                // Tanggal 26 bulan sebelumnya
+                                $prevMonth = $displayMonth == '01' ? '12' : str_pad((int)$displayMonth - 1, 2, '0', STR_PAD_LEFT);
+                                $prevYear = $displayMonth == '01' ? $displayYear - 1 : $displayYear;
+                                $startDate = Carbon\Carbon::createFromFormat('Y-m-d', $prevYear . '-' . $prevMonth . '-26');
+                                
+                                // Tanggal 25 bulan yang dipilih
+                                $endDate = Carbon\Carbon::createFromFormat('Y-m-d', $displayYear . '-' . $displayMonth . '-25');
+                            @endphp
                             - {{ $startDate->format('d M Y') }} s/d {{ $endDate->format('d M Y') }}
-                            @endif
                         </h3>
                         <div class="card-tools">
                             <a href="{{ route('operator-gtm.create-lembur', $operatorGtm->id) }}" class="btn btn-success btn-sm">
@@ -367,67 +358,62 @@
                                 @php 
                                     $no = 1;
                                     
-                                    if (isset($startDate) && isset($endDate)) {
-                                        // Debug Info
-                                        echo "<!-- DEBUG: StartDate: " . $startDate->format('Y-m-d') . " -->";
-                                        echo "<!-- DEBUG: EndDate: " . $endDate->format('Y-m-d') . " -->";
-                                        echo "<!-- DEBUG: Total Records: " . count($lemburRecords) . " -->";
+                                    // Debug Info
+                                    echo "<!-- DEBUG: StartDate: " . $startDate->format('Y-m-d') . " -->";
+                                    echo "<!-- DEBUG: EndDate: " . $endDate->format('Y-m-d') . " -->";
+                                    echo "<!-- DEBUG: Total Records: " . count($lemburRecords) . " -->";
+                                    
+                                    // Logging semua data lembur untuk debugging
+                                    echo "<!-- BEGIN DATA DUMP -->";
+                                    foreach ($lemburRecords as $record) {
+                                        echo "<!-- DUMP RECORD: ID=" . $record->id . 
+                                             " | Tanggal=" . $record->tanggal . 
+                                             " | Format=" . date('Y-m-d', strtotime($record->tanggal)) . 
+                                             " | Total Lembur=" . $record->total_jam_lembur . 
+                                             " | Upah=" . $record->upah_lembur . " -->";
+                                    }
+                                    echo "<!-- END DATA DUMP -->";
+                                    
+                                    // Buat array tanggal untuk periode penuh dan tandai tanggal yang memiliki data
+                                    $allDatesInPeriod = [];
+                                    $currentDate = clone $startDate;
+                                    while ($currentDate->lte($endDate)) {
+                                        $dateKey = $currentDate->format('Y-m-d');
+                                        $allDatesInPeriod[$dateKey] = null;
+                                        $currentDate->addDay();
+                                    }
+                                    
+                                    // Debug array tanggal
+                                    echo "<!-- DEBUG: Total dates in period: " . count($allDatesInPeriod) . " -->";
+                                    echo "<!-- DEBUG: Period date keys: " . implode(',', array_keys($allDatesInPeriod)) . " -->";
+                                    
+                                    // Masukkan data lembur yang ada ke array berdasarkan tanggal
+                                    $recordsFound = 0;
+                                    foreach ($lemburRecords as $record) {
+                                        // Standarisasi format tanggal dengan strtotime
+                                        $recordDateStr = date('Y-m-d', strtotime($record->tanggal));
                                         
-                                        // Logging semua data lembur untuk debugging
-                                        echo "<!-- BEGIN DATA DUMP -->";
-                                        foreach ($lemburRecords as $record) {
-                                            echo "<!-- DUMP RECORD: ID=" . $record->id . 
-                                                 " | Tanggal=" . $record->tanggal . 
-                                                 " | Format=" . date('Y-m-d', strtotime($record->tanggal)) . 
-                                                 " | Total Lembur=" . $record->total_jam_lembur . 
-                                                 " | Upah=" . $record->upah_lembur . " -->";
-                                        }
-                                        echo "<!-- END DATA DUMP -->";
+                                        echo "<!-- DEBUG: Record #" . $record->id . " date: " . $recordDateStr . " -->";
                                         
-                                        // Buat array tanggal untuk periode penuh dan tandai tanggal yang memiliki data
-                                        $allDatesInPeriod = [];
-                                        $currentDate = clone $startDate;
-                                        while ($currentDate->lte($endDate)) {
-                                            $dateKey = $currentDate->format('Y-m-d');
-                                            $allDatesInPeriod[$dateKey] = null;
-                                            $currentDate->addDay();
-                                        }
-                                        
-                                        // Debug array tanggal
-                                        echo "<!-- DEBUG: Total dates in period: " . count($allDatesInPeriod) . " -->";
-                                        echo "<!-- DEBUG: Period date keys: " . implode(',', array_keys($allDatesInPeriod)) . " -->";
-                                        
-                                        // Masukkan data lembur yang ada ke array berdasarkan tanggal
-                                        $recordsFound = 0;
-                                        foreach ($lemburRecords as $record) {
-                                            // Standarisasi format tanggal dengan strtotime
-                                            $recordDateStr = date('Y-m-d', strtotime($record->tanggal));
-                                            
-                                            echo "<!-- DEBUG: Record #" . $record->id . " date: " . $recordDateStr . " -->";
-                                            
-                                            if (array_key_exists($recordDateStr, $allDatesInPeriod)) {
-                                                echo "<!-- DEBUG: MATCH found for date: " . $recordDateStr . " -->";
-                                                $allDatesInPeriod[$recordDateStr] = $record;
-                                                $recordsFound++;
-                                            } else {
-                                                echo "<!-- DEBUG: NO MATCH for date: " . $recordDateStr . " (not in period keys) -->";
-                                                // Cek jika tanggalnya close match (mungkin ada masalah timezone atau format)
-                                                foreach (array_keys($allDatesInPeriod) as $periodDate) {
-                                                    $diff = abs(strtotime($recordDateStr) - strtotime($periodDate));
-                                                    if ($diff < 86400) { // selisih kurang dari 1 hari (dalam detik)
-                                                        echo "<!-- DEBUG: CLOSE MATCH found: record=" . $recordDateStr . ", period=" . $periodDate . " -->";
-                                                        $allDatesInPeriod[$periodDate] = $record; // gunakan key dari period
-                                                        $recordsFound++;
-                                                        break;
-                                                    }
+                                        if (array_key_exists($recordDateStr, $allDatesInPeriod)) {
+                                            echo "<!-- DEBUG: MATCH found for date: " . $recordDateStr . " -->";
+                                            $allDatesInPeriod[$recordDateStr] = $record;
+                                            $recordsFound++;
+                                        } else {
+                                            echo "<!-- DEBUG: NO MATCH for date: " . $recordDateStr . " (not in period keys) -->";
+                                            // Cek jika tanggalnya close match (mungkin ada masalah timezone atau format)
+                                            foreach (array_keys($allDatesInPeriod) as $periodDate) {
+                                                $diff = abs(strtotime($recordDateStr) - strtotime($periodDate));
+                                                if ($diff < 86400) { // selisih kurang dari 1 hari (dalam detik)
+                                                    echo "<!-- DEBUG: CLOSE MATCH found: record=" . $recordDateStr . ", period=" . $periodDate . " -->";
+                                                    $allDatesInPeriod[$periodDate] = $record; // gunakan key dari period
+                                                    $recordsFound++;
+                                                    break;
                                                 }
                                             }
                                         }
-                                        echo "<!-- DEBUG: Records found in period: " . $recordsFound . " -->";
-                                        
-                                    } else {
-                                        $allDatesInPeriod = [];
                                     }
+                                    echo "<!-- DEBUG: Records found in period: " . $recordsFound . " -->";
                                 @endphp
                                 
                                 @forelse($allDatesInPeriod as $date => $record)
@@ -509,18 +495,26 @@
                                 <tr>
                                     <th colspan="6" class="text-right">Total:</th>
                                     <th>
-                                        @if(request('month') && request('year') && isset($totalJamLembur))
-                                            {{ floor($totalJamLembur / 60) }} jam {{ $totalJamLembur % 60 }} menit
-                                        @else
-                                            -
-                                        @endif
+                                        @php
+                                            $totalJamLembur = 0;
+                                            foreach ($allDatesInPeriod as $date => $record) {
+                                                if ($record) {
+                                                    $totalJamLembur += $record->total_jam_lembur;
+                                                }
+                                            }
+                                        @endphp
+                                        {{ floor($totalJamLembur / 60) }} jam {{ $totalJamLembur % 60 }} menit
                                     </th>
                                     <th>
-                                        @if(request('month') && request('year') && isset($totalUpahLembur))
-                                            Rp {{ number_format($totalUpahLembur, 0, ',', '.') }}
-                                        @else
-                                            -
-                                        @endif
+                                        @php
+                                            $totalUpahLembur = 0;
+                                            foreach ($allDatesInPeriod as $date => $record) {
+                                                if ($record) {
+                                                    $totalUpahLembur += $record->upah_lembur;
+                                                }
+                                            }
+                                        @endphp
+                                        Rp {{ number_format($totalUpahLembur, 0, ',', '.') }}
                                     </th>
                                     <th></th>
                                 </tr>
@@ -529,28 +523,6 @@
                     </div>
                 </div>
             </div>
-            @else
-            <div class="col-md-12">
-                <div class="card card-warning">
-                    <div class="card-header">
-                        <h3 class="card-title">
-                            <i class="fas fa-info-circle mr-2"></i>
-                            Informasi
-                        </h3>
-                    </div>
-                    <div class="card-body">
-                        <div class="alert alert-info mb-0">
-                            <i class="fas fa-info-circle mr-1"></i> Silahkan pilih periode (bulan dan tahun) terlebih dahulu untuk melihat data lembur operator.
-                        </div>
-                        <div class="text-center mt-3">
-                            <a href="{{ route('operator-gtm.create-lembur', $operatorGtm->id) }}" class="btn btn-success">
-                                <i class="fas fa-plus mr-1"></i> Tambah Data Lembur
-                            </a>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            @endif
         </div>
     </div>
 @endsection

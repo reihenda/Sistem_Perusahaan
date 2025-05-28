@@ -53,6 +53,10 @@ class OperatorGtmController extends Controller
         // Ambil semua data lembur untuk operator ini (tidak difilter di database)
         $lemburRecords = $operatorGtm->lemburRecords()->orderBy('tanggal', 'asc')->get();
         
+        // Set default ke bulan dan tahun saat ini jika tidak ada parameter
+        $selectedMonth = $request->input('month', date('m'));
+        $selectedYear = $request->input('year', date('Y'));
+        
         // Log untuk debugging
         \Log::info('Total data lembur operator: ' . count($lemburRecords));
         foreach ($lemburRecords as $record) {
@@ -60,17 +64,10 @@ class OperatorGtmController extends Controller
             ' | Raw=' . var_export($record->getOriginal('tanggal'), true));
         }
         
-        // Jika ada parameter bulan dan tahun
-        if ($request->has('month') && $request->has('year') && $request->month && $request->year) {
-            // Hitung range tanggal dari tanggal 26 bulan sebelumnya sampai tanggal 25 bulan yang dipilih
-            $selectedMonth = $request->month;
-            $selectedYear = $request->year;
+        // Log untuk debugging periode yang dipilih
+        \Log::info('Filter periode - bulan: ' . $selectedMonth . ', tahun: ' . $selectedYear);
             
-            // Log untuk debugging
-            \Log::info('Filter periode - bulan: ' . $selectedMonth . ', tahun: ' . $selectedYear);
-        }
-            
-        return view('operator-gtm.show', compact('operatorGtm', 'lemburRecords'));
+        return view('operator-gtm.show', compact('operatorGtm', 'lemburRecords', 'selectedMonth', 'selectedYear'));
     }
 
     /**
