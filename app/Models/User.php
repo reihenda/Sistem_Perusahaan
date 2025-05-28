@@ -205,7 +205,7 @@ class User extends Authenticatable
                 $this->setAttribute('suhu', $suhu);
                 $this->setAttribute('koreksi_meter', $koreksiMeter);
             }
-            
+
             // Debug - Log before save
             \Log::info('Before saving user', [
                 'user_id' => $this->id,
@@ -237,7 +237,7 @@ class User extends Authenticatable
             return false;
         }
     }
-    
+
     /**
      * Metode untuk menambah riwayat pricing dengan periode khusus (rentang tanggal)
      */
@@ -277,14 +277,14 @@ class User extends Authenticatable
 
             // Get current custom period pricing history
             $pricingHistory = $this->ensureArray($this->pricing_history);
-            
+
             // Cari apakah sudah ada periode yang overlap dengan periode baru
             $overlappingIndex = null;
             foreach ($pricingHistory as $index => $entry) {
                 if (isset($entry['type']) && $entry['type'] === 'custom_period') {
                     $entryStartDate = Carbon::parse($entry['start_date']);
                     $entryEndDate = Carbon::parse($entry['end_date']);
-                    
+
                     // Cek apakah rentang tanggal overlap
                     if (($startDate <= $entryEndDate) && ($endDate >= $entryStartDate)) {
                         $overlappingIndex = $index;
@@ -329,29 +329,30 @@ class User extends Authenticatable
             return false;
         }
     }
+
+    /**
+     * Metode untuk menambah riwayat pricing khusus FOB
+     */
     public function addPricingHistoryfob($hargaPerMeterKubik, $customDate = null)
     {
         try {
             DB::beginTransaction();
 
             // Debug - Log input parameters
-            \Log::info('addPricingHistory called', [
+            \Log::info('addPricingHistoryfob called', [
                 'user_id' => $this->id,
                 'role' => $this->role,
                 'harga_input' => $hargaPerMeterKubik,
                 'harga_input_type' => gettype($hargaPerMeterKubik),
-
                 'date' => $customDate ? $customDate->format('Y-m-d H:i:s') : 'now'
             ]);
 
             // Ensure all values are numeric and properly formatted
             $hargaPerMeterKubik = floatval(str_replace(',', '.', $hargaPerMeterKubik));
 
-
             // Log the converted values
             \Log::info('Converted pricing values', [
-                'harga_converted' => $hargaPerMeterKubik,
-
+                'harga_converted' => $hargaPerMeterKubik
             ]);
 
             $pricingDate = $customDate ?: now();
@@ -361,8 +362,7 @@ class User extends Authenticatable
             $pricingEntry = [
                 'date' => $pricingDate->format('Y-m-d H:i:s'),
                 'year_month' => $yearMonth,
-                'harga_per_meter_kubik' => round($hargaPerMeterKubik, 2),
-
+                'harga_per_meter_kubik' => round($hargaPerMeterKubik, 2)
             ];
 
             // Get current pricing history
@@ -420,7 +420,7 @@ class User extends Authenticatable
             return $result;
         } catch (\Exception $e) {
             DB::rollBack();
-            \Log::error('Error in addPricingHistory', [
+            \Log::error('Error in addPricingHistoryfob', [
                 'user_id' => $this->id,
                 'error' => $e->getMessage(),
                 'file' => $e->getFile(),
@@ -436,35 +436,52 @@ class User extends Authenticatable
     {
         $pricingHistory = $this->ensureArray($this->pricing_history);
         $specificDateTime = null;
-        
+
+        // Khusus untuk FOB, hanya perlu harga per meter kubik, bukan koreksi meter
+        $isFOB = $this->isFOB();
+
         if ($specificDate) {
             // Jika ada tanggal spesifik, konversi ke objek Carbon
             $specificDateTime = $specificDate instanceof Carbon ? $specificDate : Carbon::parse($specificDate);
-            
+
             // Log untuk debugging
             \Log::debug('getPricingForYearMonth dengan tanggal spesifik', [
                 'user_id' => $this->id,
                 'yearMonth' => $yearMonth,
                 'specificDate' => $specificDateTime->format('Y-m-d H:i:s'),
-                'pricingHistory_count' => count($pricingHistory)
+                'pricingHistory_count' => count($pricingHistory),
+                'is_fob' => $isFOB
             ]);
         }
-        
+
         // Periksa terlebih dahulu apakah ada periode khusus yang mencakup tanggal spesifik
         if ($specificDateTime) {
             foreach ($pricingHistory as $entry) {
                 if (isset($entry['type']) && $entry['type'] === 'custom_period') {
                     $startDate = Carbon::parse($entry['start_date']);
                     $endDate = Carbon::parse($entry['end_date']);
-                    
+
                     // Jika tanggal spesifik berada dalam rentang periode khusus
                     if ($specificDateTime->between($startDate, $endDate)) {
                         \Log::debug('Menemukan periode khusus yang cocok', [
                             'start_date' => $startDate->format('Y-m-d'),
                             'end_date' => $endDate->format('Y-m-d'),
                             'harga_per_meter_kubik' => $entry['harga_per_meter_kubik'],
-                            'koreksi_meter' => $entry['koreksi_meter']
+                            'koreksi_meter' => $entry['koreksi_meter'] ?? 'N/A',
+                            'is_fob' => $isFOB
                         ]);
+
+                        // Jika FOB, pastikan nilai koreksi_meter selalu 1.0
+                        if ($isFOB) {
+                            $result = [
+                                'harga_per_meter_kubik' => $entry['harga_per_meter_kubik'] ?? $this->harga_per_meter_kubik,
+                                'koreksi_meter' => 1.0,
+                                'is_fob' => true
+                            ];
+                            if (isset($entry['type'])) $result['type'] = $entry['type'];
+                            return $result;
+                        }
+
                         return $entry;
                     }
                 }
@@ -477,26 +494,50 @@ class User extends Authenticatable
                 \Log::debug('Menemukan pricing bulanan yang cocok', [
                     'year_month' => $yearMonth,
                     'harga_per_meter_kubik' => $entry['harga_per_meter_kubik'],
-                    'koreksi_meter' => $entry['koreksi_meter']
+                    'koreksi_meter' => $entry['koreksi_meter'] ?? 'N/A',
+                    'is_fob' => $isFOB
                 ]);
+
+                // Jika FOB, pastikan nilai koreksi_meter selalu 1.0
+                if ($isFOB) {
+                    $result = [
+                        'harga_per_meter_kubik' => $entry['harga_per_meter_kubik'] ?? $this->harga_per_meter_kubik,
+                        'koreksi_meter' => 1.0,
+                        'is_fob' => true
+                    ];
+                    if (isset($entry['type'])) $result['type'] = $entry['type'];
+                    return $result;
+                }
+
                 return $entry;
             }
         }
 
         // Jika tidak ditemukan, kembalikan data pricing terakhir
-        $defaultPricing = [
-            'harga_per_meter_kubik' => $this->harga_per_meter_kubik,
-            'tekanan_keluar' => $this->tekanan_keluar,
-            'suhu' => $this->suhu,
-            'koreksi_meter' => $this->koreksi_meter
-        ];
-        
+        if ($isFOB) {
+            // Untuk FOB, hanya return harga per meter kubik
+            $defaultPricing = [
+                'harga_per_meter_kubik' => $this->harga_per_meter_kubik,
+                'koreksi_meter' => 1.0,
+                'is_fob' => true
+            ];
+        } else {
+            // Untuk customer reguler, return semua nilai
+            $defaultPricing = [
+                'harga_per_meter_kubik' => $this->harga_per_meter_kubik,
+                'tekanan_keluar' => $this->tekanan_keluar,
+                'suhu' => $this->suhu,
+                'koreksi_meter' => $this->koreksi_meter
+            ];
+        }
+
         \Log::debug('Menggunakan default pricing', [
             'year_month' => $yearMonth,
             'harga_per_meter_kubik' => $defaultPricing['harga_per_meter_kubik'],
-            'koreksi_meter' => $defaultPricing['koreksi_meter']
+            'koreksi_meter' => $defaultPricing['koreksi_meter'],
+            'is_fob' => $isFOB
         ]);
-        
+
         return $defaultPricing;
     }
 
@@ -566,10 +607,11 @@ class User extends Authenticatable
 
             // Save the user
             $this->save();
-            
-            // Update monthly balances immediately starting from deposit month
-            $depositMonth = $depositDate->format('Y-m');
-            $this->updateMonthlyBalances($depositMonth);
+
+            // Update ALL monthly balances untuk memastikan konsistensi saldo
+            // Mulai dari 3 tahun lalu untuk memastikan semua data tercakup
+            $threeYearsAgo = Carbon::now()->subYears(3)->format('Y-m');
+            $this->updateMonthlyBalances($threeYearsAgo);
 
             DB::commit();
 
@@ -592,15 +634,16 @@ class User extends Authenticatable
             if (!isset($depositHistory[$index])) {
                 return false;
             }
-            
-            // Capture deposit date before removing it
+
+            // Capture deposit date and amount before removing it
             $depositDate = null;
+            $depositAmount = floatval($depositHistory[$index]['amount'] ?? 0);
             if (isset($depositHistory[$index]['date'])) {
                 $depositDate = Carbon::parse($depositHistory[$index]['date']);
             }
 
             // Subtract the amount from total deposit
-            $this->total_deposit -= floatval($depositHistory[$index]['amount']);
+            $this->total_deposit -= $depositAmount;
 
             // Remove the specific deposit entry
             array_splice($depositHistory, $index, 1);
@@ -610,15 +653,11 @@ class User extends Authenticatable
 
             // Save the user
             $this->save();
-            
-            // Update monthly balances if we have the deposit date
-            if ($depositDate) {
-                $depositMonth = $depositDate->format('Y-m');
-                $this->updateMonthlyBalances($depositMonth);
-            } else {
-                // If date is unknown, update from earliest known date
-                $this->updateMonthlyBalances();
-            }
+
+            // Update ALL monthly balances untuk memastikan konsistensi saldo
+            // Mulai dari 3 tahun lalu untuk memastikan semua data tercakup
+            $threeYearsAgo = Carbon::now()->subYears(3)->format('Y-m');
+            $this->updateMonthlyBalances($threeYearsAgo);
 
             DB::commit();
 
@@ -642,10 +681,11 @@ class User extends Authenticatable
 
             // Save the user
             $this->save();
-            
-            // Update monthly balances immediately for current month
-            $currentMonth = now()->format('Y-m');
-            $this->updateMonthlyBalances($currentMonth);
+
+            // Update ALL monthly balances untuk memastikan konsistensi saldo
+            // Mulai dari 3 tahun lalu untuk memastikan semua data tercakup
+            $threeYearsAgo = Carbon::now()->subYears(3)->format('Y-m');
+            $this->updateMonthlyBalances($threeYearsAgo);
 
             DB::commit();
 
@@ -662,9 +702,10 @@ class User extends Authenticatable
     }
 
     /**
-     * Update saldo bulanan pengguna
+     * Update saldo bulanan pengguna untuk seluruh periode
+     * Memastikan kontinuitas saldo dari bulan ke bulan, bahkan jika tidak ada aktivitas
      *
-     * @param string|null $startMonth Format Y-m
+     * @param string|null $startMonth Format Y-m, bulan awal untuk memulai perhitungan
      * @return bool
      */
     public function updateMonthlyBalances($startMonth = null)
@@ -676,220 +717,317 @@ class User extends Authenticatable
             \Log::info('Memulai updateMonthlyBalances', [
                 'user_id' => $this->id,
                 'name' => $this->name,
+                'role' => $this->role,
                 'startMonth' => $startMonth
             ]);
 
-            // Jika tidak ada $startMonth, gunakan bulan pertama dari data
-            if (!$startMonth) {
-                $firstRecord = $this->dataPencatatan()->orderBy('created_at')->first();
-                if (!$firstRecord) {
-                    DB::commit();
-                    \Log::info('Tidak ada data pencatatan', ['user_id' => $this->id]);
-                    return true; // Tidak ada data, tidak perlu update
-                }
+            // PERBAIKAN: Mulai dari 4 tahun yang lalu untuk memastikan semua data historis tercakup
+            // dengan lebih baik terutama untuk customer FOB dengan riwayat panjang
+            $absoluteStartMonth = Carbon::now()->subYears(4)->startOfMonth()->format('Y-m');
 
-                $dataInput = $this->ensureArray($firstRecord->data_input);
-                if (empty($dataInput) || empty($dataInput['pembacaan_awal']['waktu'])) {
-                    DB::commit();
-                    \Log::info('Data pencatatan tidak lengkap', ['user_id' => $this->id]);
-                    return true; // Data tidak lengkap, tidak perlu update
-                }
+            // Jika startMonth disediakan, gunakan yang lebih awal antara absoluteStartMonth dan startMonth
+            if ($startMonth) {
+                $startMonthDate = Carbon::createFromFormat('Y-m', $startMonth)->startOfMonth();
+                $absoluteStartDate = Carbon::createFromFormat('Y-m', $absoluteStartMonth)->startOfMonth();
 
-                $startMonth = Carbon::parse($dataInput['pembacaan_awal']['waktu'])->format('Y-m');
-                \Log::info('Menggunakan bulan awal dari data pertama', ['startMonth' => $startMonth]);
+                if ($absoluteStartDate->lt($startMonthDate)) {
+                    $startMonth = $absoluteStartMonth;
+                }
+            } else {
+                $startMonth = $absoluteStartMonth;
             }
 
             // Ambil saldo bulanan yang sudah ada atau inisialisasi array kosong
-            $monthlyBalances = $this->monthly_balances ?: [];
+            $monthlyBalances = $this->ensureArray($this->monthly_balances);
 
             // Ambil semua deposit
             $deposits = $this->ensureArray($this->deposit_history);
 
-            // Ambil semua data pencatatan, urutkan berdasarkan tanggal
+            // Ambil semua data pencatatan - PERBAIKAN: Ambil dengan benar
             $records = $this->dataPencatatan()->get();
 
-            // Mulai dari bulan awal yang ditentukan, hitung saldo untuk setiap bulan
+            // Log jumlah data
+            \Log::info('Jumlah data untuk perhitungan saldo bulanan', [
+                'user_id' => $this->id,
+                'deposits_count' => count($deposits),
+                'records_count' => $records->count()
+            ]);
+
+            // Periksa apakah ada data sebelum startMonth untuk menentukan saldo awal
             $startDate = Carbon::createFromFormat('Y-m', $startMonth)->startOfMonth();
-            $endDate = Carbon::now()->endOfMonth();
 
-            // Temukan saldo awal untuk bulan mulai
-            $runningBalance = 0;
-            $prevMonth = Carbon::createFromFormat('Y-m', $startMonth)->subMonth()->format('Y-m');
+            // PERBAIKAN: Hitung hingga 12 bulan ke depan, bukan hanya 6 bulan
+            $endDate = Carbon::now()->addMonths(12)->endOfMonth();
 
-            // Gunakan saldo bulan sebelumnya sebagai saldo awal jika ada
-            if (isset($monthlyBalances[$prevMonth])) {
-                $runningBalance = floatval($monthlyBalances[$prevMonth]);
-                \Log::info('Menggunakan saldo bulan sebelumnya', [
-                    'prevMonth' => $prevMonth,
-                    'runningBalance' => $runningBalance
-                ]);
-            } else {
-                // Jika tidak ada saldo bulan sebelumnya, hitung dari awal
-                // Hitung total deposit dan pembelian sebelum bulan mulai
-                $prevDeposits = 0;
-                $prevPurchases = 0;
+            // 1. Siapkan array untuk klasifikasi semua deposit dan pembelian per bulan
+            $monthlyDeposits = [];
+            $monthlyPurchases = [];
 
-                // Hitung deposit sebelum bulan mulai
-                foreach ($deposits as $deposit) {
-                    if (isset($deposit['date'])) {
-                        $depositDate = Carbon::parse($deposit['date']);
-                        if ($depositDate < $startDate) {
-                            $prevDeposits += floatval($deposit['amount'] ?? 0);
-                        }
-                    }
-                }
-
-                // Hitung pembelian sebelum bulan mulai
-                foreach ($records as $record) {
-                    $dataInput = $this->ensureArray($record->data_input);
-
-                    if (empty($dataInput) || empty($dataInput['pembacaan_awal']['waktu'])) {
-                        continue;
-                    }
-
-                    $recordDate = Carbon::parse($dataInput['pembacaan_awal']['waktu']);
-                    if ($recordDate < $startDate) {
-                        // Untuk perhitungan yang lebih akurat, gunakan harga_final dari record
-                        // Ini akan memastikan konsistensi dengan saldo total
-                        $itemPurchase = floatval($record->harga_final ?? 0);
-                        
-                        // Fallback ke perhitungan manual jika harga_final tidak tersedia atau nol
-                        if ($itemPurchase <= 0) {
-                            $volumeFlowMeter = floatval($dataInput['volume_flow_meter'] ?? 0);
-                            $recordYearMonth = $recordDate->format('Y-m');
-                            
-                            // PERBAIKAN: Gunakan tanggal spesifik untuk mendapatkan pricing yang tepat
-                            $pricingInfo = $this->getPricingForYearMonth($recordYearMonth, $recordDate);
-                            
-                            $koreksiMeter = floatval($pricingInfo['koreksi_meter'] ?? $this->koreksi_meter);
-                            $hargaPerM3 = floatval($pricingInfo['harga_per_meter_kubik'] ?? $this->harga_per_meter_kubik);
-
-                            $volumeSm3 = $volumeFlowMeter * $koreksiMeter;
-                            $itemPurchase = $volumeSm3 * $hargaPerM3;
-                        }
-                        
-                        $prevPurchases += $itemPurchase;
-                        
-                        \Log::debug('Perhitungan item pembelian sebelumnya', [
-                            'record_id' => $record->id,
-                            'date' => $recordDate->format('Y-m-d H:i:s'),
-                            'harga_final' => $record->harga_final,
-                            'calculated_purchase' => $itemPurchase
-                        ]);
-                    }
-                }
-
-                $runningBalance = $prevDeposits - $prevPurchases;
-                \Log::info('Menghitung saldo awal', [
-                    'prevDeposits' => $prevDeposits,
-                    'prevPurchases' => $prevPurchases,
-                    'runningBalance' => $runningBalance
-                ]);
-
-                // Simpan saldo untuk bulan sebelumnya
-                $monthlyBalances[$prevMonth] = $runningBalance;
+            // 2. Tentukan rentang waktu lengkap
+            $currentDate = $startDate->copy();
+            while ($currentDate <= $endDate) {
+                $currentYearMonth = $currentDate->format('Y-m');
+                $monthlyDeposits[$currentYearMonth] = 0;
+                $monthlyPurchases[$currentYearMonth] = 0;
+                $currentDate->addMonth();
             }
 
-            // Hitung saldo untuk setiap bulan mulai dari startMonth
-            $currentDate = $startDate->copy();
-
-            while ($currentDate <= $endDate) {
-                $currentYM = $currentDate->format('Y-m');
-                \Log::info('Menghitung saldo untuk bulan', ['currentYM' => $currentYM]);
-
-                // Hitung deposit bulan ini
-                $monthDeposit = 0;
-                foreach ($deposits as $deposit) {
-                    if (isset($deposit['date'])) {
+            // 3. PERBAIKAN: Klasifikasikan semua deposit dengan logging lebih detail
+            $depositsByMonth = []; // untuk debugging
+            foreach ($deposits as $index => $deposit) {
+                if (isset($deposit['date'])) {
+                    try {
                         $depositDate = Carbon::parse($deposit['date']);
-                        if ($depositDate->format('Y-m') === $currentYM) {
-                            $depositAmount = floatval($deposit['amount'] ?? 0);
-                            $monthDeposit += $depositAmount;
-                            \Log::debug('Deposit bulan ini', [
-                                'date' => $depositDate->format('Y-m-d'),
+                        $depositAmount = floatval($deposit['amount'] ?? 0);
+                        $depositYearMonth = $depositDate->format('Y-m');
+
+                        // Jika bulan deposit tercakup dalam range yang kita proses
+                        if (isset($monthlyDeposits[$depositYearMonth])) {
+                            $monthlyDeposits[$depositYearMonth] += $depositAmount;
+
+                            // Tambahkan ke array untuk debugging
+                            if (!isset($depositsByMonth[$depositYearMonth])) {
+                                $depositsByMonth[$depositYearMonth] = [];
+                            }
+                            $depositsByMonth[$depositYearMonth][] = [
+                                'index' => $index,
+                                'date' => $depositDate->format('Y-m-d H:i:s'),
                                 'amount' => $depositAmount
-                            ]);
+                            ];
                         }
-                    }
-                }
-
-                // Hitung pembelian bulan ini
-                $monthPurchase = 0;
-                foreach ($records as $record) {
-                    $dataInput = $this->ensureArray($record->data_input);
-
-                    if (empty($dataInput) || empty($dataInput['pembacaan_awal']['waktu'])) {
-                        continue;
-                    }
-
-                    $recordDate = Carbon::parse($dataInput['pembacaan_awal']['waktu']);
-                    if ($recordDate->format('Y-m') === $currentYM) {
-                        // Untuk perhitungan yang lebih akurat, gunakan harga_final dari record
-                        // Ini akan memastikan konsistensi dengan saldo total
-                        $itemPurchase = floatval($record->harga_final ?? 0);
-                        
-                        // Fallback ke perhitungan manual jika harga_final tidak tersedia atau nol
-                        if ($itemPurchase <= 0) {
-                            $volumeFlowMeter = floatval($dataInput['volume_flow_meter'] ?? 0);
-                            
-                            // PERBAIKAN: Gunakan tanggal spesifik untuk mendapatkan pricing yang tepat
-                            $pricingInfo = $this->getPricingForYearMonth($currentYM, $recordDate);
-                            
-                            $koreksiMeter = floatval($pricingInfo['koreksi_meter'] ?? $this->koreksi_meter);
-                            $hargaPerM3 = floatval($pricingInfo['harga_per_meter_kubik'] ?? $this->harga_per_meter_kubik);
-
-                            $volumeSm3 = $volumeFlowMeter * $koreksiMeter;
-                            $itemPurchase = $volumeSm3 * $hargaPerM3;
-                        }
-                        
-                        $monthPurchase += $itemPurchase;
-                        
-                        \Log::debug('Perhitungan item pembelian bulan ini', [
-                            'record_id' => $record->id,
-                            'date' => $recordDate->format('Y-m-d H:i:s'),
-                            'harga_final' => $record->harga_final,
-                            'calculated_purchase' => $itemPurchase,
-                            'is_periode_khusus' => isset($pricingInfo) && isset($pricingInfo['type']) && $pricingInfo['type'] === 'custom_period'
+                    } catch (\Exception $e) {
+                        \Log::warning('Error parsing deposit date: ' . $e->getMessage(), [
+                            'deposit_index' => $index,
+                            'deposit' => $deposit,
+                            'user_id' => $this->id,
+                            'error' => $e->getMessage()
                         ]);
                     }
                 }
+            }
 
-                // Update running balance
+            // Log deposit details untuk debugging
+            \Log::info('Deposit classification', [
+                'user_id' => $this->id,
+                'role' => $this->role,
+                'deposits_by_month' => $depositsByMonth
+            ]);
+
+            // 4. PERBAIKAN: Klasifikasikan semua pembelian dengan logging lebih detail
+            $purchasesByMonth = []; // untuk debugging
+            foreach ($records as $recordIndex => $record) {
+                try {
+                    $dataInput = $this->ensureArray($record->data_input);
+                    $recordDate = null;
+
+                    // PERBAIKAN: Prioritaskan format tanggal sesuai jenis customer (FOB atau reguler)
+                    if ($this->isFOB()) {
+                        // FOB: prioritaskan format 'waktu' yang digunakan di data FOB
+                        if (!empty($dataInput['waktu'])) {
+                            $recordDate = Carbon::parse($dataInput['waktu']);
+                        } elseif (!empty($dataInput['pembacaan_awal']['waktu'])) {
+                            $recordDate = Carbon::parse($dataInput['pembacaan_awal']['waktu']);
+                        } elseif ($record->created_at) {
+                            $recordDate = Carbon::parse($record->created_at);
+                        } else {
+                            continue; // Skip record tanpa tanggal
+                        }
+                    } else {
+                        // Customer reguler: prioritaskan 'pembacaan_awal.waktu'
+                        if (!empty($dataInput['pembacaan_awal']['waktu'])) {
+                            $recordDate = Carbon::parse($dataInput['pembacaan_awal']['waktu']);
+                        } elseif (!empty($dataInput['waktu'])) {
+                            $recordDate = Carbon::parse($dataInput['waktu']);
+                        } elseif ($record->created_at) {
+                            $recordDate = Carbon::parse($record->created_at);
+                        } else {
+                            continue; // Skip record tanpa tanggal
+                        }
+                    }
+
+                    $recordYearMonth = $recordDate->format('Y-m');
+
+                    // Jika bulan pencatatan tercakup dalam range yang kita proses
+                    if (isset($monthlyPurchases[$recordYearMonth])) {
+                        // Gunakan harga_final jika tersedia (lebih akurat)
+                        if ($record->harga_final > 0) {
+                            $purchaseAmount = floatval($record->harga_final);
+                            $monthlyPurchases[$recordYearMonth] += $purchaseAmount;
+
+                            // Tambahkan ke array untuk debugging
+                            if (!isset($purchasesByMonth[$recordYearMonth])) {
+                                $purchasesByMonth[$recordYearMonth] = [];
+                            }
+                            $purchasesByMonth[$recordYearMonth][] = [
+                                'id' => $record->id,
+                                'date' => $recordDate->format('Y-m-d H:i:s'),
+                                'harga_final' => $purchaseAmount,
+                                'source' => 'harga_final'
+                            ];
+                        } else {
+                            // Jika tidak ada harga_final, hitung berdasarkan volume dan harga
+                            $volumeSm3 = 0;
+                            $source = '';
+
+                            // FOB: volume_sm3
+                            if (isset($dataInput['volume_sm3'])) {
+                                $volumeSm3 = floatval($dataInput['volume_sm3']);
+                                $source = 'volume_sm3';
+                            }
+                            // Customer reguler: volume_flow_meter * koreksi
+                            elseif (isset($dataInput['volume_flow_meter'])) {
+                                $volumeFlowMeter = floatval($dataInput['volume_flow_meter']);
+                                $pricingInfo = $this->getPricingForYearMonth($recordYearMonth, $recordDate);
+                                $koreksiMeter = floatval($pricingInfo['koreksi_meter'] ?? $this->koreksi_meter);
+                                $volumeSm3 = $volumeFlowMeter * $koreksiMeter;
+                                $source = 'volume_flow_meter';
+                            }
+
+                            if ($volumeSm3 > 0) {
+                                $pricingInfo = $this->getPricingForYearMonth($recordYearMonth, $recordDate);
+                                $hargaPerM3 = floatval($pricingInfo['harga_per_meter_kubik'] ?? $this->harga_per_meter_kubik);
+                                $calculatedPrice = $volumeSm3 * $hargaPerM3;
+                                $monthlyPurchases[$recordYearMonth] += $calculatedPrice;
+
+                                // Tambahkan ke array untuk debugging
+                                if (!isset($purchasesByMonth[$recordYearMonth])) {
+                                    $purchasesByMonth[$recordYearMonth] = [];
+                                }
+                                $purchasesByMonth[$recordYearMonth][] = [
+                                    'id' => $record->id,
+                                    'date' => $recordDate->format('Y-m-d H:i:s'),
+                                    'volume' => $volumeSm3,
+                                    'harga_per_m3' => $hargaPerM3,
+                                    'calculated_price' => $calculatedPrice,
+                                    'source' => $source
+                                ];
+                            }
+                        }
+                    }
+                } catch (\Exception $e) {
+                    \Log::warning('Error processing record: ' . $e->getMessage(), [
+                        'record_id' => $record->id,
+                        'user_id' => $this->id,
+                        'role' => $this->role,
+                        'error' => $e->getMessage(),
+                        'trace' => $e->getTraceAsString()
+                    ]);
+                }
+            }
+
+            // Log purchase details untuk debugging
+            \Log::info('Purchase classification', [
+                'user_id' => $this->id,
+                'role' => $this->role,
+                'purchases_by_month' => $purchasesByMonth
+            ]);
+
+            // 5. Log untuk debugging
+            \Log::info('Klasifikasi deposit dan pembelian bulanan selesai', [
+                'user_id' => $this->id,
+                'role' => $this->role,
+                'deposits_count' => count(array_filter($monthlyDeposits)),
+                'purchases_count' => count(array_filter($monthlyPurchases)),
+                'months_range' => array_keys($monthlyDeposits)
+            ]);
+
+            // 6. PERBAIKAN: Hitung saldo berjalan untuk setiap bulan dengan validasi
+            // Mulai dari 0 tetapi akumulasi dari bulan paling awal
+            $runningBalance = 0;
+            $currentDate = $startDate->copy();
+
+            // Debug untuk bulan-bulan dengan saldo: pastikan konsisten
+            $monthsWithBalance = [];
+            $monthDetails = [];
+
+            while ($currentDate <= $endDate) {
+                $currentYearMonth = $currentDate->format('Y-m');
+
+                // Ambil deposit dan pembelian bulan ini
+                $monthDeposit = $monthlyDeposits[$currentYearMonth] ?? 0;
+                $monthPurchase = $monthlyPurchases[$currentYearMonth] ?? 0;
+
+                // Hitung saldo akhir bulan ini: saldo awal + deposit - pembelian
                 $runningBalance += $monthDeposit - $monthPurchase;
 
-                // Simpan saldo bulan ini
-                $monthlyBalances[$currentYM] = $runningBalance;
-                \Log::info('Saldo bulan ini', [
-                    'bulan' => $currentYM,
-                    'deposit' => $monthDeposit,
-                    'purchase' => $monthPurchase,
-                    'balance' => $runningBalance
-                ]);
+                // Simpan saldo bulan ini dengan pembulatan yang konsisten
+                $monthlyBalances[$currentYearMonth] = round($runningBalance, 2);
+                $monthsWithBalance[] = $currentYearMonth;
+
+                // Simpan detail bulan untuk logging
+                $monthDetails[$currentYearMonth] = [
+                    'beginning_balance' => round($runningBalance - ($monthDeposit - $monthPurchase), 2),
+                    'deposits' => $monthDeposit,
+                    'purchases' => $monthPurchase,
+                    'ending_balance' => round($runningBalance, 2)
+                ];
 
                 // Pindah ke bulan berikutnya
                 $currentDate->addMonth();
             }
 
-            // Kunci tambahan untuk memastikan saldo total sesuai dengan perhitungan real-time
-            // Mencatat saldo untuk bulan berjalan (untuk halaman detail customer)
-            $currentMonth = now()->format('Y-m');
-            if (isset($monthlyBalances[$currentMonth])) {
-                \Log::info('Saldo bulan berjalan', [
-                    'month' => $currentMonth,
-                    'balance' => $monthlyBalances[$currentMonth],
-                    'total_deposit' => $this->total_deposit,
-                    'total_purchases' => $this->total_purchases,
-                    'saldo_total' => $this->total_deposit - $this->total_purchases
+            // Log detail semua bulan untuk debugging
+            \Log::info('Monthly balance details', [
+                'user_id' => $this->id,
+                'role' => $this->role,
+                'month_details' => $monthDetails
+            ]);
+
+            // 7. Double-check konsistensi dengan total saldo
+            $totalCalculatedBalance = $runningBalance; // Saldo akhir dari perhitungan bulanan
+            $actualTotalBalance = $this->getCurrentBalance(); // Saldo dari total_deposit - total_purchases
+
+            // Log perbandingan untuk debugging
+            \Log::info('Perbandingan saldo total vs saldo bulanan terakhir', [
+                'user_id' => $this->id,
+                'role' => $this->role,
+                'total_deposits' => $this->total_deposit,
+                'total_purchases' => $this->total_purchases,
+                'total_calculated_balance' => $totalCalculatedBalance,
+                'actual_total_balance' => $actualTotalBalance,
+                'difference' => $actualTotalBalance - $totalCalculatedBalance,
+                'months_with_balance' => $monthsWithBalance
+            ]);
+
+            // PERBAIKAN: Jika perbedaan signifikan (> 0.01), sesuaikan saldo bulan terakhir
+            if (abs($totalCalculatedBalance - $actualTotalBalance) > 0.01) {
+                \Log::warning('Perbedaan signifikan antara saldo total dan saldo bulanan', [
+                    'user_id' => $this->id,
+                    'role' => $this->role,
+                    'total_calculated_balance' => $totalCalculatedBalance,
+                    'actual_total_balance' => $actualTotalBalance,
+                    'difference' => $actualTotalBalance - $totalCalculatedBalance
                 ]);
+
+                // Jika ada bulan-bulan dengan saldo, sesuaikan bulan terakhir
+                if (!empty($monthsWithBalance)) {
+                    // Ambil bulan terakhir
+                    $lastMonth = end($monthsWithBalance);
+                    // Sesuaikan saldo bulan terakhir agar cocok dengan saldo total
+                    $adjustment = $actualTotalBalance - $totalCalculatedBalance;
+                    $originalBalance = $monthlyBalances[$lastMonth] ?? 0;
+                    $monthlyBalances[$lastMonth] = round($originalBalance + $adjustment, 2);
+
+                    \Log::info('Menyesuaikan saldo bulan terakhir', [
+                        'user_id' => $this->id,
+                        'role' => $this->role,
+                        'last_month' => $lastMonth,
+                        'original_balance' => $originalBalance,
+                        'adjusted_balance' => $monthlyBalances[$lastMonth],
+                        'adjustment' => $adjustment
+                    ]);
+                }
             }
 
-            // Simpan saldo bulanan yang sudah diupdate
+            // 8. Simpan saldo bulanan yang sudah diupdate
             $this->monthly_balances = $monthlyBalances;
             $result = $this->save();
 
             DB::commit();
-            \Log::info('Berhasil update monthly_balances', [
+            \Log::info('Berhasil update monthly_balances dengan presisi tinggi', [
                 'user_id' => $this->id,
+                'role' => $this->role,
+                'balance_entries' => count($monthlyBalances),
                 'success' => $result
             ]);
             return true;
@@ -906,6 +1044,9 @@ class User extends Authenticatable
         }
     }
 
+    /**
+     * Check if user is admin
+     */
     public function isAdmin()
     {
         return $this->role === self::ROLE_ADMIN;
@@ -927,7 +1068,10 @@ class User extends Authenticatable
         return $this->role === self::ROLE_CUSTOMER;
     }
 
-    // Fungsi untuk bisa menampilkan data FOB di dashboard
+    /**
+     * Check if user is customer or FOB
+     * Fungsi untuk bisa menampilkan data FOB di dashboard
+     */
     public function isCustomerOrFOB()
     {
         return $this->role === self::ROLE_CUSTOMER || $this->role === self::ROLE_FOB;

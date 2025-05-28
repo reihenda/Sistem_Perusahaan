@@ -176,6 +176,10 @@ Route::middleware(['auth', 'role:admin,superadmin'])->group(function () {
     // Route untuk cetak invoice dalam bentuk PDF
     Route::get('/customer/{customer}/print-invoice', [DataPencatatanController::class, 'printInvoice'])
         ->name('data-pencatatan.print-invoice');
+        
+    // Route untuk sinkronisasi saldo
+    Route::get('/sync-balance/{customer}', [UserController::class, 'syncBalance'])
+        ->name('sync.balance');
 
     // Rute untuk FOB
     Route::get('/data-pencatatan/fob/create', [FobController::class, 'create'])

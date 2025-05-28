@@ -91,11 +91,6 @@
                                     data-target="#depositHistoryModal">
                                     <i class="fas fa-money-bill-alt mr-1"></i> History Deposit
                                 </button>
-                                <a href="{{ route('data-pencatatan.fob.sync-data', $customer->id) }}"
-                                    class="btn btn-warning btn-sm font-weight-bold"
-                                    onclick="return confirm('Apakah Anda yakin ingin menyinkronkan data rekap pengambilan? Operasi ini akan memastikan data pada periode {{ \Carbon\Carbon::createFromDate($selectedTahun, $selectedBulan, 1)->format('F Y') }} terupdate dengan benar.')">
-                                    <i class="fas fa-sync mr-1"></i> <strong>Sinkronkan Data Periode Ini</strong>
-                                </a>
                                 <a href="{{ route('data-pencatatan.fob.create-with-fob', $customer->id) }}"
                                     class="btn btn-info btn-sm">
                                     <i class="fas fa-plus mr-1"></i> Tambah Data
@@ -110,6 +105,19 @@
                                 <strong>Periode Saat Ini:</strong> Data yang ditampilkan hanya mencakup aktivitas FOB dalam bulan {{ \Carbon\Carbon::createFromDate($selectedTahun, $selectedBulan, 1)->format('F Y') }}.
                                 Jika ada ketidaksesuaian, gunakan tombol <strong>"Sinkronkan Data Periode Ini"</strong> untuk memastikan semua data sudah sinkron.
                             </div>
+                        @endif
+                        
+                        @if (Auth::user()->isAdmin() || Auth::user()->isSuperAdmin())
+                            @php
+                                // Periksa perbedaan saldo antara total saldo dan saldo bulan terakhir
+                                $monthlyBalances = $customer->monthly_balances ?: [];
+                                $currentYearMonth = \Carbon\Carbon::now()->format('Y-m');
+                                $latestMonthBalance = isset($monthlyBalances[$currentYearMonth]) ? floatval($monthlyBalances[$currentYearMonth]) : null;
+                                $currentTotalBalance = ($customer->total_deposit ?? 0) - ($customer->total_purchases ?? 0);
+                                $hasSaldoDifference = $latestMonthBalance !== null && abs($currentTotalBalance - $latestMonthBalance) > 100;
+                            @endphp
+                            
+                            {{-- Menghilangkan peringatan perbedaan saldo dan tombol sinkronisasi --}}
                         @endif
                         <div class="row">
                             <div class="col-md-3 col-sm-6">
@@ -258,6 +266,7 @@
                                 <span class="badge badge-success ml-2">Periode Saat Ini</span>
                             @endif
                         </h3>
+                        {{-- Menghilangkan tombol sinkronisasi dari card-tools --}}
                     </div>
                     <div class="card-body">
                         <div class="row">
@@ -284,6 +293,72 @@
                                     <p class="text-muted mb-0">
                                         Rp {{ number_format($filteredTotalPurchases, 0) }}
                                     </p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="row mt-3">
+                            <div class="col-md-6 col-sm-12">
+                                <div class="info-box enhanced-info-box" style="background-color: #f8fafc; border: 1px solid #e2e8f0;">
+                                    <span class="info-box-icon bg-info"><i class="fas fa-calculator"></i></span>
+                                    <div class="info-box-content">
+                                        <span class="info-box-text d-flex justify-content-between align-items-center">
+                                            <span>Informasi Saldo Bulan
+                                            {{ \Carbon\Carbon::createFromDate($selectedTahun, $selectedBulan, 1)->format('F Y') }}</span>
+                                        </span>
+                                        <div class="table-responsive mt-2">
+                                            <table class="table table-sm table-bordered">
+                                                <tr>
+                                                    <td width="60%">Saldo Bulan Sebelumnya</td>
+                                                    <td>Rp {{ number_format($prevMonthBalance ?? 0, 0) }}</td>
+                                                </tr>
+                                                <tr>
+                                                    <td>+ Deposit Bulan Ini</td>
+                                                    <td>Rp {{ number_format($filteredTotalDeposits, 0) }}</td>
+                                                </tr>
+                                                <tr>
+                                                    <td>- Pembelian Bulan Ini</td>
+                                                    <td>Rp {{ number_format($filteredTotalPurchases, 0) }}</td>
+                                                </tr>
+                                                @php
+                                                    // Definisikan variabel currentYearMonth 
+                                                    $currentYearMonth = \Carbon\Carbon::createFromDate(
+                                                        $selectedTahun,
+                                                        $selectedBulan,
+                                                        1,
+                                                    )->format('Y-m');
+
+                                                    // Pendekatan baru: selalu gunakan data real-time untuk menghitung saldo
+                                                    // Gunakan data yang sudah difilter untuk akurasi
+                                                    $realTimeFilteredTotalPurchases = $filteredTotalPurchases;
+                                                    $realTimeFilteredDeposits = $filteredTotalDeposits;
+
+                                                    // Hitung saldo bulan ini dengan formula yang konsisten:
+                                                    // Saldo = Saldo Bulan Lalu + Deposit Bulan Ini - Pembelian Bulan Ini
+                                                    $realTimeCurrentMonthBalance =
+                                                        ($prevMonthBalance ?? 0) +
+                                                        $realTimeFilteredDeposits -
+                                                        $realTimeFilteredTotalPurchases;
+                                                    
+                                                    // Log untuk debugging saldo (dipertahankan untuk pemantauan)
+                                                    Log::info('Perhitungan saldo bulan ini (view)', [
+                                                        'saldo_bulan_lalu' => $prevMonthBalance ?? 0,
+                                                        'deposit_bulan_ini' => $realTimeFilteredDeposits,
+                                                        'pembelian_bulan_ini' => $realTimeFilteredTotalPurchases, 
+                                                        'saldo_bulan_ini' => $realTimeCurrentMonthBalance,
+                                                        'selected_bulan' => $selectedBulan,
+                                                        'selected_tahun' => $selectedTahun
+                                                    ]);
+                                                @endphp
+                                                <tr class="font-weight-bold">
+                                                    <td>= Sisa Saldo Periode Bulan Ini</td>
+                                                    <td>Rp {{ number_format($realTimeCurrentMonthBalance, 0) }}</td>
+                                                </tr>
+                                                <tr>
+                                                    <td colspan="2" class="text-muted"><small>* Saldo ini hanya menunjukkan saldo untuk periode {{ \Carbon\Carbon::createFromDate($selectedTahun, $selectedBulan, 1)->format('F Y') }} saja</small></td>
+                                                </tr>
+                                            </table>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -440,31 +515,40 @@
                                     <tbody>
                                         @php
                                             // Ensure deposit_history is an array before looping
-                                            $depositHistory = $customer->deposit_history;
-                                            if (is_string($depositHistory)) {
-                                                $depositHistory = json_decode($depositHistory, true) ?? [];
-                                            }
-                                            // If it's still not an array (could be null), make it an empty array
-                                            if (!is_array($depositHistory)) {
-                                                $depositHistory = [];
+                                            // Using the $depositHistory passed from controller, but double check it
+                                            if (!isset($depositHistory) || !is_array($depositHistory)) {
+                                                $depositHistory = $customer->deposit_history;
+                                                if (is_string($depositHistory)) {
+                                                    $depositHistory = json_decode($depositHistory, true) ?? [];
+                                                }
+                                                // If it's still not an array (could be null), make it an empty array
+                                                if (!is_array($depositHistory)) {
+                                                    $depositHistory = [];
+                                                }
                                             }
                                         @endphp
 
                                         @php
-                                            $no = 1;
-                                            // Sort deposit history by date (newest first)
-                                            $sortedDeposits = collect($depositHistory)
-                                                ->map(function ($deposit, $index) {
-                                                    return [
-                                                        'index' => $index,
-                                                        'date' => $deposit['date'] ?? '',
-                                                        'amount' => $deposit['amount'] ?? 0,
-                                                        'description' => $deposit['description'] ?? '-',
-                                                    ];
-                                                })
-                                                ->sortByDesc('date')
-                                                ->values();
-                                        @endphp
+// Pastikan depositHistory selalu menjadi array
+// Ini adalah safety measure kedua selain yang sudah dilakukan di controller
+if (!isset($depositHistory) || !is_array($depositHistory)) {
+                                        $depositHistory = [];
+}
+
+$no = 1;
+// Sort deposit history by date (newest first)
+$sortedDeposits = collect($depositHistory)
+                                        ->map(function ($deposit, $index) {
+                                            return [
+                                                'index' => $index,
+                                                'date' => $deposit['date'] ?? '',
+            'amount' => $deposit['amount'] ?? 0,
+            'description' => $deposit['description'] ?? '-',
+        ];
+    })
+    ->sortByDesc('date')
+    ->values();
+@endphp
 
                                         @foreach ($sortedDeposits as $deposit)
                                             <tr>
@@ -628,12 +712,12 @@ usort($pricingHistory, function ($a, $b) {
                                 <span aria-hidden="true">&times;</span>
                             </button>
                         </div>
-                        <form action="{{ route('fob.update-pricing', $customer->id) }}" method="POST" id="pricingForm">
+                        <form action="{{ route('fob.update-pricing', $customer->id) }}" method="POST">
                             @csrf
                             <div class="modal-body">
                                 <div class="alert alert-info">
                                     <i class="fas fa-info-circle mr-2"></i>
-                                    Pengaturan harga dan koreksi meter ini akan disimpan untuk periode yang dipilih dan akan
+                                    Pengaturan harga ini akan disimpan untuk periode yang dipilih dan akan
                                     berlaku untuk semua pencatatan pada periode tersebut.
                                 </div>
 
@@ -653,81 +737,41 @@ usort($pricingHistory, function ($a, $b) {
                                     </div>
                                 </div>
 
-                                <div class="row">
-                                    <!-- Harga per meter kubik -->
-                                    <div class="col-md-6">
-                                        <div class="form-group">
-                                            <label for="modalHargaPerM3"><strong>Harga per m³</strong></label>
-                                            <div class="input-group">
-                                                <div class="input-group-prepend">
-                                                    <span class="input-group-text">Rp</span>
-                                                </div>
-                                                <input type="number" step="0.01" name="harga_per_meter_kubik"
-                                                    id="modalHargaPerM3"
-                                                    class="form-control @error('harga_per_meter_kubik') is-invalid @enderror"
-                                                    value="{{ old('harga_per_meter_kubik', $customer->harga_per_meter_kubik ?? 0) }}"
-                                                    placeholder="Masukkan harga per m³" required>
-                                                <div class="input-group-append">
-                                                    <span class="input-group-text">/m³</span>
-                                                </div>
-                                                @error('harga_per_meter_kubik')
-                                                    <div class="invalid-feedback">{{ $message }}</div>
-                                                @enderror
-                                            </div>
+                                <!-- Harga per meter kubik -->
+                                <div class="form-group">
+                                    <label for="modalHargaPerM3"><strong>Harga per m³</strong></label>
+                                    <div class="input-group">
+                                        <div class="input-group-prepend">
+                                            <span class="input-group-text">Rp</span>
                                         </div>
-                                    </div>
-
-                                    <!-- Tekanan keluar -->
-                                    <div class="col-md-6">
-                                        <div class="form-group">
-                                            <label for="modalTekananKeluar"><strong>Tekanan Keluar (Bar)</strong></label>
-                                            <div class="input-group">
-                                                <input type="number" step="0.001" name="tekanan_keluar"
-                                                    id="modalTekananKeluar"
-                                                    class="form-control @error('tekanan_keluar') is-invalid @enderror"
-                                                    value="0" placeholder="Tekanan Keluar" readonly>
-                                                <div class="input-group-append">
-                                                    <span class="input-group-text">Bar</span>
-                                                </div>
-                                                @error('tekanan_keluar')
-                                                    <div class="invalid-feedback">{{ $message }}</div>
-                                                @enderror
-                                            </div>
+                                        <input type="number" step="0.01" name="harga_per_meter_kubik"
+                                            id="modalHargaPerM3"
+                                            class="form-control @error('harga_per_meter_kubik') is-invalid @enderror"
+                                            value="{{ old('harga_per_meter_kubik', $customer->harga_per_meter_kubik ?? 0) }}"
+                                            placeholder="Masukkan harga per m³" required>
+                                        <div class="input-group-append">
+                                            <span class="input-group-text">/m³</span>
                                         </div>
+                                        @error('harga_per_meter_kubik')
+                                            <div class="invalid-feedback">{{ $message }}</div>
+                                        @enderror
                                     </div>
                                 </div>
-
-                                <div class="row">
-                                    <!-- Suhu -->
-                                    <div class="col-md-6">
-                                        <div class="form-group">
-                                            <label for="modalSuhu"><strong>Suhu (°C)</strong></label>
-                                            <div class="input-group">
-                                                <input type="number" step="0.1" name="suhu" id="modalSuhu"
-                                                    class="form-control @error('suhu') is-invalid @enderror"
-                                                    value="0" placeholder="Suhu" readonly>
-                                                <div class="input-group-append">
-                                                    <span class="input-group-text">°C</span>
-                                                </div>
-                                                @error('suhu')
-                                                    <div class="invalid-feedback">{{ $message }}</div>
-                                                @enderror
-                                            </div>
-                                        </div>
-                                    </div>
-
-
-                                </div>
-
-                                <!-- Footer dengan tombol aksi -->
-                                <div class="modal-footer">
-                                    <button type="button" class="btn btn-secondary" data-dismiss="modal">
-                                        <i class="fas fa-times mr-1"></i>Batal
-                                    </button>
-                                    <button type="submit" class="btn btn-primary">
-                                        <i class="fas fa-save mr-1"></i>Simpan Perubahan
-                                    </button>
-                                </div>
+                                
+                                <!-- Menambahkan input hidden untuk tekanan keluar dan suhu -->
+                                <input type="hidden" name="tekanan_keluar" value="0">
+                                <input type="hidden" name="suhu" value="0">
+                            </div>
+                            
+                            <!-- Footer dengan tombol aksi -->
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-secondary" data-dismiss="modal">
+                                    <i class="fas fa-times mr-1"></i>Batal
+                                </button>
+                                <button type="submit" class="btn btn-primary">
+                                    <i class="fas fa-save mr-1"></i>Simpan Perubahan
+                                </button>
+                            </div>
                         </form>
                     </div>
                 </div>
@@ -756,6 +800,96 @@ usort($pricingHistory, function ($a, $b) {
 
             #setPricingModal .col-md-6 {
                 margin-bottom: 1rem;
+            }
+        }
+        
+        /* Styling untuk info-box */
+        .info-box {
+            display: flex;
+            min-height: 80px;
+            background: #fff;
+            width: 100%;
+            box-shadow: 0 1px 1px rgba(0,0,0,.1);
+            border-radius: 0.25rem;
+            margin-bottom: 1rem;
+        }
+        
+        .info-box-icon {
+            border-top-left-radius: 0.25rem;
+            border-top-right-radius: 0;
+            border-bottom-right-radius: 0;
+            border-bottom-left-radius: 0.25rem;
+            display: block;
+            width: 80px;
+            height: 100%;
+            text-align: center;
+            font-size: 30px;
+            line-height: 80px;
+            background: rgba(0,0,0,0.2);
+        }
+        
+        .bg-info {
+            background-color: #17a2b8 !important;
+            color: white;
+        }
+        
+        .info-box-content {
+            padding: 5px 10px;
+            flex: 1;
+        }
+        
+        .info-box-text {
+            font-size: 14px;
+            font-weight: bold;
+            margin-top: 5px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        
+        /* Styling tambahan untuk tabel */
+        .table-sm td, .table-sm th {
+            padding: 0.3rem;
+        }
+        
+        .table-bordered {
+            border: 1px solid #dee2e6;
+        }
+        
+        /* Helper classes */
+        .mt-2 {
+            margin-top: 0.5rem !important;
+        }
+        
+        .mt-3 {
+            margin-top: 1rem !important;
+        }
+        
+        .table-responsive {
+            display: block;
+            width: 100%;
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+        
+        .font-weight-bold {
+            font-weight: bold !important;
+        }
+        
+        .text-muted {
+            color: #6c757d !important;
+        }
+        
+        /* Memperbaiki tampilan pada perangkat mobile */
+        @media (max-width: 767.98px) {
+            .enhanced-info-box {
+                margin-bottom: 1.5rem;
+            }
+            
+            .info-box-icon {
+                width: 60px;
+                font-size: 24px;
+                line-height: 60px;
             }
         }
     </style>
@@ -833,66 +967,17 @@ usort($pricingHistory, function ($a, $b) {
             // Initialize tooltips
             $('[data-toggle="tooltip"]').tooltip();
 
-            $("#pricingForm").on("submit", function(e) {
-                e.preventDefault(); // Prevent default form submission
-
-                // Disable button and show loading indicator
+            // Menghilangkan kode AJAX yang membingungkan 
+            // Biarkan form submit secara native untuk memudahkan debugging
+            /*
+            $("#pricingForm").on("submit", function() {
+                console.log("Form submitted directly (non-AJAX)");
+                // Tampilkan indikator loading pada tombol
                 $("#savePricingButton").prop('disabled', true).html(
                     '<i class="fas fa-spinner fa-spin mr-1"></i> Menyimpan...');
-
-                // Get form data
-                var formData = $(this).serialize();
-
-                // Get target URL
-                var targetUrl = $(this).attr('action');
-
-                // Make an AJAX request to submit the form
-                $.ajax({
-                    url: targetUrl,
-                    type: 'POST',
-                    data: formData,
-                    dataType: 'json',
-                    success: function(response) {
-                        // Enable button and restore text
-                        $("#savePricingButton").prop('disabled', false).html(
-                            '<i class="fas fa-save mr-1"></i> Simpan Perubahan');
-
-                        if (response.success) {
-                            // Show success message
-                            alert(response.message || "Harga berhasil diperbarui!");
-
-                            // Close the modal
-                            $('#setPricingModal').modal('hide');
-
-                            // Reload the page to see changes
-                            location.reload();
-                        } else {
-                            // Show error message from response
-                            alert("Gagal: " + (response.message ||
-                                "Terjadi kesalahan saat memperbarui harga"));
-                        }
-                    },
-                    error: function(xhr, status, error) {
-                        console.error("Error submitting form:", error);
-                        console.log("Status:", status);
-                        console.log("Response Text:", xhr.responseText);
-
-                        // Enable button and restore text
-                        $("#savePricingButton").prop('disabled', false).html(
-                            '<i class="fas fa-save mr-1"></i> Simpan Perubahan');
-
-                        // Try to parse JSON response if available
-                        try {
-                            var errorResponse = JSON.parse(xhr.responseText);
-                            alert("Error: " + (errorResponse.message || error));
-                        } catch (e) {
-                            alert("Error: " + error + "\nSilakan periksa console untuk detail");
-                        }
-                    }
-                });
-
-                return false; // Prevent default form submission
+                return true; // Allow normal form submission
             });
+            */
         });
     </script>
 @endsection

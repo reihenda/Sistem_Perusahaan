@@ -432,19 +432,30 @@ class UserController extends Controller
      *
      * @param Request $request
      * @param int $fobId
-     * @return \Illuminate\Http\JsonResponse
+     * @return \Illuminate\Http\Response
      */
     public function updateFobPricing(Request $request, $customerId)
     {
         try {
+            // Debug request untuk troubleshooting
+            \Log::info('FOB Pricing Update Request', [
+                'request_data' => $request->all(),
+                'customer_id' => $customerId,
+                'is_ajax' => $request->ajax() || $request->wantsJson()
+            ]);
+
             // Validasi input
             $validator = Validator::make($request->all(), [
                 'harga_per_meter_kubik' => 'required|numeric|min:0',
-                'pricing_date' => 'required|date',
+                'pricing_date' => 'required|date_format:Y-m', // Format Y-m untuk input month
             ]);
 
             // Jika validasi gagal
             if ($validator->fails()) {
+                \Log::error('FOB Pricing Validation Failed', [
+                    'errors' => $validator->errors()->toArray()
+                ]);
+                
                 return redirect()->back()
                     ->withErrors($validator)
                     ->withInput();
@@ -454,24 +465,30 @@ class UserController extends Controller
             // Cari customer
             $customer = User::findOrFail($customerId);
 
-            $pricingDate = Carbon::parse($request->input('pricing_date'));
+            // Parse pricing date - support format Y-m dari input month
+            $pricingDateStr = $request->input('pricing_date');
+            $pricingDate = Carbon::createFromFormat('Y-m', $pricingDateStr)->firstOfMonth();
+            
+            \Log::info('Adding FOB Pricing', [
+                'date_str' => $pricingDateStr,
+                'parsed_date' => $pricingDate->format('Y-m-d H:i:s'),
+                'price' => $request->input('harga_per_meter_kubik')
+            ]);
+            
+            // Panggil method di model untuk menyimpan pricing
             $customer->addPricingHistoryfob(
                 floatval($request->input('harga_per_meter_kubik')),
                 $pricingDate
             );
 
             // Call the rekalkulasi method to update total purchases
-            $this->rekalkulasiTotalPembelianfob($customer);
+            $this->rekalkulasiTotalPembelianFob($customer);
 
             DB::commit();
-
-            // For AJAX request
-            if ($request->ajax() || $request->wantsJson()) {
-                return response()->json([
-                    'success' => true,
-                    'message' => 'Harga untuk periode ' . $pricingDate->format('F Y') . ' berhasil diperbarui'
-                ]);
-            }
+            
+            \Log::info('FOB Pricing Updated Successfully', [
+                'customer_id' => $customer->id
+            ]);
 
             // Redirect dengan refresh data
             return redirect()->route('data-pencatatan.fob-detail', [
@@ -480,34 +497,45 @@ class UserController extends Controller
             ])->with('success', 'Harga untuk periode ' . $pricingDate->format('F Y') . ' berhasil diperbarui');
         } catch (\Exception $e) {
             DB::rollBack();
-
-            // For AJAX request
-            if ($request->ajax() || $request->wantsJson()) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Gagal memperbarui data: ' . $e->getMessage()
-                ], 422);
-            }
+            \Log::error('Error in updateFobPricing', [
+                'error' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'trace' => $e->getTraceAsString()
+            ]);
 
             return redirect()->back()->with('error', 'Gagal memperbarui data: ' . $e->getMessage());
         }
     }
 
     /**
-     * Rekalkulasi total pembelian khusus FOB
+     * Rekalkulasi total pembelian khusus FOB dengan algoritma presisi tinggi
      */
     public function rekalkulasiTotalPembelianFob($fob)
     {
         try {
             DB::beginTransaction();
+            
+            // Log awal proses rekalkulasi
+            \Log::info('Memulai rekalkulasiTotalPembelianFob dengan presisi tinggi', [
+                'user_id' => $fob->id,
+                'name' => $fob->name,
+                'role' => $fob->role,
+                'old_total_purchases' => $fob->total_purchases
+            ]);
+
+            // PERBAIKAN: Gunakan nilai asli dari database
+            $originalTotalPurchases = $fob->total_purchases;
 
             // Reset total pembelian
             $fob->total_purchases = 0;
 
-            // Ambil semua data pencatatan
-            $dataPencatatans = $fob->dataPencatatan()->get();
+            // Ambil semua data pencatatan dengan urutan berdasarkan tanggal
+            $dataPencatatans = $fob->dataPencatatan()->orderBy('created_at')->get();
 
             $totalPembelian = 0;
+            $details = []; // Array untuk logging detail
+            $inconsistentRecords = 0; // Counter untuk record yang tidak konsisten
 
             foreach ($dataPencatatans as $dataPencatatan) {
                 $dataInput = $this->ensureArray($dataPencatatan->data_input);
@@ -515,35 +543,132 @@ class UserController extends Controller
                 // Untuk FOB, kita menggunakan volume_sm3 langsung
                 $volumeSm3 = floatval($dataInput['volume_sm3'] ?? 0);
 
-                // Ambil waktu pencatatan
-                $waktu = !empty($dataInput['waktu'])
-                    ? Carbon::parse($dataInput['waktu'])
-                    : null;
+                // Ambil waktu pencatatan dengan prioritas pada format 'waktu'
+                $waktu = null;
+                if (!empty($dataInput['waktu'])) {
+                    $waktu = Carbon::parse($dataInput['waktu']);
+                } elseif (!empty($dataInput['pembacaan_awal']['waktu'])) {
+                    $waktu = Carbon::parse($dataInput['pembacaan_awal']['waktu']);
+                } elseif ($dataPencatatan->created_at) {
+                    $waktu = $dataPencatatan->created_at;
+                }
+                
+                // Jika tidak ada waktu valid, log warning dan langsung gunakan harga_final
+                if (!$waktu) {
+                    \Log::warning('Tidak ada waktu valid untuk data FOB', [
+                        'record_id' => $dataPencatatan->id,
+                        'user_id' => $fob->id,
+                        'data_input' => $dataInput
+                    ]);
+                    
+                    // Gunakan harga_final jika tersedia
+                    if ($dataPencatatan->harga_final > 0) {
+                        $totalPembelian += $dataPencatatan->harga_final;
+                        $details[] = [
+                            'id' => $dataPencatatan->id,
+                            'date' => 'unknown',
+                            'source' => 'harga_final_fallback',
+                            'amount' => $dataPencatatan->harga_final
+                        ];
+                    }
+                    continue;
+                }
 
-                if ($waktu) {
-                    $yearMonth = $waktu->format('Y-m');
+                $yearMonth = $waktu->format('Y-m');
 
+                // PERBAIKAN: Prioritaskan harga_final jika ada dan valid
+                if ($dataPencatatan->harga_final > 0) {
+                    $pembelian = $dataPencatatan->harga_final;
+                    $totalPembelian += $pembelian;
+                    $details[] = [
+                        'id' => $dataPencatatan->id,
+                        'date' => $waktu->format('Y-m-d H:i:s'),
+                        'source' => 'harga_final',
+                        'amount' => $pembelian,
+                        'volume_sm3' => $volumeSm3
+                    ];
+                }
+                // Jika tidak ada harga_final tapi ada volume_sm3, hitung berdasarkan pricing
+                else if ($volumeSm3 > 0) {
                     // Ambil pricing info untuk bulan tersebut
-                    $pricingInfo = $fob->getPricingForYearMonth($yearMonth);
+                    $pricingInfo = $fob->getPricingForYearMonth($yearMonth, $waktu);
 
                     // Hitung dengan pricing yang sesuai
                     $hargaPerM3 = floatval($pricingInfo['harga_per_meter_kubik'] ?? $fob->harga_per_meter_kubik);
-
                     $pembelian = $volumeSm3 * $hargaPerM3;
+                    
+                    // PERBAIKAN: Update harga final di data pencatatan untuk konsistensi masa depan
+                    $dataPencatatan->harga_final = round($pembelian, 2);
+                    $dataPencatatan->save();
+                    
                     $totalPembelian += $pembelian;
+                    $inconsistentRecords++;
+                    
+                    $details[] = [
+                        'id' => $dataPencatatan->id,
+                        'date' => $waktu->format('Y-m-d H:i:s'),
+                        'volume_sm3' => $volumeSm3,
+                        'harga_per_m3' => $hargaPerM3, 
+                        'source' => 'calculated_and_updated',
+                        'amount' => $pembelian
+                    ];
+                }
+                // Jika tidak ada volume atau harga_final, skip record ini
+                else {
+                    \Log::warning('Data pencatatan FOB tidak memiliki volume atau harga_final', [
+                        'record_id' => $dataPencatatan->id,
+                        'user_id' => $fob->id,
+                        'volume_sm3' => $volumeSm3,
+                        'harga_final' => $dataPencatatan->harga_final
+                    ]);
                 }
             }
 
-            // Update total pembelian - pastikan numerik
-            $fob->total_purchases = floatval($totalPembelian);
-            $fob->save();
+            // Update total pembelian - pastikan numerik dengan pembulatan yang konsisten
+            $fob->total_purchases = round(floatval($totalPembelian), 2);
+            $result = $fob->save();
+
+            // PERBAIKAN: Validasi hasil rekalkulasi
+            $difference = $fob->total_purchases - $originalTotalPurchases;
+            $percentageDifference = $originalTotalPurchases > 0 ? abs($difference / $originalTotalPurchases) * 100 : 0;
+
+            // Log hasil rekalkulasi dengan lebih detail
+            \Log::info('Hasil rekalkulasi total pembelian FOB dengan presisi tinggi', [
+                'user_id' => $fob->id,
+                'name' => $fob->name,
+                'role' => $fob->role,
+                'total_records' => count($dataPencatatans),
+                'inconsistent_records_fixed' => $inconsistentRecords,
+                'original_total_purchases' => $originalTotalPurchases,
+                'new_total_purchases' => $fob->total_purchases,
+                'difference' => $difference,
+                'percentage_difference' => $percentageDifference,
+                'calculated_details_count' => count($details),
+                'save_result' => $result
+            ]);
+
+            // Jika perbedaan signifikan (> 5%), log sebagai warning
+            if ($percentageDifference > 5) {
+                \Log::warning('Perbedaan signifikan dalam rekalkulasi total pembelian FOB', [
+                    'user_id' => $fob->id,
+                    'percentage_difference' => $percentageDifference,
+                    'difference_amount' => $difference
+                ]);
+            }
 
             DB::commit();
 
-            return $totalPembelian;
+            return $fob->total_purchases;
         } catch (\Exception $e) {
             DB::rollBack();
-            error_log("Error in rekalkulasiTotalPembelianFob: " . $e->getMessage());
+            \Log::error('Error in rekalkulasiTotalPembelianFob: ' . $e->getMessage(), [
+                'user_id' => $fob->id, 
+                'role' => $fob->role,
+                'error' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'trace' => $e->getTraceAsString()
+            ]);
             return 0;
         }
     }
@@ -554,6 +679,192 @@ class UserController extends Controller
         return response()->json([
             'pricing_history' => $this->ensureArray($customer->pricing_history)
         ]);
+    }
+
+    /**
+     * Sinkronisasi saldo tanpa mengembalikan respons redirect (untuk sinkronisasi otomatis)
+     *
+     * @param User $customer Customer yang akan disinkronisasi saldonya
+     * @return boolean Hasil sinkronisasi (true jika berhasil)
+     */
+    public function syncBalanceSilent($customer)
+    {
+        try {
+            DB::beginTransaction();
+            
+            // Log untuk debugging
+            \Log::info('Memulai sinkronisasi saldo silent', [
+                'user_id' => $customer->id,
+                'name' => $customer->name,
+                'current_total_deposit' => $customer->total_deposit,
+                'current_total_purchases' => $customer->total_purchases,
+                'current_balance' => $customer->getCurrentBalance()
+            ]);
+            
+            // 1. Rekalkulasi total pembelian untuk mendapatkan nilai yang akurat
+            if ($customer->isFOB()) {
+                $newTotalPurchases = $this->rekalkulasiTotalPembelianFob($customer);
+                \Log::info('Hasil rekalkulasi total pembelian FOB', [
+                    'user_id' => $customer->id,
+                    'new_total_purchases' => $newTotalPurchases,
+                    'old_total_purchases' => $customer->total_purchases,
+                    'difference' => $newTotalPurchases - $customer->total_purchases
+                ]);
+            } else {
+                $newTotalPurchases = $this->rekalkulasiTotalPembelian($customer);
+                \Log::info('Hasil rekalkulasi total pembelian customer', [
+                    'user_id' => $customer->id,
+                    'new_total_purchases' => $newTotalPurchases
+                ]);
+            }
+            
+            // 2. Pastikan total deposit dan total purchases dihitung dengan benar
+            $depositHistory = $this->ensureArray($customer->deposit_history);
+            $calculatedTotalDeposit = 0;
+            
+            // Hitung ulang total deposit dari seluruh riwayat deposit
+            foreach ($depositHistory as $deposit) {
+                $calculatedTotalDeposit += floatval($deposit['amount'] ?? 0);
+            }
+            
+            // Update total deposit jika berbeda untuk memastikan konsistensi data
+            if (abs($calculatedTotalDeposit - $customer->total_deposit) > 0.01) {
+                \Log::info('Memperbarui total deposit', [
+                    'user_id' => $customer->id,
+                    'old_total_deposit' => $customer->total_deposit,
+                    'calculated_total_deposit' => $calculatedTotalDeposit,
+                    'difference' => $calculatedTotalDeposit - $customer->total_deposit
+                ]);
+                
+                $customer->total_deposit = $calculatedTotalDeposit;
+                $customer->save();
+            }
+            
+            // 3. Perbarui monthly_balances untuk semua periode dengan data terbaru
+            // Mulai dari waktu yang jauh ke belakang untuk memastikan semua data tercakup
+            $updateResult = $customer->updateMonthlyBalances();
+            \Log::info('Hasil update monthly_balances dengan data lengkap', [
+                'user_id' => $customer->id,
+                'success' => $updateResult ? 'true' : 'false'
+            ]);
+            
+            
+            // 4. PERBAIKAN: Tambahkan validasi akhir dengan perbandingan terhadap total aktual
+            try {
+                // Reload customer dari database untuk memastikan data terkini
+                $freshCustomer = User::find($customer->id);
+                if ($freshCustomer) {
+                    $currentMonth = now()->format('Y-m');
+                    $monthlyBalances = $this->ensureArray($freshCustomer->monthly_balances);
+                    $currentTotalBalance = $freshCustomer->getCurrentBalance();
+                    
+                    // Identifikasi bulan terakhir yang ada di monthly_balances
+                    $lastMonthKey = null;
+                    $lastMonthBalance = null;
+                    foreach ($monthlyBalances as $month => $balance) {
+                        if ($lastMonthKey === null || $month > $lastMonthKey) {
+                            $lastMonthKey = $month;
+                            $lastMonthBalance = $balance;
+                        }
+                    }
+                    
+                    \Log::info('Validasi akhir sinkronisasi saldo', [
+                        'user_id' => $freshCustomer->id,
+                        'role' => $freshCustomer->role,
+                        'current_month' => $currentMonth,
+                        'last_month_in_balances' => $lastMonthKey,
+                        'last_month_balance' => $lastMonthBalance,
+                        'total_balance' => $currentTotalBalance,
+                        'total_deposit' => $freshCustomer->total_deposit,
+                        'total_purchases' => $freshCustomer->total_purchases
+                    ]);
+                    
+                    // Jika perbedaan signifikan dan ini adalah FOB, coba sekali lagi
+                    if ($lastMonthBalance !== null && 
+                        abs($lastMonthBalance - $currentTotalBalance) > 0.01 && 
+                        $freshCustomer->isFOB()) {
+                            
+                        \Log::warning('Melakukan satu kali lagi update monthly_balances untuk FOB', [
+                            'user_id' => $freshCustomer->id,
+                            'role' => $freshCustomer->role,
+                            'last_month' => $lastMonthKey,
+                            'last_month_balance' => $lastMonthBalance, 
+                            'total_balance' => $currentTotalBalance,
+                            'difference' => $currentTotalBalance - $lastMonthBalance
+                        ]);
+                        
+                        // Untuk kasus FOB, kita coba lagi dengan waktu start yang lebih jauh
+                        $fourYearsAgo = Carbon::now()->subYears(4)->format('Y-m');
+                        $freshCustomer->updateMonthlyBalances($fourYearsAgo);
+                    }
+                }
+            } catch (\Exception $e) {
+                \Log::error('Error saat validasi akhir sinkronisasi saldo: ' . $e->getMessage(), [
+                    'user_id' => $customer->id, 
+                    'role' => $customer->role,
+                    'error' => $e->getMessage(),
+                    'trace' => $e->getTraceAsString()
+                ]);
+                // Lanjutkan proses meskipun ada error
+            }
+            
+            DB::commit();
+            
+            return true;
+        } catch (\Exception $e) {
+            DB::rollBack();
+            \Log::error('Error dalam sinkronisasi saldo silent: ' . $e->getMessage(), [
+                'user_id' => $customer->id,
+                'role' => $customer->role,
+                'error' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return false;
+        }
+    }
+
+    /**
+     * Sinkronisasi saldo untuk menangani perbedaan antara total saldo dan saldo bulanan
+     *
+     * @param int $userId
+     * @return \Illuminate\Http\Response
+     */
+    public function syncBalance($userId)
+    {
+        try {
+            DB::beginTransaction();
+            
+            // Cari customer
+            $customer = User::findOrFail($userId);
+            
+            // Pastikan hanya admin atau superadmin yang bisa melakukan sinkronisasi
+            if (!Auth::user()->isAdmin() && !Auth::user()->isSuperAdmin()) {
+                return redirect()->back()->with('error', 'Anda tidak memiliki izin untuk melakukan sinkronisasi saldo');
+            }
+            
+            // Gunakan metode syncBalanceSilent
+            $result = $this->syncBalanceSilent($customer);
+            
+            if ($result) {
+                return redirect()->back()->with('success', 'Sinkronisasi saldo berhasil dilakukan');
+            } else {
+                return redirect()->back()->with('error', 'Terjadi masalah saat menyinkronkan saldo');
+            }
+        } catch (\Exception $e) {
+            DB::rollBack();
+            \Log::error('Error dalam syncBalance: ' . $e->getMessage(), [
+                'user_id' => $userId,
+                'error' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return redirect()->back()->with('error', 'Gagal melakukan sinkronisasi saldo: ' . $e->getMessage());
+        }
     }
 
     /**

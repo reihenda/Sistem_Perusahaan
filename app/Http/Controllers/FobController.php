@@ -33,7 +33,7 @@ class FobController extends Controller
      * Fungsi ini akan dijalankan setiap kali halaman fob-detail diakses
      */
     /**
-     * Metode untuk menjalankan sinkronisasi data manual
+     * Metode untuk menjalankan sinkronisasi data manual dengan pemeriksaan integritas
      */
     public function syncData(User $customer)
     {
@@ -48,18 +48,120 @@ class FobController extends Controller
             return redirect()->back()->with('error', 'Anda tidak memiliki izin untuk melakukan operasi ini');
         }
 
-        // Ambil SEMUA rekap pengambilan dan data pencatatan yang ada
-        $rekapData = RekapPengambilan::where('customer_id', $customer->id)->get();
+        try {
+            DB::beginTransaction();
+            
+            // Ambil SEMUA rekap pengambilan dan data pencatatan yang ada
+            $rekapData = RekapPengambilan::where('customer_id', $customer->id)->get();
 
-        // Lakukan sinkronisasi data dengan metode yang lebih agresif
-        $newDataCount = $this->forceSyncRekapPengambilanData($customer, $rekapData);
-
-        if ($newDataCount > 0) {
+            // Lakukan sinkronisasi data dengan metode yang lebih agresif
+            $newDataCount = $this->forceSyncRekapPengambilanData($customer, $rekapData);
+            
+            // Langkah 1: Rekalkulasi total pembelian
+            $userController = new UserController();
+            $newTotalPurchases = $userController->rekalkulasiTotalPembelianFob($customer);
+            
+            // Log hasil rekalkulasi
+            Log::info("Hasil rekalkulasi total pembelian setelah sync", [
+                'customer_id' => $customer->id,
+                'old_total_purchases' => $customer->total_purchases, 
+                'new_total_purchases' => $newTotalPurchases,
+                'difference' => $newTotalPurchases - $customer->total_purchases
+            ]);
+            
+            // Langkah 2: Verifikasi dan perbaiki konsistensi data deposit
+            $depositHistory = $this->ensureArray($customer->deposit_history);
+            $calculatedTotalDeposit = 0;
+            
+            foreach ($depositHistory as $deposit) {
+                if (isset($deposit['amount'])) {
+                    $calculatedTotalDeposit += floatval($deposit['amount']);
+                }
+            }
+            
+            // Jika ada perbedaan dalam total deposit, perbaiki
+            if (abs($calculatedTotalDeposit - $customer->total_deposit) > 0.01) {
+                Log::warning("Perbedaan total deposit terdeteksi", [
+                    'customer_id' => $customer->id,
+                    'stored_total_deposit' => $customer->total_deposit,
+                    'calculated_total_deposit' => $calculatedTotalDeposit,
+                    'difference' => $calculatedTotalDeposit - $customer->total_deposit
+                ]);
+                
+                // Update total deposit ke nilai yang benar
+                $customer->total_deposit = $calculatedTotalDeposit;
+                $customer->save();
+                
+                Log::info("Total deposit dikoreksi", [
+                    'customer_id' => $customer->id,
+                    'new_total_deposit' => $customer->total_deposit
+                ]);
+            }
+            
+            // Langkah 3: Reset dan perbarui monthly balances dengan data yang sudah dikoreksi
+            // Hapus monthly_balances yang ada dan buat ulang dari awal
+            $customer->monthly_balances = [];
+            $customer->save();
+            
+            // Perbarui monthly_balances dari awal (4 tahun ke belakang)
+            $fourYearsAgo = Carbon::now()->subYears(4)->startOfMonth()->format('Y-m');
+            $updateResult = $customer->updateMonthlyBalances($fourYearsAgo);
+            
+            Log::info("Monthly balances diperbarui setelah sync", [
+                'customer_id' => $customer->id,
+                'success' => $updateResult ? 'true' : 'false',
+                'start_from' => $fourYearsAgo
+            ]);
+            
+            // Langkah 4: Verifikasi final keseluruhan proses
+            // Reload customer dari database untuk memastikan data terbaru
+            $customer = User::findOrFail($customer->id);
+            
+            // Validasi saldo akhir sesuai dengan total_deposit - total_purchases
+            $expectedBalance = $customer->total_deposit - $customer->total_purchases;
+            $currentYearMonth = Carbon::now()->format('Y-m');
+            $latestBalance = $customer->monthly_balances[$currentYearMonth] ?? null;
+            
+            if ($latestBalance !== null && abs($expectedBalance - $latestBalance) > 0.01) {
+                Log::warning("Saldo akhir masih tidak konsisten setelah sync", [
+                    'customer_id' => $customer->id,
+                    'expected_balance' => $expectedBalance,
+                    'latest_monthly_balance' => $latestBalance,
+                    'difference' => $expectedBalance - $latestBalance
+                ]);
+                
+                // Koreksi saldo bulan terakhir jika masih tidak konsisten
+                $monthlyBalances = $customer->monthly_balances;
+                $monthlyBalances[$currentYearMonth] = $expectedBalance;
+                $customer->monthly_balances = $monthlyBalances;
+                $customer->save();
+                
+                Log::info("Saldo bulan terakhir dikoreksi manual", [
+                    'customer_id' => $customer->id,
+                    'current_month' => $currentYearMonth,
+                    'corrected_balance' => $expectedBalance
+                ]);
+            }
+            
+            DB::commit();
+            
+            if ($newDataCount > 0) {
+                return redirect()->route('data-pencatatan.fob-detail', ['customer' => $customer->id])
+                    ->with('success', "$newDataCount data berhasil disinkronkan dan saldo sudah dikoreksi dengan akurat!");
+            } else {
+                return redirect()->route('data-pencatatan.fob-detail', ['customer' => $customer->id])
+                    ->with('info', "Tidak ada data baru, tetapi semua saldo telah diverifikasi dan dikoreksi jika diperlukan.");
+            }
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error("Error saat sinkronisasi data", [
+                'customer_id' => $customer->id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
             return redirect()->route('data-pencatatan.fob-detail', ['customer' => $customer->id])
-                ->with('success', "$newDataCount data berhasil disinkronkan dari rekap pengambilan!");
-        } else {
-            return redirect()->route('data-pencatatan.fob-detail', ['customer' => $customer->id])
-                ->with('info', "Tidak ada data baru untuk disinkronkan. Semua data sudah sinkron.");
+                ->with('error', "Terjadi kesalahan: {$e->getMessage()}");
         }
     }
 
@@ -464,6 +566,13 @@ class FobController extends Controller
         // Hitung total pembelian berdasarkan volume Sm3 dan harga per meter kubik
         $totalPembelianTahunan = 0;
         foreach ($yearlyData as $item) {
+            // Jika harga_final sudah tersedia, gunakan itu (lebih akurat)
+            if ($item->harga_final > 0) {
+                $totalPembelianTahunan += floatval($item->harga_final);
+                continue;
+            }
+            
+            // Jika tidak ada harga_final, kita perlu menghitung berdasarkan volume dan harga
             $dataInput = $this->ensureArray($item->data_input);
             $volumeSm3 = floatval($dataInput['volume_sm3'] ?? 0);
 
@@ -509,7 +618,22 @@ class FobController extends Controller
             if (!$waktuYearMonth) {
                 $waktuYearMonth = Carbon::now()->format('Y-m');
             }
-            $pricingInfo = $customer->getPricingForYearMonth($waktuYearMonth);
+            
+            // Dapatkan tanggal yang tepat untuk pricing
+            $recordDate = null;
+            if (!empty($dataInput['waktu'])) {
+                $recordDate = Carbon::parse($dataInput['waktu']);
+            } elseif (!empty($dataInput['tanggal'])) {
+                $recordDate = Carbon::parse($dataInput['tanggal']);
+            } elseif (!empty($dataInput['pembacaan_awal']['waktu'])) {
+                $recordDate = Carbon::parse($dataInput['pembacaan_awal']['waktu']);
+            } elseif ($item->created_at) {
+                $recordDate = $item->created_at;
+            } else {
+                $recordDate = Carbon::now();
+            }
+            
+            $pricingInfo = $customer->getPricingForYearMonth($waktuYearMonth, $recordDate);
 
             // Gunakan harga yang sesuai untuk periode ini
             $hargaPerMeterKubik = floatval($pricingInfo['harga_per_meter_kubik'] ?? $customer->harga_per_meter_kubik);
@@ -645,13 +769,37 @@ class FobController extends Controller
             return redirect()->back()->with('error', 'User yang dipilih bukan FOB');
         }
 
-        // Jalankan sinkronisasi data secara otomatis
-        // Ini akan mengimpor data dari rekap_pengambilan ke data_pencatatan jika belum ada
-        $newDataCount = $this->syncRekapPengambilanData($customer);
+        // Jalankan sinkronisasi data secara otomatis dengan force untuk memastikan konsistensi
+        // Ini akan mengimpor SEMUA data dari rekap_pengambilan ke data_pencatatan yang belum tercatat
+        $newDataCount = $this->forceSyncRekapPengambilanData($customer);
         $syncMessage = '';
         if ($newDataCount > 0) {
             $syncMessage = $newDataCount . ' data baru berhasil diimpor dari rekap pengambilan.';
             Log::info("Berhasil menyinkronkan $newDataCount data FOB untuk customer ID {$customer->id}");
+            
+            // Jika ada data baru yang diimpor, kita perlu merekalkulasi total pembelian juga
+            $userController = new UserController();
+            $userController->rekalkulasiTotalPembelianFob($customer);
+            Log::info("Rekalkulasi pembelian FOB setelah impor data baru untuk customer ID {$customer->id}");
+        }
+        
+        // PERBAIKAN: Jalankan validasi dan koreksi otomatis setiap kali halaman dimuat
+        $this->performAutomaticDataValidation($customer);
+        
+        // Jalankan sinkronisasi saldo SELALU setiap kali halaman dimuat untuk memastikan konsistensi data
+        // Bahkan jika user bukan admin, ini akan membantu menyesuaikan data
+        $userController = new UserController();
+        try {
+            // Rekalkulasi total pembelian dahulu
+            $userController->rekalkulasiTotalPembelianFob($customer);
+            // Sinkronisasi saldo untuk memastikan data akurat
+            $userController->syncBalanceSilent($customer);
+            Log::info("Auto-sync saldo untuk customer ID {$customer->id} berhasil dilakukan");
+            
+            // Refresh data customer setelah sinkronisasi
+            $customer = User::findOrFail($customer->id);
+        } catch (\Exception $e) {
+            Log::error("Error saat auto-sync saldo: {$e->getMessage()}");
         }
 
         // Get filter parameters
@@ -665,6 +813,10 @@ class FobController extends Controller
         if (!$tahun) {
             $tahun = date('Y');
         }
+        
+        // Perbarui monthly_balances setiap kali filter berubah untuk memastikan data akurat
+        // Hal ini memastikan bahwa saat pengguna berpindah antar bulan, data selalu konsisten
+        $customer->updateMonthlyBalances();
 
         // Format filter untuk query - tanggal awal dan akhir bulan untuk filtering yang lebih tepat
         $yearMonth = $tahun . '-' . str_pad($bulan, 2, '0', STR_PAD_LEFT);
@@ -840,65 +992,147 @@ class FobController extends Controller
             return floatval($dataInput['volume_sm3'] ?? 0);
         });
 
-        // Calculate total volume SM3 for filtered period
+        // Calculate total volume SM3 for filtered period and total purchases dengan metode yang lebih akurat
         $filteredVolumeSm3 = 0;
+        $filteredTotalPurchases = 0;
+        
         foreach ($dataPencatatan as $item) {
             $dataInput = $this->ensureArray($item->data_input);
             $volumeSm3 = floatval($dataInput['volume_sm3'] ?? 0);
             $filteredVolumeSm3 += $volumeSm3;
             
-            // Log volume untuk debugging
-            Log::info('Adding volume to total', [
-                'id' => $item->id,
-                'volume_sm3' => $volumeSm3,
-                'running_total' => $filteredVolumeSm3
-            ]);
+            // PERBAIKAN: Gunakan harga_final jika tersedia untuk akurasi terbaik
+            if ($item->harga_final > 0) {
+                $filteredTotalPurchases += floatval($item->harga_final);
+                
+                // Log perhitungan untuk debugging dengan flag harga_final
+                Log::info('Using harga_final for purchase', [
+                    'id' => $item->id,
+                    'volume_sm3' => $volumeSm3,
+                    'harga_final' => $item->harga_final,
+                    'running_volume' => $filteredVolumeSm3,
+                    'running_purchases' => $filteredTotalPurchases
+                ]);
+            } else {
+                // Jika harga_final tidak tersedia, hitung manual dengan metode yang konsisten
+                // Ambil tanggal waktu pencatatan dari berbagai format dengan prioritas yang jelas
+                $recordDate = null;
+                
+                if (!empty($dataInput['waktu'])) {
+                    $recordDate = Carbon::parse($dataInput['waktu']);
+                } elseif (!empty($dataInput['tanggal'])) {
+                    $recordDate = Carbon::parse($dataInput['tanggal']);
+                } elseif (!empty($dataInput['pembacaan_awal']['waktu'])) {
+                    $recordDate = Carbon::parse($dataInput['pembacaan_awal']['waktu']);
+                } elseif ($item->created_at) {
+                    $recordDate = $item->created_at;
+                } else {
+                    $recordDate = Carbon::now(); // Fallback ke tanggal saat ini
+                }
+                
+                // Ambil pricing info berdasarkan tanggal spesifik
+                $recordYearMonth = $recordDate->format('Y-m');
+                $pricingInfo = $customer->getPricingForYearMonth($recordYearMonth, $recordDate);
+                
+                // Gunakan harga yang tepat sesuai periode
+                $hargaPerM3 = floatval($pricingInfo['harga_per_meter_kubik'] ?? $customer->harga_per_meter_kubik);
+                $pembelian = $volumeSm3 * $hargaPerM3;
+                
+                // Update harga_final untuk konsistensi di kemudian hari
+                $item->harga_final = $pembelian;
+                $item->save();
+                
+                $filteredTotalPurchases += $pembelian;
+                
+                // Log perhitungan untuk debugging
+                Log::info('Calculating purchase manually', [
+                    'id' => $item->id,
+                    'record_date' => $recordDate->format('Y-m-d H:i:s'),
+                    'volume_sm3' => $volumeSm3,
+                    'harga_per_m3' => $hargaPerM3,
+                    'pembelian' => $pembelian,
+                    'running_purchases' => $filteredTotalPurchases
+                ]);
+            }
+        }
+        
+        // Log ringkasan final perhitungan untuk debugging
+        Log::info('Final filter calculation results', [
+            'customer_id' => $customer->id,
+            'period' => $yearMonth,
+            'total_records' => count($dataPencatatan),
+            'total_volume' => $filteredVolumeSm3,
+            'total_purchases' => $filteredTotalPurchases
+        ]);
+
+        // Pastikan monthly balances telah diupdate dengan data terbaru
+        $customer->updateMonthlyBalances();
+
+        // Metode yang lebih konsisten untuk menghitung prevMonthBalance dengan perhitungan real-time
+        // 1. Cari bulan sebelumnya - handling untuk Januari dengan pergantian tahun
+        $carbonDate = Carbon::createFromDate($tahun, $bulan, 1);
+        $prevCarbonDate = $carbonDate->copy()->subMonth();
+        $prevMonthFormat = $prevCarbonDate->format('Y-m');
+        $prevYear = $prevCarbonDate->year;
+        $prevMonth = $prevCarbonDate->month;
+
+        // 2. Hitung saldo bulan sebelumnya dengan algoritma yang sama persis dengan 
+        // yang digunakan untuk menampilkan halaman bulan sebelumnya
+
+        // 2.1. Ambil semua deposit sebelum bulan ini
+        $totalDepositsUntilPrevMonth = 0;
+        $depositHistory = $this->ensureArray($customer->deposit_history);
+        foreach ($depositHistory as $deposit) {
+            if (isset($deposit['date'])) {
+                $depositDate = Carbon::parse($deposit['date']);
+                if ($depositDate < $carbonDate) { // Semua deposit sebelum bulan ini
+                    $totalDepositsUntilPrevMonth += floatval($deposit['amount'] ?? 0);
+                }
+            }
         }
 
-        // Calculate total purchases for the filtered period
-        $filteredTotalPurchases = 0;
-        foreach ($dataPencatatan as $item) {
+        // 2.2. Ambil semua pembelian sebelum bulan ini
+        $totalPurchasesUntilPrevMonth = 0;
+        $allData = $customer->dataPencatatan()->get();
+        foreach ($allData as $item) {
             $dataInput = $this->ensureArray($item->data_input);
-            $volumeSm3 = floatval($dataInput['volume_sm3'] ?? 0);
-            
-            // Ambil tanggal waktu pencatatan dari berbagai format yang mungkin
             $recordDate = null;
             
+            // Coba mendapatkan tanggal dari berbagai format
             if (!empty($dataInput['waktu'])) {
                 $recordDate = Carbon::parse($dataInput['waktu']);
-            } elseif (!empty($dataInput['tanggal'])) {
-                $recordDate = Carbon::parse($dataInput['tanggal']);
             } elseif (!empty($dataInput['pembacaan_awal']['waktu'])) {
                 $recordDate = Carbon::parse($dataInput['pembacaan_awal']['waktu']);
             } elseif ($item->created_at) {
                 $recordDate = $item->created_at;
             } else {
-                $recordDate = Carbon::now(); // Fallback ke tanggal saat ini
+                continue; // Skip item tanpa tanggal
             }
             
-            // Ambil pricing info berdasarkan tanggal spesifik
-            $recordYearMonth = $recordDate->format('Y-m');
-            $pricingInfo = $customer->getPricingForYearMonth($recordYearMonth, $recordDate);
-            
-            // Gunakan harga yang tepat sesuai periode
-            $hargaPerM3 = floatval($pricingInfo['harga_per_meter_kubik'] ?? $customer->harga_per_meter_kubik);
-            $pembelian = $volumeSm3 * $hargaPerM3;
-            
-            // Log perhitungan untuk debugging
-            Log::info('Calculating filtered purchase', [
-                'id' => $item->id,
-                'record_date' => $recordDate->format('Y-m-d H:i:s'),
-                'volume_sm3' => $volumeSm3,
-                'harga_per_m3' => $hargaPerM3,
-                'pembelian' => $pembelian,
-                'pricing_info' => $pricingInfo
-            ]);
-            
-            $filteredTotalPurchases += $pembelian;
+            // Hanya pembelian sebelum bulan ini
+            if ($recordDate < $carbonDate) {
+                $hargaFinal = floatval($item->harga_final);
+                $totalPurchasesUntilPrevMonth += $hargaFinal;
+            }
         }
 
+        // 2.3. Hitung saldo akhir bulan sebelumnya
+        $prevMonthBalance = $totalDepositsUntilPrevMonth - $totalPurchasesUntilPrevMonth;
+        
+        // 3. Log informasi saldo bulan lalu untuk debugging
+        Log::info('Informasi saldo bulan lalu dengan perhitungan real-time', [
+            'bulan_dipilih' => $bulan . '-' . $tahun,
+            'bulan_sebelumnya' => $prevMonthFormat,
+            'total_deposits_until_prev_month' => $totalDepositsUntilPrevMonth,
+            'total_purchases_until_prev_month' => $totalPurchasesUntilPrevMonth,
+            'saldo_bulan_sebelumnya_realtime' => $prevMonthBalance,
+            'saldo_bulan_sebelumnya_db' => isset($monthlyBalances[$prevMonthFormat]) ? 
+                floatval($monthlyBalances[$prevMonthFormat]) : 'tidak ada'
+        ]);
+            
         // Calculate total deposits for the filtered period
         $filteredTotalDeposits = 0;
+        // Ambil deposit history dari customer
         $depositHistory = $this->ensureArray($customer->deposit_history);
 
         foreach ($depositHistory as $deposit) {
@@ -912,6 +1146,14 @@ class FobController extends Controller
 
         // Calculate yearly data
         $yearlyData = $this->calculateYearlyData($customer, $tahun);
+        
+        // Pastikan monthly balances diperbarui secara berkala
+        // Ini penting untuk memastikan saldo bulan-bulan sebelumnya tersedia
+        $customer->updateMonthlyBalances();
+        
+        // Store the selected month and year for view
+        $selectedBulan = $bulan;
+        $selectedTahun = $tahun;
 
         // Tampilkan pesan sinkronisasi jika ada
         if (!empty($syncMessage)) {
@@ -921,17 +1163,18 @@ class FobController extends Controller
         return view('data-pencatatan.fob.fob-detail', [
             'customer' => $customer,
             'dataPencatatan' => $dataPencatatan,
-            'depositHistory' => $customer->deposit_history ?? [],
+            'depositHistory' => $this->ensureArray($customer->deposit_history),
             'totalDeposit' => $customer->total_deposit,
             'totalPurchases' => $customer->total_purchases,
             'currentBalance' => $customer->getCurrentBalance(),
-            'selectedBulan' => $bulan,
-            'selectedTahun' => $tahun,
+            'selectedBulan' => $selectedBulan,
+            'selectedTahun' => $selectedTahun,
             'pricingInfo' => $pricingInfo,
             'totalVolumeSm3' => $totalVolumeSm3,
             'filteredVolumeSm3' => $filteredVolumeSm3,
             'filteredTotalPurchases' => $filteredTotalPurchases,
             'filteredTotalDeposits' => $filteredTotalDeposits,
+            'prevMonthBalance' => $prevMonthBalance,
             'totalPemakaianTahunan' => $yearlyData['totalPemakaianTahunan'],
             'totalPembelianTahunan' => $yearlyData['totalPembelianTahunan']
         ]);
@@ -945,10 +1188,206 @@ class FobController extends Controller
             'tahun' => 'required|numeric|between:2000,2100'
         ]);
 
+        // Gunakan with() untuk menyimpan data dalam session flash
+        // ini akan memastikan variabel $depositHistory tersedia di view
         return redirect()->route('data-pencatatan.fob-detail', [
             'customer' => $customer->id,
             'bulan' => $validatedData['bulan'],
             'tahun' => $validatedData['tahun']
         ]);
+    }
+    
+    /**
+     * Fungsi untuk force-reset monthly balances dan menghitung ulang seluruh saldo
+     * Digunakan untuk memperbaiki data yang tidak konsisten
+     */
+    public function resetAndRecalculateBalance(User $customer)
+    {
+        try {
+            DB::beginTransaction();
+            
+            // Verifikasi bahwa user memiliki izin (admin atau superadmin)
+            if (!Auth::user()->isAdmin() && !Auth::user()->isSuperAdmin()) {
+                return redirect()->back()->with('error', 'Anda tidak memiliki izin untuk melakukan operasi ini');
+            }
+            
+            // Log operasi reset
+            Log::info('Memulai reset dan rekalkulasi saldo untuk customer', [
+                'customer_id' => $customer->id,
+                'customer_name' => $customer->name,
+            ]);
+            
+            // 1. Reset total_purchases dan hitung ulang dari semua data pencatatan
+            $userController = new UserController();
+            if ($customer->isFOB()) {
+                $newTotalPurchases = $userController->rekalkulasiTotalPembelianFob($customer);
+            } else {
+                $newTotalPurchases = $userController->rekalkulasiTotalPembelian($customer);
+            }
+            
+            // 2. Reset total_deposit dan hitung ulang dari deposit_history
+            $depositHistory = $this->ensureArray($customer->deposit_history);
+            $newTotalDeposit = 0;
+            
+            foreach ($depositHistory as $deposit) {
+                $newTotalDeposit += floatval($deposit['amount'] ?? 0);
+            }
+            
+            // Update total_deposit jika berbeda
+            if (abs($newTotalDeposit - $customer->total_deposit) > 0.01) {
+                Log::info('Memperbarui total_deposit', [
+                    'customer_id' => $customer->id,
+                    'old_total_deposit' => $customer->total_deposit,
+                    'new_total_deposit' => $newTotalDeposit,
+                    'difference' => $newTotalDeposit - $customer->total_deposit
+                ]);
+                
+                $customer->total_deposit = $newTotalDeposit;
+                $customer->save();
+            }
+            
+            // 3. Hapus monthly_balances dan hitung ulang dari awal secara menyeluruh
+            // Reset monthly_balances ke array kosong
+            $customer->monthly_balances = [];
+            $customer->save();
+            
+            // Jalankan updateMonthlyBalances dengan waktu awal 4 tahun ke belakang untuk memastikan semua data tercakup
+            $fourYearsAgo = Carbon::now()->subYears(4)->startOfMonth()->format('Y-m');
+            Log::info('Menghitung ulang monthly_balances dari 4 tahun lalu', [
+                'start_month' => $fourYearsAgo
+            ]);
+            
+            $customer->updateMonthlyBalances($fourYearsAgo);
+            
+            // 4. Log hasil rekalkulasi
+            $monthlyBalances = $this->ensureArray($customer->monthly_balances);
+            Log::info('Reset dan rekalkulasi saldo selesai', [
+                'customer_id' => $customer->id,
+                'monthly_balances_count' => count($monthlyBalances),
+                'new_total_deposit' => $customer->total_deposit,
+                'new_total_purchases' => $customer->total_purchases,
+                'new_balance' => $customer->getCurrentBalance()
+            ]);
+            
+            DB::commit();
+            
+            return redirect()->route('data-pencatatan.fob-detail', ['customer' => $customer->id])
+                ->with('success', 'Reset dan rekalkulasi saldo berhasil dilakukan.');
+            
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('Error saat reset dan rekalkulasi saldo: ' . $e->getMessage(), [
+                'customer_id' => $customer->id,
+                'error' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return redirect()->back()
+                ->with('error', 'Terjadi kesalahan saat melakukan reset dan rekalkulasi saldo: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Fungsi untuk melakukan validasi dan koreksi data otomatis
+     * Dipanggil setiap kali halaman detail FOB diakses
+     *
+     * @param User $customer
+     * @return void
+     */
+    private function performAutomaticDataValidation(User $customer)
+    {
+        try {
+            // 1. Validasi dan perbaiki harga_final yang kosong
+            $recordsWithoutHargaFinal = $customer->dataPencatatan()
+                ->where(function($query) {
+                    $query->whereNull('harga_final')
+                          ->orWhere('harga_final', '<=', 0);
+                })
+                ->get();
+
+            $fixedRecords = 0;
+            foreach ($recordsWithoutHargaFinal as $record) {
+                $dataInput = $this->ensureArray($record->data_input);
+                $volumeSm3 = floatval($dataInput['volume_sm3'] ?? 0);
+
+                if ($volumeSm3 > 0) {
+                    // Ambil tanggal untuk pricing
+                    $recordDate = null;
+                    if (!empty($dataInput['waktu'])) {
+                        $recordDate = Carbon::parse($dataInput['waktu']);
+                    } elseif ($record->created_at) {
+                        $recordDate = $record->created_at;
+                    } else {
+                        continue;
+                    }
+
+                    $yearMonth = $recordDate->format('Y-m');
+                    $pricingInfo = $customer->getPricingForYearMonth($yearMonth, $recordDate);
+                    $hargaPerM3 = floatval($pricingInfo['harga_per_meter_kubik'] ?? $customer->harga_per_meter_kubik);
+                    $calculatedPrice = $volumeSm3 * $hargaPerM3;
+
+                    // Update harga_final
+                    $record->harga_final = round($calculatedPrice, 2);
+                    $record->save();
+                    $fixedRecords++;
+                }
+            }
+
+            if ($fixedRecords > 0) {
+                Log::info("Auto-fixed records without harga_final", [
+                    'customer_id' => $customer->id,
+                    'fixed_count' => $fixedRecords
+                ]);
+            }
+
+            // 2. Validasi konsistensi total deposit
+            $depositHistory = $this->ensureArray($customer->deposit_history);
+            $calculatedTotalDeposit = 0;
+            
+            foreach ($depositHistory as $deposit) {
+                if (isset($deposit['amount'])) {
+                    $calculatedTotalDeposit += floatval($deposit['amount']);
+                }
+            }
+            
+            // Perbaiki jika ada perbedaan
+            if (abs($calculatedTotalDeposit - $customer->total_deposit) > 0.01) {
+                Log::info("Auto-correcting total deposit", [
+                    'customer_id' => $customer->id,
+                    'old_total' => $customer->total_deposit,
+                    'new_total' => $calculatedTotalDeposit
+                ]);
+                
+                $customer->total_deposit = $calculatedTotalDeposit;
+                $customer->save();
+            }
+
+            // 3. Validasi dan update monthly_balances jika diperlukan
+            $currentYearMonth = Carbon::now()->format('Y-m');
+            $expectedBalance = $customer->total_deposit - $customer->total_purchases;
+            $monthlyBalances = $this->ensureArray($customer->monthly_balances);
+            $currentMonthBalance = $monthlyBalances[$currentYearMonth] ?? null;
+
+            // Jika saldo bulan ini tidak ada atau berbeda signifikan
+            if ($currentMonthBalance === null || abs($expectedBalance - $currentMonthBalance) > 1) {
+                Log::info("Auto-updating monthly balances due to inconsistency", [
+                    'customer_id' => $customer->id,
+                    'expected_balance' => $expectedBalance,
+                    'current_month_balance' => $currentMonthBalance
+                ]);
+                
+                // Update monthly balances
+                $customer->updateMonthlyBalances();
+            }
+
+        } catch (\Exception $e) {
+            Log::error("Error in automatic data validation", [
+                'customer_id' => $customer->id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+        }
     }
 }
