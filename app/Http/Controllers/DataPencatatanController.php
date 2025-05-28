@@ -945,6 +945,17 @@ class DataPencatatanController extends Controller
         // Get the selected customer
         $selectedCustomer = User::findOrFail($customerId);
 
+        // Get tanggal parameter jika ada
+        $selectedDate = $request->query('tanggal');
+        $prefilledDate = null;
+        $prefilledTime = null;
+        
+        if ($selectedDate) {
+            // Jika ada tanggal yang dipilih, set sebagai default untuk pembacaan awal
+            $prefilledDate = $selectedDate;
+            $prefilledTime = Carbon::parse($selectedDate)->format('Y-m-d\T07:00'); // Default jam 07:00
+        }
+
         // Get the latest reading data for this customer
         $latestData = null;
         $latestVolume = null;
@@ -970,7 +981,14 @@ class DataPencatatanController extends Controller
             session()->flash('success', 'Data pembacaan terakhir berhasil diambil');
         }
 
-        return view('data-pencatatan.create', compact('customers', 'selectedCustomer', 'latestVolume', 'latestDate'));
+        return view('data-pencatatan.create', compact(
+            'customers', 
+            'selectedCustomer', 
+            'latestVolume', 
+            'latestDate', 
+            'prefilledDate', 
+            'prefilledTime'
+        ));
     }
 
     // Sanitize and flatten nested input data

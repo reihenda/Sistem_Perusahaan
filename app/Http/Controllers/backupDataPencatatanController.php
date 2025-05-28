@@ -260,11 +260,41 @@ class DataPencatatanController extends Controller
         // Cek apakah perlu refresh data
         $refresh = $request->has('refresh');
 
-        // Jika ada refresh, rekalkulasi total
+        // Jika ada request refresh, rekalkulasi total_purchases dan update saldo bulanan
         if ($refresh) {
-            // Rekalkulasi total pemakaian dan total pembelian
-            app(UserController::class)->rekalkulasiTotalPembelian($customer);
+            \Log::info('Melakukan rekalkulasi data karena parameter refresh', [
+                'customer_id' => $customer->id,
+                'bulan' => $bulan,
+                'tahun' => $tahun
+            ]);
+
+            // Rekalkulasi total_purchases
+            $newTotal = app(UserController::class)->rekalkulasiTotalPembelian($customer);
+
+            \Log::info('Hasil rekalkulasi total_purchases', [
+                'customer_id' => $customer->id,
+                'total_purchases' => $newTotal
+            ]);
+
+            // Update saldo bulanan
+            $updateResult = $customer->updateMonthlyBalances();
+
+            \Log::info('Hasil update bulanan', [
+                'customer_id' => $customer->id,
+                'success' => $updateResult
+            ]);
+
+            // Reload customer untuk mendapatkan data terbaru
+            $customer = User::findOrFail($customer->id);
+
+            // Tambahkan pesan sukses jika refresh dilakukan
+            if (!$request->has('skip_flash')) {
+                \Session::flash('success', 'Data berhasil diselaraskan');
+            }
         }
+
+        // Selalu refresh data jika ada perubahan harga atau deposit
+        $customer->updateMonthlyBalances();
 
         // Format filter untuk query
         $yearMonth = $tahun . '-' . str_pad($bulan, 2, '0', STR_PAD_LEFT);
@@ -309,19 +339,30 @@ class DataPencatatanController extends Controller
         foreach ($dataPencatatan as $item) {
             $dataInput = $this->ensureArray($item->data_input);
 
+            // Ambil waktu untuk mendapatkan pricing yang tepat
+            $waktuAwalYearMonth = Carbon::parse($dataInput['pembacaan_awal']['waktu'])->format('Y-m');
+            $waktuAwal = Carbon::parse($dataInput['pembacaan_awal']['waktu']);
+            $pricingInfo = $customer->getPricingForYearMonth($waktuAwalYearMonth, $waktuAwal);
+
             $volumeFlowMeter = floatval($dataInput['volume_flow_meter'] ?? 0);
             $volumeSm3 = $volumeFlowMeter * floatval($pricingInfo['koreksi_meter'] ?? $customer->koreksi_meter);
             $filteredVolumeSm3 += $volumeSm3;
         }
 
         // Calculate total purchases for the filtered period
-        $filteredTotalPurchases = $dataPencatatan->sum(function ($item) use ($pricingInfo, $customer) {
+        $filteredTotalPurchases = 0;
+        foreach ($dataPencatatan as $item) {
             $dataInput = $this->ensureArray($item->data_input);
+
+            // Ambil waktu untuk mendapatkan pricing yang tepat
+            $waktuAwalYearMonth = Carbon::parse($dataInput['pembacaan_awal']['waktu'])->format('Y-m');
+            $waktuAwal = Carbon::parse($dataInput['pembacaan_awal']['waktu']);
+            $pricingInfo = $customer->getPricingForYearMonth($waktuAwalYearMonth, $waktuAwal);
 
             $volumeFlowMeter = floatval($dataInput['volume_flow_meter'] ?? 0);
             $volumeSm3 = $volumeFlowMeter * floatval($pricingInfo['koreksi_meter'] ?? $customer->koreksi_meter);
-            return $volumeSm3 * floatval($pricingInfo['harga_per_meter_kubik'] ?? $customer->harga_per_meter_kubik);
-        });
+            $filteredTotalPurchases += $volumeSm3 * floatval($pricingInfo['harga_per_meter_kubik'] ?? $customer->harga_per_meter_kubik);
+        }
 
         // Calculate total deposits for the filtered period (current month only)
         $filteredTotalDeposits = 0;
@@ -340,51 +381,28 @@ class DataPencatatanController extends Controller
             }
         }
 
-        // Calculate saldo periode bulanan
+        // Menggunakan saldo bulanan dari database
         // Mendapatkan bulan sebelumnya
         $prevDate = Carbon::createFromDate($tahun, $bulan, 1)->subMonth();
-        $prevMonthYear = $prevDate->format('Y-m');
+        $prevYearMonth = $prevDate->format('Y-m');
+        $currentYearMonth = $tahun . '-' . str_pad($bulan, 2, '0', STR_PAD_LEFT);
 
-        // Mendapatkan deposit dan pembelian pada semua periode sebelumnya
-        $prevTotalDeposits = 0;
-        $prevTotalPurchases = 0;
-
-        // Menghitung deposit seluruh periode sebelumnya
-        foreach ($depositHistory as $deposit) {
-            if (isset($deposit['date'])) {
-                $depositDate = Carbon::parse($deposit['date']);
-                // Pastikan hanya menghitung deposit dari bulan-bulan sebelumnya (tidak termasuk bulan ini)
-                if ($depositDate->format('Y-m') < $tahun . '-' . str_pad($bulan, 2, '0', STR_PAD_LEFT)) {
-                    $prevTotalDeposits += floatval($deposit['amount'] ?? 0);
-                }
-            }
+        // Pastikan saldo bulanan sudah terupdate
+        if (!isset($customer->monthly_balances[$currentYearMonth])) {
+            $customer->updateMonthlyBalances($prevYearMonth);
+            // Reload customer untuk mendapatkan data terbaru
+            $customer = User::findOrFail($customer->id);
         }
 
-        // Menghitung pembelian seluruh periode sebelumnya
-        $allData = $customer->dataPencatatan()->get();
-        foreach ($allData as $item) {
-            $dataInput = $this->ensureArray($item->data_input);
+        // Ambil saldo bulanan
+        $monthlyBalances = $customer->monthly_balances ?: [];
 
-            // Jika data input kosong atau tidak ada waktu awal, skip
-            if (empty($dataInput) || empty($dataInput['pembacaan_awal']['waktu'])) {
-                continue;
-            }
+        // Ambil saldo bulan sebelumnya dan bulan ini
+        $prevMonthBalance = isset($monthlyBalances[$prevYearMonth]) ?
+            floatval($monthlyBalances[$prevYearMonth]) : 0;
 
-            $itemDate = Carbon::parse($dataInput['pembacaan_awal']['waktu']);
-            if ($itemDate < Carbon::createFromDate($tahun, $bulan, 1)) {
-                $volumeFlowMeter = floatval($dataInput['volume_flow_meter'] ?? 0);
-                $itemYearMonth = $itemDate->format('Y-m');
-                $itemPricingInfo = $customer->getPricingForYearMonth($itemYearMonth);
-                $volumeSm3 = $volumeFlowMeter * floatval($itemPricingInfo['koreksi_meter'] ?? $customer->koreksi_meter);
-                $prevTotalPurchases += $volumeSm3 * floatval($itemPricingInfo['harga_per_meter_kubik'] ?? $customer->harga_per_meter_kubik);
-            }
-        }
-
-        // Menghitung saldo bulan sebelumnya
-        $prevMonthBalance = $prevTotalDeposits - $prevTotalPurchases;
-
-        // Menghitung saldo bulan ini
-        $currentMonthBalance = $prevMonthBalance + $filteredTotalDeposits - $filteredTotalPurchases;
+        $currentMonthBalance = isset($monthlyBalances[$currentYearMonth]) ?
+            floatval($monthlyBalances[$currentYearMonth]) : ($prevMonthBalance + $filteredTotalDeposits - $filteredTotalPurchases);
 
         $yearlyData = $this->calculateYearlyData($customer, $tahun);
 
@@ -439,7 +457,8 @@ class DataPencatatanController extends Controller
 
             // Ambil waktu untuk mendapatkan pricing yang tepat
             $waktuAwalYearMonth = Carbon::parse($dataInput['pembacaan_awal']['waktu'])->format('Y-m');
-            $pricingInfo = $customer->getPricingForYearMonth($waktuAwalYearMonth);
+            $waktuAwal = Carbon::parse($dataInput['pembacaan_awal']['waktu']);
+            $pricingInfo = $customer->getPricingForYearMonth($waktuAwalYearMonth, $waktuAwal);
 
             // Gunakan koreksi meter yang sesuai
             $koreksiMeter = floatval($pricingInfo['koreksi_meter'] ?? $customer->koreksi_meter);
@@ -456,7 +475,8 @@ class DataPencatatanController extends Controller
 
             // Ambil waktu untuk mendapatkan pricing yang tepat
             $waktuAwalYearMonth = Carbon::parse($dataInput['pembacaan_awal']['waktu'])->format('Y-m');
-            $pricingInfo = $customer->getPricingForYearMonth($waktuAwalYearMonth);
+            $waktuAwal = Carbon::parse($dataInput['pembacaan_awal']['waktu']);
+            $pricingInfo = $customer->getPricingForYearMonth($waktuAwalYearMonth, $waktuAwal);
 
             // Gunakan koreksi meter dan harga yang sesuai untuk periode ini
             $koreksiMeter = floatval($pricingInfo['koreksi_meter'] ?? $customer->koreksi_meter);
@@ -607,6 +627,24 @@ class DataPencatatanController extends Controller
         // Rekalkulasi total pembelian customer setelah menambah data baru
         app(UserController::class)->rekalkulasiTotalPembelian($customer);
 
+        // Ambil waktu pembacaan awal untuk menentukan bulan mulai update saldo
+        $waktuPencatatan = Carbon::parse($sanitizedDataInput['pembacaan_awal']['waktu']);
+        $startMonth = $waktuPencatatan->format('Y-m');
+
+        // Update saldo bulanan mulai dari bulan data baru
+        $customer->updateMonthlyBalances($startMonth);
+
+        // Logging untuk debug
+        \Log::info('Data pencatatan berhasil disimpan', [
+            'record_id' => $dataPencatatan->id,
+            'customer_id' => $customer->id,
+            'date' => $waktuPencatatan->format('Y-m-d H:i:s'),
+            'harga_final' => $dataPencatatan->harga_final,
+            'customer_total_purchases' => $customer->total_purchases,
+            'customer_total_deposit' => $customer->total_deposit,
+            'customer_saldo' => $customer->total_deposit - $customer->total_purchases
+        ]);
+
         return redirect()->route('data-pencatatan.customer-detail', [
             'customer' => $validatedData['customer_id'],
             'refresh' => true
@@ -733,20 +771,67 @@ class DataPencatatanController extends Controller
         // Validate specific input requirements
         $this->validateDataInput($sanitizedDataInput);
 
+        // Simpan data lama untuk perbandingan
+        $oldData = $this->ensureArray($dataPencatatan->data_input);
+        $oldMonth = !empty($oldData['pembacaan_awal']['waktu'])
+            ? Carbon::parse($oldData['pembacaan_awal']['waktu'])->format('Y-m')
+            : null;
+
+        // Logging data lama untuk debugging
+        \Log::debug('Data lama sebelum update', [
+            'record_id' => $dataPencatatan->id,
+            'old_data' => $oldData,
+            'old_volume_flow_meter' => floatval($oldData['volume_flow_meter'] ?? 0),
+            'old_harga_final' => $dataPencatatan->harga_final,
+            'old_month' => $oldMonth
+        ]);
+
         // Konversi data input ke JSON
         $dataInput = json_encode($sanitizedDataInput);
 
+        $customer = User::findOrFail($validatedData['customer_id']);
         $dataPencatatan->customer_id = $validatedData['customer_id'];
         $dataPencatatan->data_input = $dataInput;
-        $dataPencatatan->nama_customer = User::findOrFail($validatedData['customer_id'])->name;
+        $dataPencatatan->nama_customer = $customer->name;
+
+        // Simpan harga lama sebelum dihitung ulang
+        $oldHarga = $dataPencatatan->harga_final;
 
         // Hitung ulang harga
         $dataPencatatan->hitungHarga();
 
         $dataPencatatan->save();
 
+        // Logging data baru untuk debugging
+        \Log::debug('Data baru setelah update', [
+            'record_id' => $dataPencatatan->id,
+            'new_volume_flow_meter' => floatval($sanitizedDataInput['volume_flow_meter'] ?? 0),
+            'new_harga_final' => $dataPencatatan->harga_final,
+            'harga_difference' => $dataPencatatan->harga_final - $oldHarga
+        ]);
+
         // Rekalkulasi total pembelian customer setelah update data
-        app(UserController::class)->rekalkulasiTotalPembelian(User::findOrFail($validatedData['customer_id']));
+        app(UserController::class)->rekalkulasiTotalPembelian($customer);
+
+        // Ambil waktu pembacaan awal baru untuk menentukan bulan mulai update saldo
+        $waktuPencatatan = Carbon::parse($sanitizedDataInput['pembacaan_awal']['waktu']);
+        $newMonth = $waktuPencatatan->format('Y-m');
+
+        // Tentukan bulan mulai untuk update saldo (pilih yang lebih awal)
+        $startMonth = $oldMonth && $oldMonth < $newMonth ? $oldMonth : $newMonth;
+
+        // Update saldo bulanan mulai dari bulan data
+        $customer->updateMonthlyBalances($startMonth);
+
+        // Logging untuk debug
+        \Log::info('Data pencatatan berhasil diupdate', [
+            'record_id' => $dataPencatatan->id,
+            'customer_id' => $customer->id,
+            'new_date' => $waktuPencatatan->format('Y-m-d H:i:s'),
+            'customer_total_purchases' => $customer->total_purchases,
+            'customer_total_deposit' => $customer->total_deposit,
+            'customer_saldo' => $customer->total_deposit - $customer->total_purchases
+        ]);
 
         return redirect()->route('data-pencatatan.customer-detail', [
             'customer' => $validatedData['customer_id'],
@@ -983,22 +1068,94 @@ class DataPencatatanController extends Controller
     // Hapus data
     public function destroy(Request $request, DataPencatatan $dataPencatatan)
     {
+        // Ambil informasi tanggal sebelum data dihapus
+        $dataInput = $this->ensureArray($dataPencatatan->data_input);
         $customer_id = $dataPencatatan->customer_id;
+        $customer = User::findOrFail($customer_id);
+
+        // Logging data yang akan dihapus
+        \Log::info('Menghapus data pencatatan', [
+            'record_id' => $dataPencatatan->id,
+            'customer_id' => $customer_id,
+            'harga_final' => $dataPencatatan->harga_final,
+            'data_input' => $dataInput
+        ]);
+
+        // Ambil waktu pembacaan awal untuk menentukan bulan mulai update saldo
+        $startMonth = null;
+        $tanggalSearch = null;
+        if (!empty($dataInput['pembacaan_awal']['waktu'])) {
+            $waktuPencatatan = Carbon::parse($dataInput['pembacaan_awal']['waktu']);
+            $startMonth = $waktuPencatatan->format('Y-m');
+        }
+
+        // Jika waktu di pembacaan_awal tidak ditemukan, cek apakah ini data FOB
+        if (!empty($dataInput['waktu'])) {
+            $waktuPencatatan = Carbon::parse($dataInput['waktu']);
+            $startMonth = $waktuPencatatan->format('Y-m');
+            $tanggalSearch = $waktuPencatatan->format('Y-m-d');
+
+            // Jika customer adalah FOB, hapus juga data rekap pengambilan yang terkait
+            if ($customer->isFOB()) {
+                \App\Models\RekapPengambilan::where('customer_id', $customer_id)
+                    ->whereDate('tanggal', $tanggalSearch)
+                    ->delete();
+
+                \Illuminate\Support\Facades\Log::info('Menghapus data rekap pengambilan FOB', [
+                    'customer_id' => $customer_id,
+                    'tanggal' => $tanggalSearch
+                ]);
+            }
+        }
+
+        // Ambil nilai total sebelum penghapusan untuk perbandingan
+        $oldTotalPurchases = $customer->total_purchases;
+
+        // Hapus data pencatatan
         $dataPencatatan->delete();
 
         // Rekalkulasi total pembelian customer setelah menghapus data
-        app(UserController::class)->rekalkulasiTotalPembelian(User::findOrFail($customer_id));
+        $newTotalPurchases = 0;
+        if ($customer->isFOB()) {
+            $newTotalPurchases = app(UserController::class)->rekalkulasiTotalPembelianFob($customer);
+        } else {
+            $newTotalPurchases = app(UserController::class)->rekalkulasiTotalPembelian($customer);
+        }
+
+        // Logging perubahan total
+        \Log::info('Perubahan total setelah hapus data', [
+            'customer_id' => $customer_id,
+            'old_total_purchases' => $oldTotalPurchases,
+            'new_total_purchases' => $newTotalPurchases,
+            'difference' => $oldTotalPurchases - $newTotalPurchases,
+            'deleted_harga_final' => $dataPencatatan->harga_final
+        ]);
+
+        // Update saldo bulanan mulai dari bulan data yang dihapus
+        if ($startMonth) {
+            $customer->updateMonthlyBalances($startMonth);
+        }
 
         // Ambil bulan dan tahun dari request jika ada
         $bulan = $request->input('bulan', date('m'));
         $tahun = $request->input('tahun', date('Y'));
+        $isFob = $request->input('fob', 0);
 
-        return redirect()->route('data-pencatatan.customer-detail', [
-            'customer' => $customer_id,
-            'bulan' => $bulan,
-            'tahun' => $tahun,
-            'refresh' => true
-        ])->with('success', 'Data berhasil dihapus');
+        if ($isFob) {
+            return redirect()->route('data-pencatatan.fob-detail', [
+                'customer' => $customer_id,
+                'bulan' => $bulan,
+                'tahun' => $tahun,
+                'refresh' => true
+            ])->with('success', 'Data berhasil dihapus');
+        } else {
+            return redirect()->route('data-pencatatan.customer-detail', [
+                'customer' => $customer_id,
+                'bulan' => $bulan,
+                'tahun' => $tahun,
+                'refresh' => true
+            ])->with('success', 'Data berhasil dihapus');
+        }
     }
     // Method untuk mencetak billing dalam bentuk HTML (dapat diprint oleh browser)
     public function printBilling(Request $request, User $customer)
@@ -1043,9 +1200,15 @@ class DataPencatatanController extends Controller
         $i = 1;
         foreach ($dataPencatatan as $item) {
             $dataInput = $this->ensureArray($item->data_input);
+            $waktuAwal = Carbon::parse($dataInput['pembacaan_awal']['waktu']);
             $volumeFlowMeter = floatval($dataInput['volume_flow_meter'] ?? 0);
-            $volumeSm3 = $volumeFlowMeter * floatval($pricingInfo['koreksi_meter'] ?? $customer->koreksi_meter);
-            $hargaGas = floatval($pricingInfo['harga_per_meter_kubik'] ?? $customer->harga_per_meter_kubik);
+
+            // Ambil pricing info berdasarkan tanggal spesifik
+            $waktuAwalYearMonth = $waktuAwal->format('Y-m');
+            $pricingInfoItem = $customer->getPricingForYearMonth($waktuAwalYearMonth, $waktuAwal);
+
+            $volumeSm3 = $volumeFlowMeter * floatval($pricingInfoItem['koreksi_meter'] ?? $customer->koreksi_meter);
+            $hargaGas = floatval($pricingInfoItem['harga_per_meter_kubik'] ?? $customer->harga_per_meter_kubik);
             $biayaPemakaian = $volumeSm3 * $hargaGas;
 
             $periodeMulai = isset($dataInput['pembacaan_awal']['waktu']) ?
@@ -1194,9 +1357,15 @@ class DataPencatatanController extends Controller
         $i = 1;
         foreach ($dataPencatatan as $item) {
             $dataInput = $this->ensureArray($item->data_input);
+            $waktuAwal = Carbon::parse($dataInput['pembacaan_awal']['waktu']);
             $volumeFlowMeter = floatval($dataInput['volume_flow_meter'] ?? 0);
-            $volumeSm3 = $volumeFlowMeter * floatval($pricingInfo['koreksi_meter'] ?? $customer->koreksi_meter);
-            $hargaGas = floatval($pricingInfo['harga_per_meter_kubik'] ?? $customer->harga_per_meter_kubik);
+
+            // Ambil pricing info berdasarkan tanggal spesifik
+            $waktuAwalYearMonth = $waktuAwal->format('Y-m');
+            $pricingInfoItem = $customer->getPricingForYearMonth($waktuAwalYearMonth, $waktuAwal);
+
+            $volumeSm3 = $volumeFlowMeter * floatval($pricingInfoItem['koreksi_meter'] ?? $customer->koreksi_meter);
+            $hargaGas = floatval($pricingInfoItem['harga_per_meter_kubik'] ?? $customer->harga_per_meter_kubik);
             $biayaPemakaian = $volumeSm3 * $hargaGas;
 
             // Format periode pemakaian
