@@ -17,6 +17,7 @@ use App\Http\Controllers\BankController;
 use App\Http\Controllers\FinancialAccountController;
 use App\Http\Controllers\TransactionDescriptionController;
 use App\Http\Controllers\ExcelImportController;
+use App\Http\Controllers\Debug\DataSyncDebugController;
 
 
 // Rute Autentikasi
@@ -218,6 +219,18 @@ Route::middleware(['auth', 'role:admin,superadmin'])->group(function () {
     Route::get('/billings/{billing}/edit', [BillingController::class, 'edit'])->name('billings.edit');
     Route::put('/billings/{billing}', [BillingController::class, 'update'])->name('billings.update');
     Route::delete('/billings/{billing}', [BillingController::class, 'destroy'])->name('billings.destroy');
+    
+    // Debug routes untuk data sync
+    Route::prefix('debug')->group(function () {
+        Route::get('/compare-data', [DataSyncDebugController::class, 'compareCustomerBillingData'])
+            ->name('debug.compare-data');
+        Route::get('/find-duplicates', [DataSyncDebugController::class, 'findDuplicateDates'])
+            ->name('debug.find-duplicates');
+        Route::get('/compare-balance', [DataSyncDebugController::class, 'compareBalanceCalculation'])
+            ->name('debug.compare-balance');
+        Route::post('/quick-fix', [DataSyncDebugController::class, 'quickFixDataSync'])
+            ->name('debug.quick-fix');
+    });
 });
 
 // Rute untuk Customer

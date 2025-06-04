@@ -67,13 +67,11 @@ class BillingController extends Controller
         // Get pricing info for selected month
         $pricingInfo = $customer->getPricingForYearMonth($yearMonth);
 
-        // Base query
-        $query = $customer->dataPencatatan();
+        // Base query - ambil semua data
+        $dataPencatatan = $customer->dataPencatatan()->get();
 
-        // Ambil semua data
-        $dataPencatatan = $query->get();
-
-        // Filter data berdasarkan bulan dan tahun
+        // Filter data berdasarkan bulan dan tahun dari pembacaan awal
+        // PERBAIKAN: Gunakan logika filtering yang sama dengan customer detail
         $dataPencatatan = $dataPencatatan->filter(function ($item) use ($yearMonth) {
             $dataInput = $this->ensureArray($item->data_input);
 
@@ -89,6 +87,42 @@ class BillingController extends Controller
             return $waktuAwal === $yearMonth;
         });
 
+        // DEBUG: Log jumlah data yang ditemukan
+        \Log::info('Billing store - Data filtering', [
+            'customer_id' => $customer->id,
+            'period' => $yearMonth,
+            'total_records_raw' => $customer->dataPencatatan()->count(),
+            'filtered_records' => $dataPencatatan->count(),
+            'customer_name' => $customer->name
+        ]);
+        
+        // DEBUG: Deteksi duplikasi pada store juga
+        $tanggalDitemukan = [];
+        foreach ($dataPencatatan as $item) {
+            $dataInput = $this->ensureArray($item->data_input);
+            if (!empty($dataInput['pembacaan_awal']['waktu'])) {
+                $tanggal = Carbon::parse($dataInput['pembacaan_awal']['waktu'])->format('Y-m-d');
+                $volume = floatval($dataInput['volume_flow_meter'] ?? 0);
+                $tanggalDitemukan[] = [
+                    'id' => $item->id,
+                    'tanggal' => $tanggal,
+                    'volume' => $volume
+                ];
+            }
+        }
+        
+        $tanggalCount = array_count_values(array_column($tanggalDitemukan, 'tanggal'));
+        $duplicates = array_filter($tanggalCount, function($count) { return $count > 1; });
+        
+        if (!empty($duplicates)) {
+            \Log::warning('Billing store - Duplicate dates detected in source data', [
+                'customer_id' => $customer->id,
+                'period' => $yearMonth,
+                'duplicates' => $duplicates,
+                'all_dates_found' => $tanggalDitemukan
+            ]);
+        }
+
         // Perhitungan untuk volume dan biaya pemakaian gas
         $totalVolume = 0;
         $totalBiaya = 0;
@@ -96,12 +130,31 @@ class BillingController extends Controller
         foreach ($dataPencatatan as $item) {
             $dataInput = $this->ensureArray($item->data_input);
             $volumeFlowMeter = floatval($dataInput['volume_flow_meter'] ?? 0);
-            $volumeSm3 = $volumeFlowMeter * floatval($pricingInfo['koreksi_meter'] ?? $customer->koreksi_meter);
-            $hargaGas = floatval($pricingInfo['harga_per_meter_kubik'] ?? $customer->harga_per_meter_kubik);
+            
+            // PERBAIKAN: Gunakan pricing yang sesuai periode item (bukan periode billing)
+            $waktuAwal = Carbon::parse($dataInput['pembacaan_awal']['waktu']);
+            $waktuAwalYearMonth = $waktuAwal->format('Y-m');
+            $itemPricingInfo = $customer->getPricingForYearMonth($waktuAwalYearMonth, $waktuAwal);
+            
+            $volumeSm3 = $volumeFlowMeter * floatval($itemPricingInfo['koreksi_meter'] ?? $customer->koreksi_meter);
+            $hargaGas = floatval($itemPricingInfo['harga_per_meter_kubik'] ?? $customer->harga_per_meter_kubik);
             $biayaPemakaian = $volumeSm3 * $hargaGas;
 
+            // TETAP HITUNG SEMUA DATA untuk total (termasuk volume 0)
+            // karena data volume 0 tetap valid untuk perhitungan saldo
             $totalVolume += $volumeSm3;
             $totalBiaya += $biayaPemakaian;
+            
+            // DEBUG: Log setiap item yang diproses
+            \Log::debug('Billing store - Processing item', [
+                'item_id' => $item->id,
+                'waktu_awal' => $waktuAwal->format('Y-m-d H:i:s'),
+                'volume_flow_meter' => $volumeFlowMeter,
+                'volume_sm3' => $volumeSm3,
+                'harga_gas' => $hargaGas,
+                'biaya_pemakaian' => $biayaPemakaian,
+                'included_in_calculation' => true
+            ]);
         }
 
         // Perhitungan untuk penerimaan deposit
@@ -111,52 +164,51 @@ class BillingController extends Controller
         foreach ($depositHistory as $deposit) {
             if (isset($deposit['date'])) {
                 $depositDate = Carbon::parse($deposit['date']);
-                if ($depositDate->month == $request->month && $depositDate->year == $request->year) {
+                // PERBAIKAN: Gunakan format yang konsisten dengan customer detail
+                if ($depositDate->format('Y-m') === $yearMonth) {
                     $totalDeposit += floatval($deposit['amount'] ?? 0);
                 }
             }
         }
+        
+        // DEBUG: Log total deposit yang ditemukan
+        \Log::info('Billing store - Deposit calculation', [
+            'customer_id' => $customer->id,
+            'period' => $yearMonth,
+            'total_deposit' => $totalDeposit,
+            'deposit_entries' => count($depositHistory)
+        ]);
 
+        // PERBAIKAN: Gunakan sistem monthly_balances yang sama dengan customer detail
         // Menghitung saldo bulan sebelumnya
         $prevDate = Carbon::createFromDate($request->year, $request->month, 1)->subMonth();
         $prevMonthYear = $prevDate->format('Y-m');
+        $currentYearMonth = $yearMonth;
         
-        // Mendapatkan deposit dan pembelian pada semua periode sebelumnya
-        $prevTotalDeposits = 0;
-        $prevTotalPurchases = 0;
+        // Pastikan monthly balances sudah terupdate
+        $customer->updateMonthlyBalances($prevMonthYear);
         
-        // Menghitung deposit seluruh periode sebelumnya
-        foreach ($depositHistory as $deposit) {
-            if (isset($deposit['date'])) {
-                $depositDate = Carbon::parse($deposit['date']);
-                if ($depositDate < Carbon::createFromDate($request->year, $request->month, 1)) {
-                    $prevTotalDeposits += floatval($deposit['amount'] ?? 0);
-                }
-            }
-        }
+        // Reload customer untuk mendapatkan data terbaru
+        $customer = User::findOrFail($customer->id);
         
-        // Menghitung pembelian seluruh periode sebelumnya
-        $allData = $customer->dataPencatatan()->get();
-        foreach ($allData as $item) {
-            $dataInput = $this->ensureArray($item->data_input);
-            
-            // Jika data input kosong atau tidak ada waktu awal, skip
-            if (empty($dataInput) || empty($dataInput['pembacaan_awal']['waktu'])) {
-                continue;
-            }
-            
-            $itemDate = Carbon::parse($dataInput['pembacaan_awal']['waktu']);
-            if ($itemDate < Carbon::createFromDate($request->year, $request->month, 1)) {
-                $volumeFlowMeter = floatval($dataInput['volume_flow_meter'] ?? 0);
-                $itemYearMonth = $itemDate->format('Y-m');
-                $itemPricingInfo = $customer->getPricingForYearMonth($itemYearMonth);
-                $volumeSm3 = $volumeFlowMeter * floatval($itemPricingInfo['koreksi_meter'] ?? $customer->koreksi_meter);
-                $prevTotalPurchases += $volumeSm3 * floatval($itemPricingInfo['harga_per_meter_kubik'] ?? $customer->harga_per_meter_kubik);
-            }
-        }
+        // Ambil saldo bulanan dari sistem yang sama dengan customer detail
+        $monthlyBalances = $customer->monthly_balances ?: [];
         
-        // Menghitung saldo bulan sebelumnya
-        $prevMonthBalance = $prevTotalDeposits - $prevTotalPurchases;
+        // Ambil saldo bulan sebelumnya dari monthly_balances
+        $prevMonthBalance = isset($monthlyBalances[$prevMonthYear]) ?
+            floatval($monthlyBalances[$prevMonthYear]) : 0;
+        
+        // DEBUG: Log saldo calculations dengan metode baru
+        \Log::info('Billing store - Balance calculation (monthly_balances method)', [
+            'customer_id' => $customer->id,
+            'prev_month_year' => $prevMonthYear,
+            'current_year_month' => $currentYearMonth,
+            'prev_month_balance_from_monthly_balances' => $prevMonthBalance,
+            'current_month_deposit' => $totalDeposit,
+            'current_month_purchase' => $totalBiaya,
+            'monthly_balances_available' => !empty($monthlyBalances),
+            'monthly_balances_count' => count($monthlyBalances)
+        ]);
         
         // Menghitung saldo bulan ini
         $currentMonthBalance = $prevMonthBalance + $totalDeposit - $totalBiaya;
@@ -179,6 +231,17 @@ class BillingController extends Controller
         $billing->period_year = $request->year;
         $billing->status = 'unpaid';
         $billing->save();
+        
+        // FINAL DEBUG: Log billing results
+        \Log::info('Billing created successfully', [
+            'billing_id' => $billing->id,
+            'customer_id' => $customer->id,
+            'period' => $yearMonth,
+            'total_volume' => $totalVolume,
+            'total_amount' => $totalBiaya,
+            'total_deposit' => $totalDeposit,
+            'filtered_records_count' => $dataPencatatan->count()
+        ]);
 
         return redirect()->route('billings.show', $billing)
             ->with('success', 'Billing berhasil dibuat.');
@@ -195,10 +258,10 @@ class BillingController extends Controller
         // Get pricing info
         $pricingInfo = $customer->getPricingForYearMonth($yearMonth);
         
-        // Retrieve and filter the relevant data
+        // Retrieve and filter the relevant data - SAMA DENGAN STORE METHOD
         $dataPencatatan = $customer->dataPencatatan()->get();
         
-        // Filter data berdasarkan bulan dan tahun
+        // Filter data berdasarkan bulan dan tahun dari pembacaan awal
         $dataPencatatan = $dataPencatatan->filter(function ($item) use ($yearMonth) {
             $dataInput = $this->ensureArray($item->data_input);
 
@@ -213,15 +276,82 @@ class BillingController extends Controller
             // Filter by year-month
             return $waktuAwal === $yearMonth;
         });
+        
+        // DEBUG: Log untuk verifikasi data show
+        \Log::info('Billing show - Data filtering', [
+            'billing_id' => $billing->id,
+            'customer_id' => $customer->id,
+            'period' => $yearMonth,
+            'total_records_raw' => $customer->dataPencatatan()->count(),
+            'filtered_records' => $dataPencatatan->count()
+        ]);
+        
+        // DEBUG: Log semua tanggal yang ditemukan untuk deteksi duplikasi
+        $tanggalDitemukan = [];
+        foreach ($dataPencatatan as $item) {
+            $dataInput = $this->ensureArray($item->data_input);
+            if (!empty($dataInput['pembacaan_awal']['waktu'])) {
+                $tanggal = Carbon::parse($dataInput['pembacaan_awal']['waktu'])->format('Y-m-d');
+                $volume = floatval($dataInput['volume_flow_meter'] ?? 0);
+                $tanggalDitemukan[] = [
+                    'id' => $item->id,
+                    'tanggal' => $tanggal,
+                    'volume' => $volume,
+                    'waktu_lengkap' => $dataInput['pembacaan_awal']['waktu']
+                ];
+            }
+        }
+        
+        // Detect duplicates
+        $tanggalCount = array_count_values(array_column($tanggalDitemukan, 'tanggal'));
+        $duplicates = array_filter($tanggalCount, function($count) { return $count > 1; });
+        
+        if (!empty($duplicates)) {
+            \Log::warning('Billing show - Duplicate dates detected', [
+                'billing_id' => $billing->id,
+                'duplicates' => $duplicates,
+                'all_dates_found' => $tanggalDitemukan
+            ]);
+        }
 
         // Perhitungan untuk volume dan biaya pemakaian gas
+        // PERBAIKAN: Menampilkan semua data tapi hilangkan duplikasi
         $pemakaianGas = [];
+        $processedDates = []; // Track tanggal yang sudah diproses untuk menghindari duplikasi
         $i = 1;
+        
         foreach ($dataPencatatan as $item) {
             $dataInput = $this->ensureArray($item->data_input);
             $volumeFlowMeter = floatval($dataInput['volume_flow_meter'] ?? 0);
-            $volumeSm3 = $volumeFlowMeter * floatval($pricingInfo['koreksi_meter'] ?? $customer->koreksi_meter);
-            $hargaGas = floatval($pricingInfo['harga_per_meter_kubik'] ?? $customer->harga_per_meter_kubik);
+            
+            $waktuAwal = Carbon::parse($dataInput['pembacaan_awal']['waktu']);
+            $tanggalKey = $waktuAwal->format('Y-m-d'); // Key untuk deteksi duplikasi
+            
+            // PERBAIKAN: Skip jika tanggal sudah diproses (hindari duplikasi)
+            if (isset($processedDates[$tanggalKey])) {
+                \Log::debug('Billing show - Skipping duplicate date', [
+                    'billing_id' => $billing->id,
+                    'item_id' => $item->id,
+                    'duplicate_date' => $tanggalKey,
+                    'volume_flow_meter' => $volumeFlowMeter,
+                    'already_processed_id' => $processedDates[$tanggalKey]['id'],
+                    'already_processed_volume' => $processedDates[$tanggalKey]['volume']
+                ]);
+                continue;
+            }
+            
+            // Tandai tanggal ini sebagai sudah diproses
+            $processedDates[$tanggalKey] = [
+                'id' => $item->id,
+                'volume' => $volumeFlowMeter
+            ];
+            
+            // PERBAIKAN: Gunakan pricing yang sesuai periode item (bukan periode billing)
+            $waktuAwalYearMonth = $waktuAwal->format('Y-m');
+            $itemPricingInfo = $customer->getPricingForYearMonth($waktuAwalYearMonth, $waktuAwal);
+            
+            $volumeSm3 = $volumeFlowMeter * floatval($itemPricingInfo['koreksi_meter'] ?? $customer->koreksi_meter);
+            $hargaGas = floatval($itemPricingInfo['harga_per_meter_kubik'] ?? $customer->harga_per_meter_kubik);
             $biayaPemakaian = $volumeSm3 * $hargaGas;
 
             $periodePemakaian = isset($dataInput['pembacaan_awal']['waktu']) ? 
@@ -238,6 +368,18 @@ class BillingController extends Controller
                 'harga_gas' => $hargaGas,
                 'biaya_pemakaian' => $biayaPemakaian
             ];
+            
+            // DEBUG: Log setiap item yang diproses di show
+            \Log::debug('Billing show - Processing unique item', [
+                'billing_id' => $billing->id,
+                'item_id' => $item->id,
+                'tanggal_key' => $tanggalKey,
+                'waktu_awal' => $waktuAwal->format('Y-m-d H:i:s'),
+                'volume_flow_meter' => $volumeFlowMeter,
+                'volume_sm3' => $volumeSm3,
+                'harga_gas' => $hargaGas,
+                'biaya_pemakaian' => $biayaPemakaian
+            ]);
         }
         
         // Urutkan data berdasarkan tanggal periode pemakaian
@@ -256,13 +398,15 @@ class BillingController extends Controller
         }
 
         // Perhitungan untuk penerimaan deposit
+        // PERBAIKAN: Gunakan format yang konsisten dengan store method
         $penerimaanDeposit = [];
         $j = 1;
         $depositHistory = $this->ensureArray($customer->deposit_history);
         foreach ($depositHistory as $deposit) {
             if (isset($deposit['date'])) {
                 $depositDate = Carbon::parse($deposit['date']);
-                if ($depositDate->month == $billing->period_month && $depositDate->year == $billing->period_year) {
+                // PERBAIKAN: Gunakan format yang konsisten dengan customer detail
+                if ($depositDate->format('Y-m') === $yearMonth) {
                     $jumlahDeposit = floatval($deposit['amount'] ?? 0);
                     $penerimaanDeposit[] = [
                         'no' => $j++,
@@ -297,6 +441,20 @@ class BillingController extends Controller
             'pemakaian_gas' => $pemakaianGas,
             'penerimaan_deposit' => $penerimaanDeposit,
         ];
+        
+        // DEBUG: Log final show data
+        \Log::info('Billing show - Final data', [
+            'billing_id' => $billing->id,
+            'customer_id' => $customer->id,
+            'period' => $yearMonth,
+            'total_records_filtered' => $dataPencatatan->count(),
+            'pemakaian_gas_count_displayed' => count($pemakaianGas), // Setelah deduplication
+            'penerimaan_deposit_count' => count($penerimaanDeposit),
+            'billing_total_volume' => $billing->total_volume,
+            'billing_total_amount' => $billing->total_amount,
+            'duplicates_removed' => $dataPencatatan->count() - count($pemakaianGas),
+            'unique_dates_count' => count($pemakaianGas)
+        ]);
 
         return view('billings.show', $data);
     }
