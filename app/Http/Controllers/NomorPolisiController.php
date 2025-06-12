@@ -68,7 +68,7 @@ class NomorPolisiController extends Controller
                 'jenis' => 'nullable|string|max:100',
                 'ukuran_id' => 'nullable|exists:ukuran,id',
                 'area_operasi' => 'nullable|string|max:100',
-                'status' => 'nullable|in:milik,sewa,disewakan',
+                'status' => 'nullable|in:milik,sewa,disewakan,FOB',
                 'iso' => 'nullable|in:ISO - 11439,ISO - 11119',
                 'coi' => 'nullable|in:sudah,belum',
             ]);
@@ -130,7 +130,7 @@ class NomorPolisiController extends Controller
                 'jenis' => 'nullable|string|max:100',
                 'ukuran_id' => 'nullable|exists:ukuran,id',
                 'area_operasi' => 'nullable|string|max:100',
-                'status' => 'nullable|in:milik,sewa,disewakan',
+                'status' => 'nullable|in:milik,sewa,disewakan,FOB',
                 'iso' => 'nullable|in:ISO - 11439,ISO - 11119',
                 'coi' => 'nullable|in:sudah,belum',
             ]);

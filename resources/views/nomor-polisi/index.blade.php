@@ -77,6 +77,8 @@
                                                         <span class="badge badge-info">Sewa</span>
                                                     @elseif($nopol->status == 'disewakan')
                                                         <span class="badge badge-warning">Disewakan</span>
+                                                    @elseif($nopol->status == 'FOB')
+                                                        <span class="badge badge-dark">FOB</span>
                                                     @else
                                                         -
                                                     @endif
@@ -179,6 +181,7 @@
                                                 <option value="milik">Milik</option>
                                                 <option value="sewa">Sewa</option>
                                                 <option value="disewakan">Disewakan</option>
+                                                <option value="FOB">FOB</option>
                                             </select>
                                         </div>
                                     </div>
@@ -314,6 +317,7 @@
                                                 <option value="milik">Milik</option>
                                                 <option value="sewa">Sewa</option>
                                                 <option value="disewakan">Disewakan</option>
+                                                <option value="FOB">FOB</option>
                                             </select>
                                         </div>
                                     </div>
