@@ -39,7 +39,9 @@
                                         <div class="form-group">
                                             <label>Waktu Pembacaan Awal</label>
                                             <input type="datetime-local" name="data_input[pembacaan_awal][waktu]"
-                                                class="form-control" required>
+                                                class="form-control" 
+                                                value="{{ $prefilledTime ?? '' }}" 
+                                                required>
                                         </div>
                                     </div>
                                     <div class="col-md-6">
@@ -70,7 +72,9 @@
                                         <div class="form-group">
                                             <label>Waktu Pembacaan Akhir</label>
                                             <input type="datetime-local" name="data_input[pembacaan_akhir][waktu]"
-                                                class="form-control" required>
+                                                class="form-control" 
+                                                value="{{ $prefilledEndTime ?? '' }}" 
+                                                required>
                                         </div>
                                     </div>
                                     <div class="col-md-6">
@@ -131,15 +135,22 @@
 @section('js')
     <script>
         $(function() {
-            // Set default date-time values (current date with midnight/end of day time)
-            const today = new Date();
-            const todayFormatted = today.toISOString().split('T')[0];
-
-            // Default start time to beginning of day (00:00)
-            $('input[name="data_input[pembacaan_awal][waktu]"]').val(todayFormatted + 'T00:00');
-
-            // Default end time to end of day (23:59)
-            $('input[name="data_input[pembacaan_akhir][waktu]"]').val(todayFormatted + 'T23:59');
+            // Set default date-time values only if not already set from server
+            const waktuAwalField = $('input[name="data_input[pembacaan_awal][waktu]"]');
+            const waktuAkhirField = $('input[name="data_input[pembacaan_akhir][waktu]"]');
+            
+            // Only set default values if fields are empty (no prefilled data)
+            if (!waktuAwalField.val()) {
+                const today = new Date();
+                const todayFormatted = today.toISOString().split('T')[0];
+                waktuAwalField.val(todayFormatted + 'T00:00');
+            }
+            
+            if (!waktuAkhirField.val()) {
+                const today = new Date();
+                const todayFormatted = today.toISOString().split('T')[0];
+                waktuAkhirField.val(todayFormatted + 'T23:59');
+            }
 
             // Function to calculate volume flow meter
             function calculateVolumeFlowMeter() {
@@ -193,6 +204,16 @@
 
             // Jalankan perhitungan flow meter saat halaman dimuat
             calculateVolumeFlowMeter();
+            
+            // Auto-set waktu akhir berdasarkan waktu awal jika ada prefilled data
+            waktuAwalField.on('change', function() {
+                const waktuAwal = $(this).val();
+                if (waktuAwal && !waktuAkhirField.val()) {
+                    // Set waktu akhir ke akhir hari yang sama
+                    const tanggal = waktuAwal.split('T')[0];
+                    waktuAkhirField.val(tanggal + 'T23:59');
+                }
+            });
         });
     </script>
 

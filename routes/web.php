@@ -84,6 +84,19 @@ Route::middleware(['auth', 'role:admin,superadmin'])->group(function () {
     Route::get('/keuangan/kas/{transaction}/edit', [KasController::class, 'edit'])->name('keuangan.kas.edit');
     Route::put('/keuangan/kas/{transaction}', [KasController::class, 'update'])->name('keuangan.kas.update');
     Route::delete('/keuangan/kas/{transaction}', [KasController::class, 'destroy'])->name('keuangan.kas.destroy');
+    
+    // Rute untuk Excel Import/Export Kas
+    Route::get('/keuangan/kas/download-template', [App\Http\Controllers\KasExcelController::class, 'downloadTemplate'])->name('keuangan.kas.download-template');
+    Route::post('/keuangan/kas/upload-excel', [App\Http\Controllers\KasExcelController::class, 'uploadExcel'])->name('keuangan.kas.upload-excel');
+    
+    // Testing routes untuk development (hapus di production)
+    Route::get('/test/process-queue', [App\Http\Controllers\QueueTestController::class, 'processQueue'])->name('test.process-queue');
+    Route::get('/test/check-cache', [App\Http\Controllers\QueueTestController::class, 'checkCache'])->name('test.check-cache');
+    
+    // Debug routes untuk troubleshooting
+    Route::get('/debug/system-check', [App\Http\Controllers\DebugKasController::class, 'checkSystem'])->name('debug.system-check');
+    Route::get('/debug/check-import', [App\Http\Controllers\DebugKasController::class, 'checkLastImport'])->name('debug.check-import');
+    Route::get('/debug/simulate-import', [App\Http\Controllers\DebugKasController::class, 'simulateImport'])->name('debug.simulate-import');
 
     // Rute untuk Bank
     Route::get('/keuangan/bank', [BankController::class, 'index'])->name('keuangan.bank.index');

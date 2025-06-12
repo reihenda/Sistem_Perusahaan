@@ -57,13 +57,14 @@ class KasTransaction extends Model
      * Generate a unique voucher number for new transactions.
      * Format: KAS0001, KAS0002, etc. Resets every year.
      */
-    public static function generateVoucherNumber()
+    public static function generateVoucherNumber($year = null)
     {
-        $year = Carbon::now()->year;
+        $year = $year ?: Carbon::now()->year;
         
-        // Get the last voucher number for this year
+        // Get the highest voucher number for this year
         $lastVoucher = self::where('year', $year)
-            ->orderBy('id', 'desc')
+            ->where('voucher_number', 'LIKE', 'KAS%')
+            ->orderByRaw('CAST(SUBSTRING(voucher_number, 4) AS UNSIGNED) DESC')
             ->first();
         
         if (!$lastVoucher) {

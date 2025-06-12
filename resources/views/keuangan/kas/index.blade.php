@@ -94,9 +94,17 @@
                 <i class="fas fa-list mr-1"></i>
                 Daftar Transaksi Kas
             </h3>
-            <a href="{{ route('keuangan.kas.create') }}" class="btn btn-primary">
-                <i class="fas fa-plus-circle mr-1"></i>Tambah Transaksi
-            </a>
+            <div class="btn-group">
+                <a href="{{ route('keuangan.kas.create') }}" class="btn btn-primary">
+                    <i class="fas fa-plus-circle mr-1"></i>Tambah Transaksi
+                </a>
+                <button type="button" class="btn btn-success" data-toggle="modal" data-target="#uploadExcelModal">
+                    <i class="fas fa-file-upload mr-1"></i>Upload Excel
+                </button>
+                <a href="{{ route('keuangan.kas.download-template') }}" class="btn btn-info">
+                    <i class="fas fa-download mr-1"></i>Download Template
+                </a>
+            </div>
         </div>
     </div>
     <div class="card-body">
@@ -112,6 +120,24 @@
         @if (session('error'))
             <div class="alert alert-danger alert-dismissible fade show" role="alert">
                 {{ session('error') }}
+                <button type="button" class="close" data-dismiss="alert" aria-label="Close">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+            </div>
+        @endif
+
+        @if ($errors->has('excel_file'))
+            <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                <i class="fas fa-exclamation-triangle mr-2"></i>
+                <strong>Error Upload Excel:</strong>
+                {{ $errors->first('excel_file') }}
+                @if (session('excel_errors'))
+                    <ul class="mt-2 mb-0">
+                        @foreach (session('excel_errors') as $error)
+                            <li>{{ $error }}</li>
+                        @endforeach
+                    </ul>
+                @endif
                 <button type="button" class="close" data-dismiss="alert" aria-label="Close">
                     <span aria-hidden="true">&times;</span>
                 </button>
@@ -252,6 +278,68 @@
         </div>
     </div>
 </div>
+
+<!-- Modal Upload Excel -->
+<div class="modal fade" id="uploadExcelModal" tabindex="-1" role="dialog">
+    <div class="modal-dialog" role="document">
+        <div class="modal-content">
+            <form action="{{ route('keuangan.kas.upload-excel') }}" method="POST" enctype="multipart/form-data">
+                @csrf
+                <div class="modal-header bg-success">
+                    <h5 class="modal-title text-white">
+                        <i class="fas fa-file-upload mr-2"></i>Upload Excel Transaksi Kas
+                    </h5>
+                    <button type="button" class="close text-white" data-dismiss="modal" aria-label="Close">
+                        <span aria-hidden="true">&times;</span>
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <div class="alert alert-info">
+                        <h6><i class="fas fa-info-circle"></i> Petunjuk Upload:</h6>
+                        <ul class="mb-0">
+                            <li>File harus berformat <strong>.xlsx</strong> atau <strong>.xls</strong></li>
+                            <li>Maksimal ukuran file: <strong>5MB</strong></li>
+                            <li><strong>Maksimal 50 baris</strong> per file untuk menghindari timeout</li>
+                            <li>Format tanggal: <strong>DD/MM/YYYY</strong> (contoh: 04/06/2025)</li>
+                            <li>Gunakan template yang tersedia untuk format yang benar</li>
+                            <li>Voucher boleh dikosongkan, sistem akan generate otomatis</li>
+                            <li>Jika ada error, semua data tidak akan diproses sampai error diperbaiki</li>
+                        </ul>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="excel_file"><strong>Pilih File Excel:</strong> <span class="text-danger">*</span></label>
+                        <input type="file" class="form-control" id="excel_file" name="excel_file" accept=".xlsx,.xls" required>
+                        <small class="form-text text-muted">
+                            File harus berformat .xlsx atau .xls
+                        </small>
+                        <small class="form-text text-muted">
+                            Belum punya template? 
+                            <a href="{{ route('keuangan.kas.download-template') }}" class="text-primary">
+                                <i class="fas fa-download"></i> Download Template Excel
+                            </a>
+                        </small>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-dismiss="modal">
+                        <i class="fas fa-times"></i> Batal
+                    </button>
+                    <button type="submit" class="btn btn-success" id="uploadBtn">
+                        <i class="fas fa-upload"></i> Upload & Proses
+                    </button>
+                </div>
+                
+                <!-- Progress bar (hidden by default) -->
+                <div id="uploadProgress" class="progress" style="display: none; margin: 10px;">
+                    <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 100%">
+                        Memproses file Excel...
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
 @endsection
 
 @section('css')
@@ -266,6 +354,12 @@
     }
     .select2-container--default .select2-selection--single .select2-selection__arrow {
         height: 36px !important;
+    }
+    
+    /* File input styling sederhana seperti customer-detail */
+    .form-control[type="file"] {
+        padding: 0.375rem 0.75rem;
+        line-height: 1.5;
     }
 </style>
 @endsection
@@ -308,6 +402,44 @@
             $(this).closest('form').submit();
         });
         */
+        
+        // Simple file input handling (customer-detail approach)
+        // Tidak perlu JavaScript khusus - browser akan menampilkan nama file otomatis
+        
+        // Reset file input when modal is opened
+        $('#uploadExcelModal').on('show.bs.modal', function() {
+            $('#excel_file').val('');
+        });
+        
+        // Reset file input when modal is closed 
+        $('#uploadExcelModal').on('hidden.bs.modal', function() {
+            $('#excel_file').val('');
+            
+            // Reset progress indicators
+            $('#uploadProgress').hide();
+            $('#uploadBtn').prop('disabled', false).html('<i class="fas fa-upload"></i> Upload & Proses');
+            $('.modal-footer .btn-secondary').prop('disabled', false);
+        });
+        
+        // Form validation dan progress handling (customer-detail approach)
+        $('#uploadExcelModal form').on('submit', function(e) {
+            var fileInput = $('#excel_file')[0];
+            if (!fileInput.files || fileInput.files.length === 0) {
+                e.preventDefault();
+                alert('Silakan pilih file Excel terlebih dahulu.');
+                return false;
+            }
+            
+            // Show progress and disable submit button
+            $('#uploadProgress').show();
+            $('#uploadBtn').prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> Memproses...');
+            $('.modal-footer .btn-secondary').prop('disabled', true);
+        });
+        
+        // Show modal if there are Excel errors (customer-detail approach)
+        @if ($errors->has('excel_file'))
+            $('#uploadExcelModal').modal('show');
+        @endif
     });
 </script>
 @endsection

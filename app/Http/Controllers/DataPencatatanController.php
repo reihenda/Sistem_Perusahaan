@@ -949,11 +949,13 @@ class DataPencatatanController extends Controller
         $selectedDate = $request->query('tanggal');
         $prefilledDate = null;
         $prefilledTime = null;
+        $prefilledEndTime = null;
         
         if ($selectedDate) {
-            // Jika ada tanggal yang dipilih, set sebagai default untuk pembacaan awal
+            // Jika ada tanggal yang dipilih, set sebagai default untuk pembacaan awal dan akhir
             $prefilledDate = $selectedDate;
             $prefilledTime = Carbon::parse($selectedDate)->format('Y-m-d\T07:00'); // Default jam 07:00
+            $prefilledEndTime = Carbon::parse($selectedDate)->format('Y-m-d\T18:00'); // Default jam 18:00
         }
 
         // Get the latest reading data for this customer
@@ -987,7 +989,8 @@ class DataPencatatanController extends Controller
             'latestVolume', 
             'latestDate', 
             'prefilledDate', 
-            'prefilledTime'
+            'prefilledTime',
+            'prefilledEndTime'
         ));
     }
 
