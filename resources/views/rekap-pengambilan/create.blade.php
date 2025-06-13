@@ -90,11 +90,23 @@
                                 </div>
                             </div>
 
-                            <div class="form-group">
-                                <label for="alamat_pengambilan">Alamat Pengambilan</label>
-                                <textarea name="alamat_pengambilan" id="alamat_pengambilan" rows="3"
-                                    class="form-control @error('alamat_pengambilan') is-invalid @enderror" 
-                                    placeholder="Masukkan alamat lokasi pengambilan">{{ old('alamat_pengambilan') }}</textarea>
+                            <div class="form-group alamat-pengambilan-container">
+                                <label for="alamat_pengambilan_id">Alamat Pengambilan</label>
+                                <select name="alamat_pengambilan_id" id="alamat_pengambilan_id" class="form-control">
+                                    <option value="">-- Pilih Alamat Pengambilan --</option>
+                                    @foreach ($alamatList as $alamat)
+                                        <option value="{{ $alamat->id }}" {{ old('alamat_pengambilan_id') == $alamat->id ? 'selected' : '' }}>{{ $alamat->nama_alamat }}</option>
+                                    @endforeach
+                                    <option value="tambah_baru">+ Tambah Alamat Baru</option>
+                                </select>
+                                <div class="alamat-pengambilan-baru-container mt-2" id="alamat-baru-container" style="display: none; background-color: #f8f9fa; padding: 15px; border: 1px solid #dee2e6; border-radius: 5px;">
+                                    <label for="alamat_new">Alamat Baru:</label>
+                                    <input type="text" name="alamat_new" id="alamat_new" class="form-control"
+                                        placeholder="Masukkan alamat pengambilan baru">
+                                    <small class="text-muted">Alamat baru akan disimpan saat form disubmit</small>
+                                </div>
+                                <!-- Keep the old field for backward compatibility -->
+                                <input type="hidden" name="alamat_pengambilan" id="alamat_pengambilan" value="{{ old('alamat_pengambilan') }}">
                             </div>
 
                             <div class="form-group">
@@ -123,197 +135,100 @@
 
 @section('js')
     <script>
-        $(function() {
-            // Initialize Select2
-            $('.select2').select2({
-                theme: 'bootstrap4',
-                placeholder: "Pilih",
-                allowClear: true
+        // Tunggu DOM ready tanpa jQuery
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('DOM Ready - Pure JavaScript');
+            
+            // Get elements
+            const alamatDropdown = document.getElementById('alamat_pengambilan_id');
+            const alamatContainer = document.getElementById('alamat-baru-container');
+            const alamatNewInput = document.getElementById('alamat_new');
+            const alamatHiddenInput = document.getElementById('alamat_pengambilan');
+            
+            console.log('Elements found:', {
+                dropdown: alamatDropdown ? 'YES' : 'NO',
+                container: alamatContainer ? 'YES' : 'NO',
+                newInput: alamatNewInput ? 'YES' : 'NO',
+                hiddenInput: alamatHiddenInput ? 'YES' : 'NO'
             });
-
-            // Initialize DataTable for modal
-            let modalNopolTable = $('#modalNopolTable').DataTable({
-                "paging": true,
-                "lengthChange": false,
-                "searching": true,
-                "ordering": true,
-                "info": true,
-                "autoWidth": false,
-                "responsive": true,
-                "pageLength": 5
-            });
-
-            // Load nomor polisi list when modal is opened
-            $('#kelolaNopolModal').on('shown.bs.modal', function() {
-                console.log('Modal opened, API URL:', '{{ route('nomor-polisi.getAll') }}');
-                loadNopolList();
-            });
-
-            // Form submission handler for adding new nopol
-            $('#formTambahNopolModal').on('submit', function(e) {
-                e.preventDefault();
-
-                const nopol = $('#modal_nopol').val();
-                const keterangan = $('#modal_keterangan').val();
-
-                if (!nopol) {
-                    showNopolError('Nomor polisi harus diisi.');
-                    return;
-                }
-
-                // Submit AJAX request
-                $.ajax({
-                    url: '{{ route('nomor-polisi.store') }}',
-                    type: 'POST',
-                    data: {
-                        _token: '{{ csrf_token() }}',
-                        nopol: nopol,
-                        keterangan: keterangan
-                    },
-                    success: function(response) {
-                        // Clear form inputs
-                        $('#modal_nopol').val('');
-
-                        // Show success message
-                        showNopolSuccess('Nomor polisi berhasil ditambahkan.');
-
-                        // Reload nopol list
-                        loadNopolList();
-
-                        // Refresh dropdown in the main form
-                        refreshNopolDropdown(response.nopol);
-                    },
-                    error: function(xhr) {
-                        let errorMessage = 'Terjadi kesalahan saat menambahkan nomor polisi.';
-
-                        // Try to get error message from response
-                        if (xhr.responseJSON && xhr.responseJSON.errors) {
-                            if (xhr.responseJSON.errors.nopol) {
-                                errorMessage = xhr.responseJSON.errors.nopol[0];
+            
+            // Handle dropdown change
+            if (alamatDropdown) {
+                alamatDropdown.addEventListener('change', function() {
+                    console.log('Dropdown changed to:', this.value);
+                    
+                    if (this.value === 'tambah_baru') {
+                        console.log('Showing container...');
+                        if (alamatContainer) {
+                            alamatContainer.style.display = 'block';
+                            if (alamatNewInput) {
+                                alamatNewInput.focus();
                             }
                         }
-
-                        showNopolError(errorMessage);
-                    }
-                });
-            });
-
-            // Function to load nomor polisi list
-            function loadNopolList() {
-                console.log('Loading nomor polisi list...');
-                $.ajax({
-                    url: '{{ route('nomor-polisi.getAll') }}',
-                    type: 'GET',
-                    dataType: 'json',
-                    success: function(response) {
-                        console.log('API Response:', response);
-                        // Clear existing table data
-                        modalNopolTable.clear();
-
-                        // Add data to table
-                        if (response && response.length > 0) {
-                            $.each(response, function(index, item) {
-                                console.log('Adding row:', item);
-                                modalNopolTable.row.add([
-                                    index + 1,
-                                    item.nopol,
-                                    item.keterangan || '-',
-                                    `<button type="button" class="btn btn-danger btn-sm delete-nopol" data-id="${item.id}">
-                                    <i class="fas fa-trash"></i>
-                                </button>`
-                                ]);
-                            });
-                        } else {
-                            console.log('No nomor polisi data found or empty response');
+                    } else {
+                        console.log('Hiding container...');
+                        if (alamatContainer) {
+                            alamatContainer.style.display = 'none';
                         }
-
-                        modalNopolTable.draw();
-
-                        // Attach event handlers to delete buttons
-                        attachDeleteHandlers();
-                    },
-                    error: function(xhr, status, error) {
-                        console.error('Error loading nomor polisi:', status, error);
-                        console.error('XHR Response:', xhr.responseText);
-                        showNopolError('Gagal memuat daftar nomor polisi.');
+                        if (alamatNewInput) {
+                            alamatNewInput.value = '';
+                        }
+                        
+                        // Set hidden input value
+                        if (this.value && alamatHiddenInput) {
+                            const selectedOption = this.options[this.selectedIndex];
+                            alamatHiddenInput.value = selectedOption.text;
+                        } else if (alamatHiddenInput) {
+                            alamatHiddenInput.value = '';
+                        }
                     }
                 });
             }
-
-            // Function to attach delete handlers
-            function attachDeleteHandlers() {
-                $('.delete-nopol').on('click', function() {
-                    const id = $(this).data('id');
-
-                    if (confirm('Apakah Anda yakin ingin menghapus nomor polisi ini?')) {
-                        $.ajax({
-                            url: `{{ url('nomor-polisi') }}/${id}`,
-                            type: 'DELETE',
-                            data: {
-                                _token: '{{ csrf_token() }}'
-                            },
-                            success: function(response) {
-                                showNopolSuccess('Nomor polisi berhasil dihapus.');
-                                loadNopolList();
-                                refreshNopolDropdown();
-                            },
-                            error: function(xhr) {
-                                let errorMessage = 'Gagal menghapus nomor polisi.';
-
-                                if (xhr.responseJSON && xhr.responseJSON.error) {
-                                    errorMessage = xhr.responseJSON.error;
-                                }
-
-                                showNopolError(errorMessage);
-                            }
-                        });
+            
+            // Handle new alamat input
+            if (alamatNewInput) {
+                alamatNewInput.addEventListener('input', function() {
+                    if (alamatHiddenInput) {
+                        alamatHiddenInput.value = this.value;
                     }
                 });
-            }
-
-            // Function to refresh nopol dropdown
-            function refreshNopolDropdown(selectedNopol = null) {
-                $.ajax({
-                    url: '{{ route('nomor-polisi.getAll') }}',
-                    type: 'GET',
-                    dataType: 'json',
-                    success: function(response) {
-                        // Clear existing options
-                        $('#nopol').empty().append(
-                            '<option value="">-- Pilih Nomor Polisi --</option>');
-
-                        // Add new options
-                        $.each(response, function(index, item) {
-                            const selected = (selectedNopol && selectedNopol === item.nopol) ?
-                                'selected' : '';
-                            $('#nopol').append(
-                                `<option value="${item.nopol}" ${selected}>${item.nopol}</option>`
-                            );
-                        });
-
-                        // Refresh Select2
-                        $('#nopol').trigger('change');
-                    }
-                });
-            }
-
-            // Functions to show success/error messages
-            function showNopolSuccess(message) {
-                $('#nopol-success-message').text(message);
-                $('#nopol-success-alert').show();
-                $('#nopol-error-alert').hide();
-
-                // Auto hide after 3 seconds
-                setTimeout(function() {
-                    $('#nopol-success-alert').fadeOut('slow');
-                }, 3000);
-            }
-
-            function showNopolError(message) {
-                $('#nopol-error-message').text(message);
-                $('#nopol-error-alert').show();
-                $('#nopol-success-alert').hide();
             }
         });
+        
+        // Fallback dengan jQuery jika tersedia
+        if (typeof jQuery !== 'undefined') {
+            jQuery(document).ready(function($) {
+                console.log('jQuery is available, version:', $.fn.jquery);
+                
+                // Skip Select2 initialization karena ada masalah compatibility
+                console.log('Skipping Select2 due to compatibility issues');
+
+                // Skip DataTable initialization if not available
+                if ($.fn.DataTable) {
+                    // Initialize DataTable for modal
+                    let modalNopolTable = $('#modalNopolTable').DataTable({
+                        "paging": true,
+                        "lengthChange": false,
+                        "searching": true,
+                        "ordering": true,
+                        "info": true,
+                        "autoWidth": false,
+                        "responsive": true,
+                        "pageLength": 5
+                    });
+                } else {
+                    console.log('DataTable not available');
+                }
+
+                // Load nomor polisi list when modal is opened
+                $('#kelolaNopolModal').on('shown.bs.modal', function() {
+                    console.log('Modal opened, API URL:', '{{ route('nomor-polisi.getAll') }}');
+                    loadNopolList();
+                });
+
+                // Skip all modal-related handlers since DataTable is not available
+                console.log('Skipping modal handlers due to missing dependencies');
+            });
+        }
     </script>
 @endsection

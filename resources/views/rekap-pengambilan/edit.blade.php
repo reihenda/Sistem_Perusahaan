@@ -90,10 +90,23 @@
                             </div>
                         </div>
 
-                        <div class="form-group">
-                            <label for="alamat_pengambilan">Alamat Pengambilan</label>
-                            <textarea name="alamat_pengambilan" id="alamat_pengambilan" rows="3" class="form-control @error('alamat_pengambilan') is-invalid @enderror" 
-                                placeholder="Masukkan alamat lokasi pengambilan">{{ old('alamat_pengambilan', $rekapPengambilan->alamat_pengambilan) }}</textarea>
+                        <div class="form-group alamat-pengambilan-container">
+                            <label for="alamat_pengambilan_id">Alamat Pengambilan</label>
+                            <select name="alamat_pengambilan_id" id="alamat_pengambilan_id" class="form-control">
+                                <option value="">-- Pilih Alamat Pengambilan --</option>
+                                @foreach ($alamatList as $alamat)
+                                    <option value="{{ $alamat->id }}" {{ old('alamat_pengambilan_id', $rekapPengambilan->alamat_pengambilan_id) == $alamat->id ? 'selected' : '' }}>{{ $alamat->nama_alamat }}</option>
+                                @endforeach
+                                <option value="tambah_baru">+ Tambah Alamat Baru</option>
+                            </select>
+                            <div class="alamat-pengambilan-baru-container mt-2" id="alamat-baru-container" style="display: none; background-color: #f8f9fa; padding: 15px; border: 1px solid #dee2e6; border-radius: 5px;">
+                                <label for="alamat_new">Alamat Baru:</label>
+                                <input type="text" name="alamat_new" id="alamat_new" class="form-control"
+                                    placeholder="Masukkan alamat pengambilan baru">
+                                <small class="text-muted">Alamat baru akan disimpan saat form disubmit</small>
+                            </div>
+                            <!-- Keep the old field for backward compatibility -->
+                            <input type="hidden" name="alamat_pengambilan" id="alamat_pengambilan" value="{{ old('alamat_pengambilan', $rekapPengambilan->alamat_pengambilan) }}">
                         </div>
 
                         <div class="form-group">
@@ -142,6 +155,51 @@
             $('#nopol_select').val('{{ $rekapPengambilan->nopol }}').trigger('change').show();
             $('#nopol_new').hide().val('').removeAttr('required');
             $('#nopol_toggle_group').hide();
+        });
+        
+        // Pure JavaScript untuk handle alamat pengambilan dropdown
+        document.addEventListener('DOMContentLoaded', function() {
+            const alamatDropdown = document.getElementById('alamat_pengambilan_id');
+            const alamatContainer = document.getElementById('alamat-baru-container');
+            const alamatNewInput = document.getElementById('alamat_new');
+            const alamatHiddenInput = document.getElementById('alamat_pengambilan');
+            
+            if (alamatDropdown) {
+                alamatDropdown.addEventListener('change', function() {
+                    if (this.value === 'tambah_baru') {
+                        if (alamatContainer) {
+                            alamatContainer.style.display = 'block';
+                            if (alamatNewInput) {
+                                alamatNewInput.focus();
+                            }
+                        }
+                    } else {
+                        if (alamatContainer) {
+                            alamatContainer.style.display = 'none';
+                        }
+                        if (alamatNewInput) {
+                            alamatNewInput.value = '';
+                        }
+                        
+                        // Set hidden input value
+                        if (this.value && alamatHiddenInput) {
+                            const selectedOption = this.options[this.selectedIndex];
+                            alamatHiddenInput.value = selectedOption.text;
+                        } else if (alamatHiddenInput) {
+                            alamatHiddenInput.value = '';
+                        }
+                    }
+                });
+            }
+            
+            // Handle new alamat input
+            if (alamatNewInput) {
+                alamatNewInput.addEventListener('input', function() {
+                    if (alamatHiddenInput) {
+                        alamatHiddenInput.value = this.value;
+                    }
+                });
+            }
         });
         
         // Form submission handler

@@ -16,6 +16,7 @@ class RekapPengambilan extends Model
         'tanggal',
         'nopol',
         'volume',
+        'alamat_pengambilan_id',
         'alamat_pengambilan',
         'keterangan',
     ];
@@ -36,6 +37,14 @@ class RekapPengambilan extends Model
     public function customer()
     {
         return $this->belongsTo(User::class, 'customer_id');
+    }
+
+    /**
+     * Get the alamat pengambilan that owns the rekap pengambilan.
+     */
+    public function alamatPengambilan()
+    {
+        return $this->belongsTo(AlamatPengambilan::class);
     }
 
     /**

@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\RekapPengambilan;
 use App\Models\User;
 use App\Models\NomorPolisi;
+use App\Models\AlamatPengambilan;
 use App\Models\DataPencatatan;
 use Illuminate\Http\Request;
 use Carbon\Carbon;
@@ -58,20 +59,49 @@ class RekapPengambilanController extends Controller
     {
         $customers = User::where('role', 'customer')->orWhere('role', 'fob')->get();
         $nomorPolisList = NomorPolisi::orderBy('nopol')->get();
+        $alamatList = AlamatPengambilan::orderBy('nama_alamat')->get();
 
-        return view('rekap-pengambilan.create', compact('customers', 'nomorPolisList'));
+        return view('rekap-pengambilan.create', compact('customers', 'nomorPolisList', 'alamatList'));
     }
 
     public function store(Request $request)
     {
+        // Jika alamat_pengambilan_id adalah 'tambah_baru', atur nilainya menjadi null agar tidak divalidasi
+        if ($request->alamat_pengambilan_id === 'tambah_baru') {
+            $request->merge(['alamat_pengambilan_id' => null]);
+        }
+
         $validatedBase = $request->validate([
             'customer_id' => 'required|exists:users,id',
             'tanggal' => 'required|date',
             'nopol' => 'required|string|max:20',
             'volume' => 'required|numeric|min:0',
+            'alamat_pengambilan_id' => 'nullable|exists:alamat_pengambilan,id',
             'alamat_pengambilan' => 'nullable|string|max:500',
             'keterangan' => 'nullable|string',
         ]);
+
+        // Jika alamat_new diisi, buat alamat baru
+        if ($request->has('alamat_new') && !empty($request->alamat_new)) {
+            try {
+                // Cek apakah alamat sudah ada
+                $alamat = AlamatPengambilan::firstOrCreate(
+                    ['nama_alamat' => $request->alamat_new]
+                );
+                $validatedBase['alamat_pengambilan_id'] = $alamat->id;
+                $validatedBase['alamat_pengambilan'] = $alamat->nama_alamat;
+                \Log::info('Created or found alamat: ' . $alamat->id . ' - ' . $alamat->nama_alamat);
+            } catch (\Exception $e) {
+                \Log::error('Error creating alamat: ' . $e->getMessage());
+                throw $e;
+            }
+        } elseif (!empty($validatedBase['alamat_pengambilan_id'])) {
+            // Jika memilih dari dropdown, ambil nama alamatnya
+            $alamat = AlamatPengambilan::find($validatedBase['alamat_pengambilan_id']);
+            if ($alamat) {
+                $validatedBase['alamat_pengambilan'] = $alamat->nama_alamat;
+            }
+        }
 
         $customer = User::findOrFail($validatedBase['customer_id']);
 
@@ -155,20 +185,49 @@ class RekapPengambilanController extends Controller
     {
         $customers = User::where('role', 'customer')->orWhere('role', 'fob')->get();
         $nomorPolisList = NomorPolisi::orderBy('nopol')->get();
+        $alamatList = AlamatPengambilan::orderBy('nama_alamat')->get();
 
-        return view('rekap-pengambilan.edit', compact('rekapPengambilan', 'customers', 'nomorPolisList'));
+        return view('rekap-pengambilan.edit', compact('rekapPengambilan', 'customers', 'nomorPolisList', 'alamatList'));
     }
 
     public function update(Request $request, RekapPengambilan $rekapPengambilan)
     {
+        // Jika alamat_pengambilan_id adalah 'tambah_baru', atur nilainya menjadi null agar tidak divalidasi
+        if ($request->alamat_pengambilan_id === 'tambah_baru') {
+            $request->merge(['alamat_pengambilan_id' => null]);
+        }
+
         $validatedBase = $request->validate([
             'customer_id' => 'required|exists:users,id',
             'tanggal' => 'required|date',
             'nopol' => 'required|string|max:20',
             'volume' => 'required|numeric|min:0',
+            'alamat_pengambilan_id' => 'nullable|exists:alamat_pengambilan,id',
             'alamat_pengambilan' => 'nullable|string|max:500',
             'keterangan' => 'nullable|string',
         ]);
+
+        // Jika alamat_new diisi, buat alamat baru
+        if ($request->has('alamat_new') && !empty($request->alamat_new)) {
+            try {
+                // Cek apakah alamat sudah ada
+                $alamat = AlamatPengambilan::firstOrCreate(
+                    ['nama_alamat' => $request->alamat_new]
+                );
+                $validatedBase['alamat_pengambilan_id'] = $alamat->id;
+                $validatedBase['alamat_pengambilan'] = $alamat->nama_alamat;
+                \Log::info('Created or found alamat for update: ' . $alamat->id . ' - ' . $alamat->nama_alamat);
+            } catch (\Exception $e) {
+                \Log::error('Error creating alamat for update: ' . $e->getMessage());
+                throw $e;
+            }
+        } elseif (!empty($validatedBase['alamat_pengambilan_id'])) {
+            // Jika memilih dari dropdown, ambil nama alamatnya
+            $alamat = AlamatPengambilan::find($validatedBase['alamat_pengambilan_id']);
+            if ($alamat) {
+                $validatedBase['alamat_pengambilan'] = $alamat->nama_alamat;
+            }
+        }
 
         $customer = User::findOrFail($validatedBase['customer_id']);
 
