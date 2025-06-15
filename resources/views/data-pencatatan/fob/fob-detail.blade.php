@@ -102,21 +102,29 @@
                         @if ($selectedBulan == date('m') && $selectedTahun == date('Y'))
                             <div class="alert alert-info">
                                 <i class="fas fa-info-circle mr-2"></i>
-                                <strong>Periode Saat Ini:</strong> Data yang ditampilkan hanya mencakup aktivitas FOB dalam bulan {{ \Carbon\Carbon::createFromDate($selectedTahun, $selectedBulan, 1)->format('F Y') }}.
-                                Jika ada ketidaksesuaian, gunakan tombol <strong>"Sinkronkan Data Periode Ini"</strong> untuk memastikan semua data sudah sinkron.
+                                <strong>Periode Saat Ini:</strong> Data yang ditampilkan hanya mencakup aktivitas FOB dalam
+                                bulan
+                                {{ \Carbon\Carbon::createFromDate($selectedTahun, $selectedBulan, 1)->format('F Y') }}.
+                                Jika ada ketidaksesuaian, gunakan tombol <strong>"Sinkronkan Data Periode Ini"</strong>
+                                untuk memastikan semua data sudah sinkron.
                             </div>
                         @endif
-                        
+
                         @if (Auth::user()->isAdmin() || Auth::user()->isSuperAdmin())
                             @php
                                 // Periksa perbedaan saldo antara total saldo dan saldo bulan terakhir
                                 $monthlyBalances = $customer->monthly_balances ?: [];
                                 $currentYearMonth = \Carbon\Carbon::now()->format('Y-m');
-                                $latestMonthBalance = isset($monthlyBalances[$currentYearMonth]) ? floatval($monthlyBalances[$currentYearMonth]) : null;
-                                $currentTotalBalance = ($customer->total_deposit ?? 0) - ($customer->total_purchases ?? 0);
-                                $hasSaldoDifference = $latestMonthBalance !== null && abs($currentTotalBalance - $latestMonthBalance) > 100;
+                                $latestMonthBalance = isset($monthlyBalances[$currentYearMonth])
+                                    ? floatval($monthlyBalances[$currentYearMonth])
+                                    : null;
+                                $currentTotalBalance =
+                                    ($customer->total_deposit ?? 0) - ($customer->total_purchases ?? 0);
+                                $hasSaldoDifference =
+                                    $latestMonthBalance !== null &&
+                                    abs($currentTotalBalance - $latestMonthBalance) > 100;
                             @endphp
-                            
+
                             {{-- Menghilangkan peringatan perbedaan saldo dan tombol sinkronisasi --}}
                         @endif
                         <div class="row">
@@ -298,12 +306,13 @@
                         </div>
                         <div class="row mt-3">
                             <div class="col-md-6 col-sm-12">
-                                <div class="info-box enhanced-info-box" style="background-color: #f8fafc; border: 1px solid #e2e8f0;">
+                                <div class="info-box enhanced-info-box"
+                                    style="background-color: #f8fafc; border: 1px solid #e2e8f0;">
                                     <span class="info-box-icon bg-info"><i class="fas fa-calculator"></i></span>
                                     <div class="info-box-content">
                                         <span class="info-box-text d-flex justify-content-between align-items-center">
                                             <span>Informasi Saldo Bulan
-                                            {{ \Carbon\Carbon::createFromDate($selectedTahun, $selectedBulan, 1)->format('F Y') }}</span>
+                                                {{ \Carbon\Carbon::createFromDate($selectedTahun, $selectedBulan, 1)->format('F Y') }}</span>
                                         </span>
                                         <div class="table-responsive mt-2">
                                             <table class="table table-sm table-bordered">
@@ -320,7 +329,7 @@
                                                     <td>Rp {{ number_format($filteredTotalPurchases, 0) }}</td>
                                                 </tr>
                                                 @php
-                                                    // Definisikan variabel currentYearMonth 
+                                                    // Definisikan variabel currentYearMonth
                                                     $currentYearMonth = \Carbon\Carbon::createFromDate(
                                                         $selectedTahun,
                                                         $selectedBulan,
@@ -338,15 +347,15 @@
                                                         ($prevMonthBalance ?? 0) +
                                                         $realTimeFilteredDeposits -
                                                         $realTimeFilteredTotalPurchases;
-                                                    
+
                                                     // Log untuk debugging saldo (dipertahankan untuk pemantauan)
                                                     Log::info('Perhitungan saldo bulan ini (view)', [
                                                         'saldo_bulan_lalu' => $prevMonthBalance ?? 0,
                                                         'deposit_bulan_ini' => $realTimeFilteredDeposits,
-                                                        'pembelian_bulan_ini' => $realTimeFilteredTotalPurchases, 
+                                                        'pembelian_bulan_ini' => $realTimeFilteredTotalPurchases,
                                                         'saldo_bulan_ini' => $realTimeCurrentMonthBalance,
                                                         'selected_bulan' => $selectedBulan,
-                                                        'selected_tahun' => $selectedTahun
+                                                        'selected_tahun' => $selectedTahun,
                                                     ]);
                                                 @endphp
                                                 <tr class="font-weight-bold">
@@ -354,7 +363,10 @@
                                                     <td>Rp {{ number_format($realTimeCurrentMonthBalance, 0) }}</td>
                                                 </tr>
                                                 <tr>
-                                                    <td colspan="2" class="text-muted"><small>* Saldo ini hanya menunjukkan saldo untuk periode {{ \Carbon\Carbon::createFromDate($selectedTahun, $selectedBulan, 1)->format('F Y') }} saja</small></td>
+                                                    <td colspan="2" class="text-muted"><small>* Saldo ini hanya
+                                                            menunjukkan saldo untuk periode
+                                                            {{ \Carbon\Carbon::createFromDate($selectedTahun, $selectedBulan, 1)->format('F Y') }}
+                                                            saja</small></td>
                                                 </tr>
                                             </table>
                                         </div>
@@ -389,11 +401,11 @@
                             </thead>
                             <tbody>
                                 @php $no = 1; @endphp
-                                @foreach ($dataPencatatan->sortBy(function($item) {
-                                    $dataInput = is_string($item->data_input) ? json_decode($item->data_input, true) : (is_array($item->data_input) ? $item->data_input : []);
-                                    $waktuTimestamp = strtotime($dataInput['waktu'] ?? '');
-                                    return $waktuTimestamp ? $waktuTimestamp : 0;
-                                }) as $item)
+                                @foreach ($dataPencatatan->sortBy(function ($item) {
+            $dataInput = is_string($item->data_input) ? json_decode($item->data_input, true) : (is_array($item->data_input) ? $item->data_input : []);
+            $waktuTimestamp = strtotime($dataInput['waktu'] ?? '');
+            return $waktuTimestamp ? $waktuTimestamp : 0;
+        }) as $item)
                                     @php
                                         $dataInput = is_string($item->data_input)
                                             ? json_decode($item->data_input, true)
@@ -529,26 +541,26 @@
                                         @endphp
 
                                         @php
-// Pastikan depositHistory selalu menjadi array
-// Ini adalah safety measure kedua selain yang sudah dilakukan di controller
-if (!isset($depositHistory) || !is_array($depositHistory)) {
-                                        $depositHistory = [];
-}
+                                            // Pastikan depositHistory selalu menjadi array
+                                            // Ini adalah safety measure kedua selain yang sudah dilakukan di controller
+                                            if (!isset($depositHistory) || !is_array($depositHistory)) {
+                                                $depositHistory = [];
+                                            }
 
-$no = 1;
-// Sort deposit history by date (newest first)
-$sortedDeposits = collect($depositHistory)
-                                        ->map(function ($deposit, $index) {
-                                            return [
-                                                'index' => $index,
-                                                'date' => $deposit['date'] ?? '',
-            'amount' => $deposit['amount'] ?? 0,
-            'description' => $deposit['description'] ?? '-',
-        ];
-    })
-    ->sortByDesc('date')
-    ->values();
-@endphp
+                                            $no = 1;
+                                            // Sort deposit history by date (newest first)
+                                            $sortedDeposits = collect($depositHistory)
+                                                ->map(function ($deposit, $index) {
+                                                    return [
+                                                        'index' => $index,
+                                                        'date' => $deposit['date'] ?? '',
+                                                        'amount' => $deposit['amount'] ?? 0,
+                                                        'description' => $deposit['description'] ?? '-',
+                                                    ];
+                                                })
+                                                ->sortByDesc('date')
+                                                ->values();
+                                        @endphp
 
                                         @foreach ($sortedDeposits as $deposit)
                                             <tr>
@@ -757,12 +769,12 @@ usort($pricingHistory, function ($a, $b) {
                                         @enderror
                                     </div>
                                 </div>
-                                
+
                                 <!-- Menambahkan input hidden untuk tekanan keluar dan suhu -->
                                 <input type="hidden" name="tekanan_keluar" value="0">
                                 <input type="hidden" name="suhu" value="0">
                             </div>
-                            
+
                             <!-- Footer dengan tombol aksi -->
                             <div class="modal-footer">
                                 <button type="button" class="btn btn-secondary" data-dismiss="modal">
@@ -802,18 +814,18 @@ usort($pricingHistory, function ($a, $b) {
                 margin-bottom: 1rem;
             }
         }
-        
+
         /* Styling untuk info-box */
         .info-box {
             display: flex;
             min-height: 80px;
             background: #fff;
             width: 100%;
-            box-shadow: 0 1px 1px rgba(0,0,0,.1);
+            box-shadow: 0 1px 1px rgba(0, 0, 0, .1);
             border-radius: 0.25rem;
             margin-bottom: 1rem;
         }
-        
+
         .info-box-icon {
             border-top-left-radius: 0.25rem;
             border-top-right-radius: 0;
@@ -825,19 +837,19 @@ usort($pricingHistory, function ($a, $b) {
             text-align: center;
             font-size: 30px;
             line-height: 80px;
-            background: rgba(0,0,0,0.2);
+            background: rgba(0, 0, 0, 0.2);
         }
-        
+
         .bg-info {
             background-color: #17a2b8 !important;
             color: white;
         }
-        
+
         .info-box-content {
             padding: 5px 10px;
             flex: 1;
         }
-        
+
         .info-box-text {
             font-size: 14px;
             font-weight: bold;
@@ -846,46 +858,47 @@ usort($pricingHistory, function ($a, $b) {
             overflow: hidden;
             text-overflow: ellipsis;
         }
-        
+
         /* Styling tambahan untuk tabel */
-        .table-sm td, .table-sm th {
+        .table-sm td,
+        .table-sm th {
             padding: 0.3rem;
         }
-        
+
         .table-bordered {
             border: 1px solid #dee2e6;
         }
-        
+
         /* Helper classes */
         .mt-2 {
             margin-top: 0.5rem !important;
         }
-        
+
         .mt-3 {
             margin-top: 1rem !important;
         }
-        
+
         .table-responsive {
             display: block;
             width: 100%;
             overflow-x: auto;
             -webkit-overflow-scrolling: touch;
         }
-        
+
         .font-weight-bold {
             font-weight: bold !important;
         }
-        
+
         .text-muted {
             color: #6c757d !important;
         }
-        
+
         /* Memperbaiki tampilan pada perangkat mobile */
         @media (max-width: 767.98px) {
             .enhanced-info-box {
                 margin-bottom: 1.5rem;
             }
-            
+
             .info-box-icon {
                 width: 60px;
                 font-size: 24px;
@@ -967,7 +980,7 @@ usort($pricingHistory, function ($a, $b) {
             // Initialize tooltips
             $('[data-toggle="tooltip"]').tooltip();
 
-            // Menghilangkan kode AJAX yang membingungkan 
+            // Menghilangkan kode AJAX yang membingungkan
             // Biarkan form submit secara native untuk memudahkan debugging
             /*
             $("#pricingForm").on("submit", function() {

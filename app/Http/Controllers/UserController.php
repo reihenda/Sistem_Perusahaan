@@ -515,17 +515,6 @@ class UserController extends Controller
     {
         try {
             DB::beginTransaction();
-            
-            // Log awal proses rekalkulasi
-            \Log::info('Memulai rekalkulasiTotalPembelianFob dengan presisi tinggi', [
-                'user_id' => $fob->id,
-                'name' => $fob->name,
-                'role' => $fob->role,
-                'old_total_purchases' => $fob->total_purchases
-            ]);
-
-            // PERBAIKAN: Gunakan nilai asli dari database
-            $originalTotalPurchases = $fob->total_purchases;
 
             // Reset total pembelian
             $fob->total_purchases = 0;
@@ -534,7 +523,6 @@ class UserController extends Controller
             $dataPencatatans = $fob->dataPencatatan()->orderBy('created_at')->get();
 
             $totalPembelian = 0;
-            $details = []; // Array untuk logging detail
             $inconsistentRecords = 0; // Counter untuk record yang tidak konsisten
 
             foreach ($dataPencatatans as $dataPencatatan) {
@@ -553,74 +541,36 @@ class UserController extends Controller
                     $waktu = $dataPencatatan->created_at;
                 }
                 
-                // Jika tidak ada waktu valid, log warning dan langsung gunakan harga_final
+                // Jika tidak ada waktu valid, gunakan harga_final jika tersedia
                 if (!$waktu) {
-                    \Log::warning('Tidak ada waktu valid untuk data FOB', [
-                        'record_id' => $dataPencatatan->id,
-                        'user_id' => $fob->id,
-                        'data_input' => $dataInput
-                    ]);
-                    
-                    // Gunakan harga_final jika tersedia
                     if ($dataPencatatan->harga_final > 0) {
                         $totalPembelian += $dataPencatatan->harga_final;
-                        $details[] = [
-                            'id' => $dataPencatatan->id,
-                            'date' => 'unknown',
-                            'source' => 'harga_final_fallback',
-                            'amount' => $dataPencatatan->harga_final
-                        ];
                     }
                     continue;
                 }
 
                 $yearMonth = $waktu->format('Y-m');
 
-                // PERBAIKAN: Prioritaskan harga_final jika ada dan valid
-                if ($dataPencatatan->harga_final > 0) {
-                    $pembelian = $dataPencatatan->harga_final;
-                    $totalPembelian += $pembelian;
-                    $details[] = [
-                        'id' => $dataPencatatan->id,
-                        'date' => $waktu->format('Y-m-d H:i:s'),
-                        'source' => 'harga_final',
-                        'amount' => $pembelian,
-                        'volume_sm3' => $volumeSm3
-                    ];
-                }
-                // Jika tidak ada harga_final tapi ada volume_sm3, hitung berdasarkan pricing
-                else if ($volumeSm3 > 0) {
+                // SELALU hitung berdasarkan pricing terbaru (calculated) untuk akurasi
+                if ($volumeSm3 > 0) {
                     // Ambil pricing info untuk bulan tersebut
                     $pricingInfo = $fob->getPricingForYearMonth($yearMonth, $waktu);
 
-                    // Hitung dengan pricing yang sesuai
+                    // Hitung dengan pricing yang sesuai (SELALU calculated, bukan harga_final lama)
                     $hargaPerM3 = floatval($pricingInfo['harga_per_meter_kubik'] ?? $fob->harga_per_meter_kubik);
                     $pembelian = $volumeSm3 * $hargaPerM3;
                     
-                    // PERBAIKAN: Update harga final di data pencatatan untuk konsistensi masa depan
+                    // Update harga final di database untuk konsistensi
+                    $oldHargaFinal = $dataPencatatan->harga_final;
                     $dataPencatatan->harga_final = round($pembelian, 2);
                     $dataPencatatan->save();
                     
-                    $totalPembelian += $pembelian;
-                    $inconsistentRecords++;
+                    // Track jika ada perbedaan dari harga_final lama
+                    if (abs($oldHargaFinal - $pembelian) > 0.01) {
+                        $inconsistentRecords++;
+                    }
                     
-                    $details[] = [
-                        'id' => $dataPencatatan->id,
-                        'date' => $waktu->format('Y-m-d H:i:s'),
-                        'volume_sm3' => $volumeSm3,
-                        'harga_per_m3' => $hargaPerM3, 
-                        'source' => 'calculated_and_updated',
-                        'amount' => $pembelian
-                    ];
-                }
-                // Jika tidak ada volume atau harga_final, skip record ini
-                else {
-                    \Log::warning('Data pencatatan FOB tidak memiliki volume atau harga_final', [
-                        'record_id' => $dataPencatatan->id,
-                        'user_id' => $fob->id,
-                        'volume_sm3' => $volumeSm3,
-                        'harga_final' => $dataPencatatan->harga_final
-                    ]);
+                    $totalPembelian += $pembelian;
                 }
             }
 
@@ -628,47 +578,11 @@ class UserController extends Controller
             $fob->total_purchases = round(floatval($totalPembelian), 2);
             $result = $fob->save();
 
-            // PERBAIKAN: Validasi hasil rekalkulasi
-            $difference = $fob->total_purchases - $originalTotalPurchases;
-            $percentageDifference = $originalTotalPurchases > 0 ? abs($difference / $originalTotalPurchases) * 100 : 0;
-
-            // Log hasil rekalkulasi dengan lebih detail
-            \Log::info('Hasil rekalkulasi total pembelian FOB dengan presisi tinggi', [
-                'user_id' => $fob->id,
-                'name' => $fob->name,
-                'role' => $fob->role,
-                'total_records' => count($dataPencatatans),
-                'inconsistent_records_fixed' => $inconsistentRecords,
-                'original_total_purchases' => $originalTotalPurchases,
-                'new_total_purchases' => $fob->total_purchases,
-                'difference' => $difference,
-                'percentage_difference' => $percentageDifference,
-                'calculated_details_count' => count($details),
-                'save_result' => $result
-            ]);
-
-            // Jika perbedaan signifikan (> 5%), log sebagai warning
-            if ($percentageDifference > 5) {
-                \Log::warning('Perbedaan signifikan dalam rekalkulasi total pembelian FOB', [
-                    'user_id' => $fob->id,
-                    'percentage_difference' => $percentageDifference,
-                    'difference_amount' => $difference
-                ]);
-            }
-
             DB::commit();
 
             return $fob->total_purchases;
         } catch (\Exception $e) {
             DB::rollBack();
-            \Log::error('Error in rekalkulasiTotalPembelianFob: ' . $e->getMessage(), [
-                'user_id' => $fob->id, 
-                'role' => $fob->role,
-                'error' => $e->getMessage(),
-                'file' => $e->getFile(),
-                'line' => $e->getLine(),
-                'trace' => $e->getTraceAsString()
-            ]);
             return 0;
         }
     }

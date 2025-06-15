@@ -243,6 +243,14 @@ Route::middleware(['auth', 'role:admin,superadmin'])->group(function () {
             ->name('debug.compare-balance');
         Route::post('/quick-fix', [DataSyncDebugController::class, 'quickFixDataSync'])
             ->name('debug.quick-fix');
+        
+        // PERBAIKAN: Route untuk debugging dan cleanup FOB
+        Route::get('/fob/{customer}/analyze', [FobController::class, 'analyzeFobData'])
+            ->name('debug.fob.analyze');
+        Route::post('/fob/{customer}/clean-duplicates', [FobController::class, 'cleanDuplicateFobData'])
+            ->name('debug.fob.clean-duplicates');
+        Route::post('/fob/{customer}/validate-consistency', [FobController::class, 'validateFobTotalConsistency'])
+            ->name('debug.fob.validate-consistency');
     });
 });
 
