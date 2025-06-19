@@ -33,6 +33,7 @@
                                 <th>No</th>
                                 <th>Nama</th>
                                 <th>Lokasi Kerja</th>
+                                <th>Jam Kerja</th>
                                 <th class="text-right">Aksi</th>
                             </tr>
                         </thead>
@@ -42,6 +43,11 @@
                                     <td>{{ ($operators->currentPage() - 1) * $operators->perPage() + $key + 1 }}</td>
                                     <td>{{ $operator->nama }}</td>
                                     <td>{{ $operator->lokasi_kerja }}</td>
+                                    <td>
+                                        <span class="badge badge-{{ $operator->jam_kerja == 8 ? 'primary' : 'info' }}">
+                                            {{ $operator->jam_kerja ?? 8 }} Jam
+                                        </span>
+                                    </td>
                                     <td class="text-right">
                                         <a href="{{ route('operator-gtm.show', $operator->id) }}"
                                             class="btn btn-info btn-sm">
@@ -64,7 +70,7 @@
                                 </tr>
                             @empty
                                 <tr>
-                                    <td colspan="4" class="text-center">Tidak ada data operator GTM.</td>
+                                    <td colspan="5" class="text-center">Tidak ada data operator GTM.</td>
                                 </tr>
                             @endforelse
                         </tbody>

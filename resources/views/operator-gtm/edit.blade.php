@@ -4,6 +4,33 @@
 
 @section('page-title', 'Edit Operator GTM')
 
+@section('css')
+<style>
+    /* Pastikan container tidak overflow */
+    .content-wrapper {
+        overflow-x: hidden;
+    }
+    
+    /* Pastikan card tidak melebar */
+    .card {
+        max-width: 100%;
+        overflow: hidden;
+    }
+    
+    /* Pastikan form elements tidak melebar */
+    .form-control, .input-group {
+        max-width: 100%;
+    }
+    
+    /* Responsive untuk form */
+    @media (max-width: 768px) {
+        .col-md-8 {
+            padding: 0 15px;
+        }
+    }
+</style>
+@endsection
+
 @section('content')
 <div class="row justify-content-center">
     <div class="col-md-8">
@@ -45,6 +72,18 @@
                                 <div class="invalid-feedback">{{ $message }}</div>
                             @enderror
                         </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="jam_kerja">Jam Kerja <span class="text-danger">*</span></label>
+                        <select class="form-control @error('jam_kerja') is-invalid @enderror" id="jam_kerja" name="jam_kerja" required>
+                            <option value="8" {{ old('jam_kerja', $operatorGtm->jam_kerja ?? 8) == 8 ? 'selected' : '' }}>8 Jam</option>
+                            <option value="10" {{ old('jam_kerja', $operatorGtm->jam_kerja ?? 8) == 10 ? 'selected' : '' }}>10 Jam</option>
+                        </select>
+                        @error('jam_kerja')
+                            <div class="invalid-feedback">{{ $message }}</div>
+                        @enderror
+                        <small class="form-text text-muted">Jam lembur akan dihitung setelah melewati jam kerja yang ditentukan.</small>
                     </div>
                     
                     <div class="form-group">

@@ -71,7 +71,7 @@
                     </div>
                     <div class="card-body">
                         <div class="row">
-                            <div class="col-md-3 col-sm-6">
+                            <div class="col-xl-3 col-lg-4 col-md-4 col-sm-6">
                                 <div class="mobile-summary-card">
                                     <strong><i class="fas fa-user mr-1"></i> Nama Operator</strong>
                                     <p class="text-muted mb-0">
@@ -79,7 +79,7 @@
                                     </p>
                                 </div>
                             </div>
-                            <div class="col-md-3 col-sm-6">
+                            <div class="col-xl-2 col-lg-3 col-md-4 col-sm-6">
                                 <div class="mobile-summary-card">
                                     <strong><i class="fas fa-map-marker-alt mr-1"></i> Lokasi Kerja</strong>
                                     <p class="text-muted mb-0">
@@ -87,7 +87,7 @@
                                     </p>
                                 </div>
                             </div>
-                            <div class="col-md-3 col-sm-6">
+                            <div class="col-xl-3 col-lg-2 col-md-4 col-sm-6">
                                 <div class="mobile-summary-card">
                                     <strong><i class="fas fa-wallet mr-1"></i> Gaji Pokok</strong>
                                     <p class="text-muted mb-0">
@@ -95,7 +95,17 @@
                                     </p>
                                 </div>
                             </div>
-                            <div class="col-md-3 col-sm-6">
+                            <div class="col-xl-2 col-lg-1 col-md-6 col-sm-6">
+                                <div class="mobile-summary-card">
+                                    <strong><i class="fas fa-clock mr-1"></i> Jam Kerja</strong>
+                                    <p class="text-muted mb-0">
+                                        <span class="badge badge-{{ $operatorGtm->jam_kerja == 8 ? 'primary' : 'info' }}">
+                                            {{ $operatorGtm->jam_kerja ?? 8 }} Jam
+                                        </span>
+                                    </p>
+                                </div>
+                            </div>
+                            <div class="col-xl-2 col-lg-2 col-md-6 col-sm-6">
                                 <div class="mobile-summary-card">
                                     <strong><i class="fas fa-calendar-alt mr-1"></i> Tanggal Bergabung</strong>
                                     <p class="text-muted mb-0">
@@ -529,7 +539,69 @@
 
 @section('css')
 <style>
-    /* Style untuk info box */
+    /* Style untuk mobile summary card */
+    .mobile-summary-card {
+        margin-bottom: 15px;
+        padding: 15px;
+        border-radius: 8px;
+        background-color: #f8f9fa;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        transition: all 0.3s ease;
+        border: 1px solid #e3e6f0;
+        height: 100%;
+    }
+    
+    .mobile-summary-card:hover {
+        background-color: #e9ecef;
+        transform: translateY(-2px);
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+    }
+    
+    .mobile-summary-card strong {
+        font-size: 13px;
+        color: #495057;
+        display: block;
+        margin-bottom: 8px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+    
+    .mobile-summary-card p {
+        font-size: 15px;
+        font-weight: 600;
+        color: #212529;
+        margin-bottom: 0;
+        line-height: 1.3;
+    }
+    
+    /* Responsive adjustments */
+    @media (max-width: 1199.98px) {
+        .mobile-summary-card {
+            padding: 12px;
+        }
+        .mobile-summary-card strong {
+            font-size: 12px;
+        }
+        .mobile-summary-card p {
+            font-size: 14px;
+        }
+    }
+    
+    @media (max-width: 767.98px) {
+        .mobile-summary-card {
+            padding: 10px;
+            margin-bottom: 10px;
+        }
+        .mobile-summary-card strong {
+            font-size: 11px;
+        }
+        .mobile-summary-card p {
+            font-size: 13px;
+        }
+    }
+    
+    /* Style untuk info box lembur summary */
     .enhanced-info-box {
         border-radius: 6px;
         box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
@@ -541,20 +613,7 @@
         box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
     }
     
-    .mobile-summary-card {
-        margin-bottom: 15px;
-        padding: 10px;
-        border-radius: 5px;
-        background-color: #f8f9fa;
-        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-        transition: all 0.2s ease;
-    }
-    
-    .mobile-summary-card:hover {
-        background-color: #e9ecef;
-    }
-    
-    /* Responsiveness */
+    /* Card tools responsiveness */
     @media (max-width: 767.98px) {
         .card-tools .btn {
             margin-bottom: 5px;
@@ -583,7 +642,7 @@
     
     /* Highlight rows with data */
     tr.has-data {
-        background-color: rgba(40, 167, 69, 0.05) !important; /* slight green tint */
+        background-color: rgba(40, 167, 69, 0.05) !important;
     }
     
     tr.has-data:hover {
@@ -662,7 +721,7 @@
             $('.mobile-summary-card').each(function(i) {
                 $(this).delay(i * 100).animate({
                     'opacity': 1
-                }, 500);
+                }, 400);
             });
         });
     });

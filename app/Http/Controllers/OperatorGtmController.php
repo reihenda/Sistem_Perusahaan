@@ -36,6 +36,7 @@ class OperatorGtmController extends Controller
             'nama' => 'required|string|max:255',
             'lokasi_kerja' => 'required|string|max:255',
             'gaji_pokok' => 'required|numeric|min:0',
+            'jam_kerja' => 'required|integer|in:8,10',
             'tanggal_bergabung' => 'required|date',
         ]);
 
@@ -87,6 +88,7 @@ class OperatorGtmController extends Controller
             'nama' => 'required|string|max:255',
             'lokasi_kerja' => 'required|string|max:255',
             'gaji_pokok' => 'required|numeric|min:0',
+            'jam_kerja' => 'required|integer|in:8,10',
             'tanggal_bergabung' => 'required|date',
         ]);
 
@@ -209,8 +211,10 @@ class OperatorGtmController extends Controller
         
         \Log::info('Total jam kerja: ' . $totalJamKerja . ' menit');
         
-        // Hitung jam lembur (jam kerja di atas 8 jam atau 480 menit)
-        $jamLembur = max(0, $totalJamKerja - 480);
+        // Hitung jam lembur berdasarkan jam kerja operator (8 jam = 480 menit, 10 jam = 600 menit)
+        $jamKerjaMenit = ($operatorGtm->jam_kerja ?? 8) * 60;
+        $jamLembur = max(0, $totalJamKerja - $jamKerjaMenit);
+        \Log::info('Jam kerja operator: ' . ($operatorGtm->jam_kerja ?? 8) . ' jam (' . $jamKerjaMenit . ' menit)');
         \Log::info('Jam lembur: ' . $jamLembur . ' menit');
         
         // Ambil tarif lembur dari konfigurasi
@@ -329,8 +333,10 @@ class OperatorGtmController extends Controller
         
         \Log::info('Total jam kerja: ' . $totalJamKerja . ' menit');
         
-        // Hitung jam lembur (jam kerja di atas 8 jam atau 480 menit)
-        $jamLembur = max(0, $totalJamKerja - 480);
+        // Hitung jam lembur berdasarkan jam kerja operator (8 jam = 480 menit, 10 jam = 600 menit)
+        $jamKerjaMenit = ($lembur->operator->jam_kerja ?? 8) * 60;
+        $jamLembur = max(0, $totalJamKerja - $jamKerjaMenit);
+        \Log::info('Jam kerja operator: ' . ($lembur->operator->jam_kerja ?? 8) . ' jam (' . $jamKerjaMenit . ' menit)');
         \Log::info('Jam lembur: ' . $jamLembur . ' menit');
         
         // Ambil tarif lembur dari konfigurasi

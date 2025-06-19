@@ -119,7 +119,7 @@
                         <i class="fas fa-info-circle mr-1"></i> 
                         Sistem akan menghitung ulang total jam kerja, jam lembur, dan upah lembur secara otomatis berdasarkan data yang diubah.
                         <br>
-                        <small>Jam lembur dihitung jika total jam kerja melebihi 8 jam.</small>
+                        <small>Jam lembur dihitung jika total jam kerja melebihi <strong>{{ $operatorGtm->jam_kerja ?? 8 }} jam</strong> (sesuai setting jam kerja operator ini).</small>
                     </div>
                     
                     <div class="alert alert-warning mt-3">
