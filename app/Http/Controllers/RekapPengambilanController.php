@@ -64,6 +64,43 @@ class RekapPengambilanController extends Controller
         return view('rekap-pengambilan.create', compact('customers', 'nomorPolisList', 'alamatList'));
     }
 
+    /**
+     * Show the form for creating a new resource with pre-selected customer.
+     */
+    public function createWithCustomer(User $customer)
+    {
+        $customers = User::where('role', 'customer')->orWhere('role', 'fob')->get();
+        $nomorPolisList = NomorPolisi::orderBy('nopol')->get();
+        $alamatList = AlamatPengambilan::orderBy('nama_alamat')->get();
+        $selectedCustomer = $customer;
+
+        return view('rekap-pengambilan.create', compact('customers', 'nomorPolisList', 'alamatList', 'selectedCustomer'));
+    }
+
+    /**
+     * Find rekap pengambilan by customer and date, then redirect to edit.
+     */
+    public function findByDate(User $customer, $date)
+    {
+        // Cari rekap pengambilan berdasarkan customer dan tanggal
+        $rekapPengambilan = RekapPengambilan::where('customer_id', $customer->id)
+            ->whereDate('tanggal', $date)
+            ->first();
+
+        if ($rekapPengambilan) {
+            // Jika ditemukan, redirect ke halaman edit
+            return redirect()->route('rekap-pengambilan.edit', $rekapPengambilan->id)
+                ->with('info', 'Data rekap pengambilan ditemukan dan siap untuk diedit.')
+                ->with('return_to_fob', true);
+        } else {
+            // Jika tidak ditemukan, redirect ke create dengan customer terpilih dan tanggal
+            return redirect()->route('rekap-pengambilan.create-with-customer', $customer->id)
+                ->with('info', 'Data rekap pengambilan tidak ditemukan. Silakan buat data baru.')
+                ->with('preset_date', $date)
+                ->with('return_to_fob', true);
+        }
+    }
+
     public function store(Request $request)
     {
         // Jika alamat_pengambilan_id adalah 'tambah_baru', atur nilainya menjadi null agar tidak divalidasi
@@ -126,6 +163,7 @@ class RekapPengambilanController extends Controller
             $dataInput = [
                 'waktu' => Carbon::parse($validatedBase['tanggal'])->format('Y-m-d H:i:s'),
                 'volume_sm3' => $validatedBase['volume'],
+                'alamat_pengambilan' => $validatedBase['alamat_pengambilan'] ?? null,
                 'keterangan' => $validatedBase['keterangan'] ?? null
             ];
 
@@ -164,6 +202,12 @@ class RekapPengambilanController extends Controller
             $customer->recordPurchase($hargaFinal);
             $userController = new UserController();
             $userController->rekalkulasiTotalPembelianFob($customer);
+        }
+
+        // Check if there's a return URL from FOB detail page
+        if ($request->has('return_to_fob') && $request->return_to_fob) {
+            return redirect()->route('data-pencatatan.fob-detail', $customer->id)
+                ->with('success', 'Data pengambilan berhasil ditambahkan dan disinkronkan dengan FOB.');
         }
 
         return redirect()->route('rekap-pengambilan.index')
@@ -252,6 +296,7 @@ class RekapPengambilanController extends Controller
             $dataInput = [
                 'waktu' => Carbon::parse($validatedBase['tanggal'])->format('Y-m-d H:i:s'),
                 'volume_sm3' => $validatedBase['volume'],
+                'alamat_pengambilan' => $validatedBase['alamat_pengambilan'] ?? null,
                 'keterangan' => $validatedBase['keterangan'] ?? null
             ];
             
@@ -307,6 +352,12 @@ class RekapPengambilanController extends Controller
             // Update saldo bulanan mulai dari bulan data
             $startMonth = $waktuYearMonth;
             $customer->updateMonthlyBalances($startMonth);
+        }
+
+        // Check if there's a return URL from FOB detail page
+        if ($request->has('return_to_fob') && $request->return_to_fob) {
+            return redirect()->route('data-pencatatan.fob-detail', $customer->id)
+                ->with('success', 'Data pengambilan berhasil diperbarui dan disinkronkan dengan FOB.');
         }
 
         return redirect()->route('rekap-pengambilan.index')

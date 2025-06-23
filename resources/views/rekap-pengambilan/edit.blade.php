@@ -19,6 +19,9 @@
                 <form action="{{ route('rekap-pengambilan.update', $rekapPengambilan->id) }}" method="POST" id="formEditData">
                     @csrf
                     @method('PUT')
+                    @if(request('return_to_fob') || session('return_to_fob'))
+                        <input type="hidden" name="return_to_fob" value="1">
+                    @endif
                     <div class="card-body">
                         @if ($errors->any())
                             <div class="alert alert-danger alert-dismissible fade show" role="alert">
@@ -29,6 +32,26 @@
                                         <li>{{ $error }}</li>
                                     @endforeach
                                 </ul>
+                                <button type="button" class="close" data-dismiss="alert" aria-label="Close">
+                                    <span aria-hidden="true">&times;</span>
+                                </button>
+                            </div>
+                        @endif
+
+                        @if(session('info'))
+                            <div class="alert alert-info alert-dismissible fade show" role="alert">
+                                <i class="fas fa-info-circle mr-2"></i>
+                                {{ session('info') }}
+                                <button type="button" class="close" data-dismiss="alert" aria-label="Close">
+                                    <span aria-hidden="true">&times;</span>
+                                </button>
+                            </div>
+                        @endif
+
+                        @if(request('return_to_fob') || session('return_to_fob'))
+                            <div class="alert alert-success alert-dismissible fade show" role="alert">
+                                <i class="fas fa-sync-alt mr-2"></i>
+                                <strong>Mode Sinkronisasi FOB:</strong> Data akan disinkronkan dengan data FOB setelah disimpan.
                                 <button type="button" class="close" data-dismiss="alert" aria-label="Close">
                                     <span aria-hidden="true">&times;</span>
                                 </button>
@@ -120,9 +143,15 @@
                         <button type="submit" class="btn btn-primary">
                             <i class="fas fa-save mr-1"></i> Simpan Perubahan
                         </button>
-                        <a href="{{ route('rekap-pengambilan.index') }}" class="btn btn-secondary">
-                            <i class="fas fa-arrow-left mr-1"></i> Kembali
-                        </a>
+                        @if(request('return_to_fob') || session('return_to_fob'))
+                            <a href="{{ route('data-pencatatan.fob-detail', $rekapPengambilan->customer_id) }}" class="btn btn-secondary">
+                                <i class="fas fa-arrow-left mr-1"></i> Kembali ke FOB Detail
+                            </a>
+                        @else
+                            <a href="{{ route('rekap-pengambilan.index') }}" class="btn btn-secondary">
+                                <i class="fas fa-arrow-left mr-1"></i> Kembali
+                            </a>
+                        @endif
                     </div>
                 </form>
             </div>

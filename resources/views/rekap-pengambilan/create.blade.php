@@ -24,6 +24,9 @@
 
                     <form action="{{ route('rekap-pengambilan.store') }}" method="POST" id="formTambahData">
                         @csrf
+                        @if(request('return_to_fob') || session('return_to_fob'))
+                            <input type="hidden" name="return_to_fob" value="1">
+                        @endif
                         <div class="card-body">
                             @if ($errors->any())
                                 <div class="alert alert-danger alert-dismissible fade show" role="alert">
@@ -40,15 +43,43 @@
                                 </div>
                             @endif
 
+                            @if(session('info'))
+                                <div class="alert alert-info alert-dismissible fade show" role="alert">
+                                    <i class="fas fa-info-circle mr-2"></i>
+                                    {{ session('info') }}
+                                    <button type="button" class="close" data-dismiss="alert" aria-label="Close">
+                                        <span aria-hidden="true">&times;</span>
+                                    </button>
+                                </div>
+                            @endif
+
+                            @if(isset($selectedCustomer))
+                                <div class="alert alert-success alert-dismissible fade show" role="alert">
+                                    <i class="fas fa-check-circle mr-2"></i>
+                                    <strong>Customer terpilih:</strong> {{ $selectedCustomer->name }} ({{ ucfirst($selectedCustomer->role) }})
+                                    <button type="button" class="close" data-dismiss="alert" aria-label="Close">
+                                        <span aria-hidden="true">&times;</span>
+                                    </button>
+                                </div>
+                            @endif
+
                             <div class="row">
                                 <div class="col-md-6">
                                     <div class="form-group">
                                         <label for="customer_id">Customer <span class="text-danger">*</span></label>
-                                        <select name="customer_id" id="customer_id" class="form-control select2" required>
+                                        <select name="customer_id" id="customer_id" class="form-control select2" required
+                                            {{ isset($selectedCustomer) ? 'readonly' : '' }}>
                                             <option value="">-- Pilih Customer --</option>
                                             @foreach ($customers as $customer)
-                                                <option value="{{ $customer->id }}"
-                                                    {{ old('customer_id') == $customer->id ? 'selected' : '' }}>
+                                                @php
+                                                    $selected = false;
+                                                    if (isset($selectedCustomer) && $selectedCustomer->id == $customer->id) {
+                                                        $selected = true;
+                                                    } elseif (!isset($selectedCustomer) && old('customer_id') == $customer->id) {
+                                                        $selected = true;
+                                                    }
+                                                @endphp
+                                                <option value="{{ $customer->id }}" {{ $selected ? 'selected' : '' }}>
                                                     {{ $customer->name }} ({{ ucfirst($customer->role) }})
                                                 </option>
                                             @endforeach
@@ -58,9 +89,17 @@
                                 <div class="col-md-6">
                                     <div class="form-group">
                                         <label for="tanggal">Tanggal dan Waktu <span class="text-danger">*</span></label>
+                                        @php
+                                            $defaultDate = old('tanggal');
+                                            if (!$defaultDate && session('preset_date')) {
+                                                $defaultDate = \Carbon\Carbon::parse(session('preset_date'))->format('Y-m-d\TH:i');
+                                            } elseif (!$defaultDate) {
+                                                $defaultDate = now()->format('Y-m-d\TH:i');
+                                            }
+                                        @endphp
                                         <input type="datetime-local" name="tanggal" id="tanggal"
                                             class="form-control @error('tanggal') is-invalid @enderror"
-                                            value="{{ old('tanggal', now()->format('Y-m-d\TH:i')) }}" required>
+                                            value="{{ $defaultDate }}" required>
                                     </div>
                                 </div>
                             </div>
@@ -120,9 +159,15 @@
                             <button type="submit" class="btn btn-primary">
                                 <i class="fas fa-save mr-1"></i> Simpan
                             </button>
-                            <a href="{{ route('rekap-pengambilan.index') }}" class="btn btn-secondary">
-                                <i class="fas fa-arrow-left mr-1"></i> Kembali
-                            </a>
+                            @if(request('return_to_fob') || session('return_to_fob'))
+                                <a href="{{ route('data-pencatatan.fob-detail', $selectedCustomer->id) }}" class="btn btn-secondary">
+                                    <i class="fas fa-arrow-left mr-1"></i> Kembali ke FOB Detail
+                                </a>
+                            @else
+                                <a href="{{ route('rekap-pengambilan.index') }}" class="btn btn-secondary">
+                                    <i class="fas fa-arrow-left mr-1"></i> Kembali
+                                </a>
+                            @endif
                         </div>
                     </form>
                 </div>

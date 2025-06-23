@@ -654,6 +654,19 @@ class FobController extends Controller
 
         // Log untuk debugging
         Log::info("FOB {$customer->name} - Tahunan ($tahun): Pemakaian: $totalPemakaianTahunan Sm³, Pembelian: Rp " . number_format($totalPembelianTahunan, 0));
+        
+        // DEBUG: Log detail untuk troubleshooting
+        Log::info('FOB calculateYearlyData - Detail', [
+            'customer_id' => $customer->id,
+            'customer_name' => $customer->name,
+            'tahun' => $tahun,
+            'total_records_all' => $allData->count(),
+            'total_records_yearly_filtered' => $yearlyData->count(),
+            'calculated_total_pemakaian_tahunan' => $totalPemakaianTahunan,
+            'calculated_total_pembelian_tahunan' => $totalPembelianTahunan,
+            'database_total_purchases_current' => $customer->total_purchases,
+            'yearly_vs_total_purchases_diff' => $totalPembelianTahunan - $customer->total_purchases
+        ]);
 
         return [
             'totalPemakaianTahunan' => round($totalPemakaianTahunan, 2),
@@ -850,10 +863,11 @@ class FobController extends Controller
         $endDate = Carbon::createFromDate($tahun, $bulan, 1)->endOfMonth()->endOfDay();
 
         // Ambil semua data pencatatan
-        $dataPencatatan = $customer->dataPencatatan()->get();
+        $allDataPencatatan = $customer->dataPencatatan()->get();
+        $dataPencatatan = $allDataPencatatan;
 
         // Filter data berdasarkan periode tanpa logging berlebihan
-        $dataPencatatan = $dataPencatatan->filter(function ($item) use ($startDate, $endDate) {
+        $dataPencatatanFiltered = $dataPencatatan->filter(function ($item) use ($startDate, $endDate) {
             $dataInput = $this->ensureArray($item->data_input);
             
             if (empty($dataInput)) {
@@ -898,18 +912,31 @@ class FobController extends Controller
         // Get pricing info for selected month
         $pricingInfo = $customer->getPricingForYearMonth($yearMonth);
 
-        // Calculate total volume SM3 for all time
-        $totalVolumeSm3 = $dataPencatatan->sum(function ($item) {
+        // Calculate total volume SM3 for ALL TIME (tidak difilter)
+        $totalVolumeSm3 = $allDataPencatatan->sum(function ($item) {
             $dataInput = $this->ensureArray($item->data_input);
             return floatval($dataInput['volume_sm3'] ?? 0);
         });
 
-        // Calculate total volume dan purchases dengan SELALU menggunakan calculated
+        // DEBUG: Log perhitungan total untuk troubleshooting
+        Log::info('FOB Detail - Perhitungan Total', [
+            'customer_id' => $customer->id,
+            'customer_name' => $customer->name,
+            'total_data_pencatatan' => $allDataPencatatan->count(),
+            'filtered_data_pencatatan' => $dataPencatatanFiltered->count(),
+            'calculated_total_volume_sm3' => $totalVolumeSm3,
+            'database_total_purchases' => $customer->total_purchases,
+            'database_total_deposit' => $customer->total_deposit,
+            'yearly_data_requested' => $tahun,
+            'selected_period' => $bulan . '/' . $tahun
+        ]);
+
+        // Calculate total volume dan purchases dengan SELALU menggunakan calculated (untuk periode yang difilter)
         $filteredVolumeSm3 = 0;
         $filteredTotalPurchases = 0;
         $processedIds = []; // Untuk mencegah duplikasi perhitungan
         
-        foreach ($dataPencatatan as $item) {
+        foreach ($dataPencatatanFiltered as $item) {
             // Pastikan tidak ada duplikasi perhitungan
             if (in_array($item->id, $processedIds)) {
                 continue;
@@ -1033,7 +1060,7 @@ class FobController extends Controller
 
         return view('data-pencatatan.fob.fob-detail', [
             'customer' => $customer,
-            'dataPencatatan' => $dataPencatatan,
+            'dataPencatatan' => $dataPencatatanFiltered,
             'depositHistory' => $this->ensureArray($customer->deposit_history),
             'totalDeposit' => $customer->total_deposit,
             'totalPurchases' => $customer->total_purchases,
@@ -1363,12 +1390,94 @@ class FobController extends Controller
     }
 
     /**
-     * Fungsi untuk melakukan validasi dan koreksi data otomatis
-     * Dipanggil setiap kali halaman detail FOB diakses
-     *
-     * @param User $customer
-     * @return void
+     * Debug dan perbaiki perhitungan FOB
      */
+    public function debugAndFixCalculations(User $customer)
+    {
+        if (!$customer->isFOB()) {
+            return response()->json(['error' => 'User bukan FOB'], 400);
+        }
+
+        try {
+            DB::beginTransaction();
+            
+            // 1. Ambil semua data
+            $allData = $customer->dataPencatatan()->get();
+            
+            // 2. Hitung manual total volume dan total pembelian
+            $manualTotalVolume = 0;
+            $manualTotalPurchases = 0;
+            $recordCount = 0;
+            
+            foreach ($allData as $item) {
+                $dataInput = $this->ensureArray($item->data_input);
+                $volumeSm3 = floatval($dataInput['volume_sm3'] ?? 0);
+                
+                if ($volumeSm3 > 0) {
+                    $manualTotalVolume += $volumeSm3;
+                    
+                    // Hitung pembelian berdasarkan harga_final yang tersimpan
+                    $manualTotalPurchases += floatval($item->harga_final ?? 0);
+                    $recordCount++;
+                }
+            }
+            
+            // 3. Bandingkan dengan database
+            $dbTotalPurchases = $customer->total_purchases;
+            $dbTotalDeposit = $customer->total_deposit;
+            $currentBalance = $dbTotalDeposit - $dbTotalPurchases;
+            
+            // 4. Perbaiki jika ada perbedaan
+            $fixed = false;
+            if (abs($manualTotalPurchases - $dbTotalPurchases) > 0.01) {
+                $customer->total_purchases = $manualTotalPurchases;
+                $customer->save();
+                $fixed = true;
+            }
+            
+            // 5. Update monthly balances
+            $customer->updateMonthlyBalances();
+            
+            DB::commit();
+            
+            $result = [
+                'customer_info' => [
+                    'id' => $customer->id,
+                    'name' => $customer->name,
+                    'role' => $customer->role
+                ],
+                'calculations' => [
+                    'total_records' => $recordCount,
+                    'manual_total_volume' => $manualTotalVolume,
+                    'manual_total_purchases' => $manualTotalPurchases,
+                    'db_total_purchases_before' => $dbTotalPurchases,
+                    'db_total_purchases_after' => $customer->fresh()->total_purchases,
+                    'db_total_deposit' => $dbTotalDeposit,
+                    'current_balance' => $currentBalance,
+                    'fixed' => $fixed,
+                    'difference_before_fix' => $manualTotalPurchases - $dbTotalPurchases
+                ],
+                'status' => 'success'
+            ];
+            
+            if (request()->expectsJson()) {
+                return response()->json($result);
+            }
+            
+            return redirect()->route('data-pencatatan.fob-detail', $customer->id)
+                ->with('success', 'Debug dan perbaikan selesai. ' . ($fixed ? 'Data telah diperbaiki.' : 'Tidak ada yang perlu diperbaiki.'));
+                
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('Error in debugAndFixCalculations: ' . $e->getMessage());
+            
+            if (request()->expectsJson()) {
+                return response()->json(['error' => $e->getMessage()], 500);
+            }
+            
+            return redirect()->back()->with('error', 'Error: ' . $e->getMessage());
+        }
+    }
     private function performAutomaticDataValidation(User $customer)
     {
         try {

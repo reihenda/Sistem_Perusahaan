@@ -97,6 +97,9 @@ Route::middleware(['auth', 'role:admin,superadmin'])->group(function () {
     Route::get('/debug/system-check', [App\Http\Controllers\DebugKasController::class, 'checkSystem'])->name('debug.system-check');
     Route::get('/debug/check-import', [App\Http\Controllers\DebugKasController::class, 'checkLastImport'])->name('debug.check-import');
     Route::get('/debug/simulate-import', [App\Http\Controllers\DebugKasController::class, 'simulateImport'])->name('debug.simulate-import');
+        
+        // Debug route untuk FOB calculations
+        Route::get('/debug/fob-calculations/{customer}', [FobController::class, 'debugAndFixCalculations'])->name('debug.fob-calculations');
 
     // Rute untuk Bank
     Route::get('/keuangan/bank', [BankController::class, 'index'])->name('keuangan.bank.index');
@@ -155,6 +158,8 @@ Route::middleware(['auth', 'role:admin,superadmin'])->group(function () {
         ->name('rekap-pengambilan.index');
     Route::get('/rekap-pengambilan/create', [RekapPengambilanController::class, 'create'])
         ->name('rekap-pengambilan.create');
+    Route::get('/rekap-pengambilan/create-with-customer/{customer}', [RekapPengambilanController::class, 'createWithCustomer'])
+        ->name('rekap-pengambilan.create-with-customer');
     Route::post('/rekap-pengambilan', [RekapPengambilanController::class, 'store'])
         ->name('rekap-pengambilan.store');
     Route::get('/rekap-pengambilan/{rekapPengambilan}', [RekapPengambilanController::class, 'show'])
@@ -165,6 +170,8 @@ Route::middleware(['auth', 'role:admin,superadmin'])->group(function () {
         ->name('rekap-pengambilan.update');
     Route::delete('/rekap-pengambilan/{rekapPengambilan}', [RekapPengambilanController::class, 'destroy'])
         ->name('rekap-pengambilan.destroy');
+    Route::get('/rekap-pengambilan/find-by-date/{customer}/{date}', [RekapPengambilanController::class, 'findByDate'])
+        ->name('rekap-pengambilan.find-by-date');
 
     // Rute untuk mengelola nomor polisi
     Route::resource('nomor-polisi', NomorPolisiController::class);

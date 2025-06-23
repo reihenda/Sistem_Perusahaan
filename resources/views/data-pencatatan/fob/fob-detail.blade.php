@@ -26,6 +26,7 @@
                             <p>Debug Links:</p>
                             <a href="{{ route('fob.debug', $customer->id) }}" class="btn btn-warning" target="_blank">Open
                                 Debug Page</a>
+                            <a href="{{ route('debug.fob-calculations', $customer->id) }}" class="btn btn-info" target="_blank">Debug & Fix Calculations</a>
                         </div>
                     </div>
                 </div>
@@ -91,7 +92,7 @@
                                     data-target="#depositHistoryModal">
                                     <i class="fas fa-money-bill-alt mr-1"></i> History Deposit
                                 </button>
-                                <a href="{{ route('data-pencatatan.fob.create-with-fob', $customer->id) }}"
+                                <a href="{{ route('rekap-pengambilan.create-with-customer', $customer->id) }}?return_to_fob=1"
                                     class="btn btn-info btn-sm">
                                     <i class="fas fa-plus mr-1"></i> Tambah Data
                                 </a>
@@ -447,15 +448,37 @@
                                         <td>Rp {{ number_format($pembelian, 2) }}</td>
                                         <td>
                                             <div class="btn-group">
-                                                <a href="{{ route('data-pencatatan.show', $item->id) }}"
-                                                    class="btn btn-info btn-sm">
-                                                    <i class="fas fa-eye"></i>
-                                                </a>
-                                                @if (Auth::user()->isAdmin() || Auth::user()->isSuperAdmin())
-                                                    <a href="{{ route('data-pencatatan.edit', $item->id) }}"
-                                                        class="btn btn-warning btn-sm">
-                                                        <i class="fas fa-edit"></i>
+                                                @php
+                                                    // Extract date from data_input for finding corresponding rekap pengambilan
+                                                    $waktuData = $dataInput['waktu'] ?? null;
+                                                    $tanggalData = $waktuData ? \Carbon\Carbon::parse($waktuData)->format('Y-m-d') : null;
+                                                @endphp
+                                                
+                                                @if($tanggalData)
+                                                    <a href="{{ route('rekap-pengambilan.find-by-date', [$customer->id, $tanggalData]) }}"
+                                                        class="btn btn-info btn-sm" title="Lihat/Edit Rekap Pengambilan">
+                                                        <i class="fas fa-eye"></i>
                                                     </a>
+                                                @else
+                                                    <a href="{{ route('data-pencatatan.show', $item->id) }}"
+                                                        class="btn btn-info btn-sm">
+                                                        <i class="fas fa-eye"></i>
+                                                    </a>
+                                                @endif
+                                                
+                                                @if (Auth::user()->isAdmin() || Auth::user()->isSuperAdmin())
+                                                    @if($tanggalData)
+                                                        <a href="{{ route('rekap-pengambilan.find-by-date', [$customer->id, $tanggalData]) }}"
+                                                            class="btn btn-warning btn-sm" title="Edit Rekap Pengambilan">
+                                                            <i class="fas fa-edit"></i>
+                                                        </a>
+                                                    @else
+                                                        <a href="{{ route('data-pencatatan.edit', $item->id) }}"
+                                                            class="btn btn-warning btn-sm">
+                                                            <i class="fas fa-edit"></i>
+                                                        </a>
+                                                    @endif
+                                                    
                                                     <form action="{{ route('data-pencatatan.destroy', $item->id) }}"
                                                         method="POST" class="d-inline"
                                                         onsubmit="return confirm('Apakah Anda yakin ingin menghapus data ini?');">
