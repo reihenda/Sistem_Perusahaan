@@ -226,6 +226,7 @@ Route::middleware(['auth', 'role:admin,superadmin'])->group(function () {
     Route::get('/invoices/select-customer', [InvoiceController::class, 'selectCustomer'])->name('invoices.select-customer');
     Route::get('/invoices/create/{customer}', [InvoiceController::class, 'create'])->name('invoices.create');
     Route::post('/invoices/{customer}', [InvoiceController::class, 'store'])->name('invoices.store');
+    Route::post('/invoices/{customer}/generate-number', [InvoiceController::class, 'generateInvoiceNumber'])->name('invoices.generate-number');
     Route::get('/invoices/{invoice}', [InvoiceController::class, 'show'])->name('invoices.show');
     Route::get('/invoices/{invoice}/edit', [InvoiceController::class, 'edit'])->name('invoices.edit');
     Route::put('/invoices/{invoice}', [InvoiceController::class, 'update'])->name('invoices.update');
@@ -235,6 +236,7 @@ Route::middleware(['auth', 'role:admin,superadmin'])->group(function () {
     Route::get('/billings/select-customer', [BillingController::class, 'selectCustomer'])->name('billings.select-customer');
     Route::get('/billings/create/{customer}', [BillingController::class, 'create'])->name('billings.create');
     Route::post('/billings/{customer}', [BillingController::class, 'store'])->name('billings.store');
+    Route::post('/billings/{customer}/generate-number', [BillingController::class, 'generateBillingNumber'])->name('billings.generate-number');
     Route::get('/billings/{billing}', [BillingController::class, 'show'])->name('billings.show');
     Route::get('/billings/{billing}/edit', [BillingController::class, 'edit'])->name('billings.edit');
     Route::put('/billings/{billing}', [BillingController::class, 'update'])->name('billings.update');

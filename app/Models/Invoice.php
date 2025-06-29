@@ -15,12 +15,16 @@ class Invoice extends Model
         'invoice_date',
         'due_date',
         'total_amount',
+        'total_volume',
         'status',
         'description',
         'no_kontrak',
         'id_pelanggan',
         'period_month',
         'period_year',
+        'period_type',
+        'custom_start_date',
+        'custom_end_date',
     ];
 
     protected $casts = [
@@ -36,38 +40,27 @@ class Invoice extends Model
     }
 
     // Mendapatkan format nomor invoice
-    public static function generateInvoiceNumber($customer, $date = null)
+    public static function generateInvoiceNumber($customer, $date = null, $periodType = 'monthly', $customStartDate = null)
     {
-        $date = $date ? \Carbon\Carbon::parse($date) : now();
+        // Untuk periode custom, gunakan custom start date
+        if ($periodType === 'custom' && $customStartDate) {
+            $date = \Carbon\Carbon::parse($customStartDate);
+        } else {
+            $date = $date ? \Carbon\Carbon::parse($date) : now();
+        }
         
         // Format: 'no'/MPS/INV-'CUSTOMER'/'tgl'/'thn'
         // Misalnya: 001/MPS/INV-NOMI/12/2023
-        $customerCode = strtoupper($customer->name);
+        $customerCode = substr(strtoupper($customer->name), 0, 4);
         
-        // Cari invoice terakhir untuk customer ini
-        $lastInvoice = self::where('customer_id', $customer->id)
-                           ->orderBy('id', 'desc')
-                           ->first();
-        
-        // Jika ada invoice terakhir, ekstrak nomor urut dan tambahkan 1
-        if ($lastInvoice) {
-            $lastInvoiceNumber = $lastInvoice->invoice_number;
-            // Ekstrak nomor urut dari format 'XXX/MPS/INV-CUSTOMER/MM/YYYY'
-            $matches = [];
-            if (preg_match('/^(\d+)\/MPS\/INV-/', $lastInvoiceNumber, $matches)) {
-                $lastNumber = (int)$matches[1];
-                $nextNumber = $lastNumber + 1;
-            } else {
-                // Jika tidak ditemukan pola yang benar, mulai dari 1
-                $nextNumber = 1;
-            }
-        } else {
-            // Jika tidak ada invoice sebelumnya, mulai dari 1
-            $nextNumber = 1;
-        }
+        // Dapatkan nomor urut invoice untuk customer ini
+        $count = self::where('customer_id', $customer->id)
+                    ->whereMonth('created_at', $date->month)
+                    ->whereYear('created_at', $date->year)
+                    ->count() + 1;
         
         $invoiceNumber = sprintf('%03d/MPS/INV-%s/%s/%s', 
-            $nextNumber,
+            $count,
             $customerCode,
             $date->format('m'),
             $date->format('Y')

@@ -21,6 +21,9 @@ class Billing extends Model
         'amount_to_pay',
         'period_month',
         'period_year',
+        'period_type',
+        'custom_start_date',
+        'custom_end_date',
         'status',
     ];
 
@@ -31,9 +34,14 @@ class Billing extends Model
     }
 
     // Mendapatkan format nomor billing
-    public static function generateBillingNumber($customer, $date = null)
+    public static function generateBillingNumber($customer, $date = null, $periodType = 'monthly', $customStartDate = null)
     {
-        $date = $date ? \Carbon\Carbon::parse($date) : now();
+        // Untuk periode custom, gunakan custom start date
+        if ($periodType === 'custom' && $customStartDate) {
+            $date = \Carbon\Carbon::parse($customStartDate);
+        } else {
+            $date = $date ? \Carbon\Carbon::parse($date) : now();
+        }
         
         // Format billing number serupa dengan invoice
         $customerCode = substr(strtoupper($customer->name), 0, 4);

@@ -51,30 +51,75 @@
                 <div class="col-md-12">
                     <div class="form-group">
                         <label>Periode Pencatatan</label>
-                        <div class="row">
-                            <div class="col-md-6">
-                                <select class="form-control @error('month') is-invalid @enderror" name="month">
-                                    @for ($i = 1; $i <= 12; $i++)
-                                        <option value="{{ $i }}" {{ old('month', $month) == $i ? 'selected' : '' }}>
-                                            {{ date('F', mktime(0, 0, 0, $i, 1)) }}
-                                        </option>
-                                    @endfor
-                                </select>
-                                @error('month')
-                                    <div class="invalid-feedback">{{ $message }}</div>
-                                @enderror
+                        
+                        <!-- Tab Buttons untuk Tipe Periode -->
+                        <div class="mb-3">
+                            <div class="btn-group" role="group" aria-label="Period Type">
+                                <button type="button" class="btn btn-outline-primary period-btn" id="monthlyPeriodBtn" data-period="monthly">
+                                    Periode Bulanan
+                                </button>
+                                <button type="button" class="btn btn-outline-primary period-btn" id="customPeriodBtn" data-period="custom">
+                                    Periode Khusus
+                                </button>
                             </div>
-                            <div class="col-md-6">
-                                <select class="form-control @error('year') is-invalid @enderror" name="year">
-                                    @for ($i = date('Y') - 3; $i <= date('Y') + 1; $i++)
-                                        <option value="{{ $i }}" {{ old('year', $year) == $i ? 'selected' : '' }}>
-                                            {{ $i }}
-                                        </option>
-                                    @endfor
-                                </select>
-                                @error('year')
-                                    <div class="invalid-feedback">{{ $message }}</div>
-                                @enderror
+                            <input type="hidden" name="period_type" id="period_type" value="{{ old('period_type', 'monthly') }}">
+                        </div>
+                        
+                        <!-- Periode Bulanan -->
+                        <div id="monthly-period" class="period-section">
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <select class="form-control @error('month') is-invalid @enderror" name="month">
+                                        @for ($i = 1; $i <= 12; $i++)
+                                            <option value="{{ $i }}" {{ old('month', $month) == $i ? 'selected' : '' }}>
+                                                {{ date('F', mktime(0, 0, 0, $i, 1)) }}
+                                            </option>
+                                        @endfor
+                                    </select>
+                                    @error('month')
+                                        <div class="invalid-feedback">{{ $message }}</div>
+                                    @enderror
+                                </div>
+                                <div class="col-md-6">
+                                    <select class="form-control @error('year') is-invalid @enderror" name="year">
+                                        @for ($i = date('Y') - 3; $i <= date('Y') + 1; $i++)
+                                            <option value="{{ $i }}" {{ old('year', $year) == $i ? 'selected' : '' }}>
+                                                {{ $i }}
+                                            </option>
+                                        @endfor
+                                    </select>
+                                    @error('year')
+                                        <div class="invalid-feedback">{{ $message }}</div>
+                                    @enderror
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Periode Khusus -->
+                        <div id="custom-period" class="period-section" style="display: none;">
+                            <div class="row">
+                                <div class="col-md-5">
+                                    <label for="custom_start_date">Dari Tanggal</label>
+                                    <input type="date" class="form-control @error('custom_start_date') is-invalid @enderror" 
+                                        id="custom_start_date" name="custom_start_date" value="{{ old('custom_start_date') }}">
+                                    @error('custom_start_date')
+                                        <div class="invalid-feedback">{{ $message }}</div>
+                                    @enderror
+                                </div>
+                                <div class="col-md-5">
+                                    <label for="custom_end_date">Sampai Tanggal</label>
+                                    <input type="date" class="form-control @error('custom_end_date') is-invalid @enderror" 
+                                        id="custom_end_date" name="custom_end_date" value="{{ old('custom_end_date') }}">
+                                    @error('custom_end_date')
+                                        <div class="invalid-feedback">{{ $message }}</div>
+                                    @enderror
+                                </div>
+                                <div class="col-md-2">
+                                    <label>&nbsp;</label>
+                                    <div class="form-control-plaintext">
+                                        <small id="date-range-info" class="text-muted"></small>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -98,3 +143,158 @@
     </form>
 </div>
 @endsection
+
+@push('scripts')
+<script>
+$(document).ready(function() {
+    // Initialize period type berdasarkan value yang ada
+    updatePeriodDisplay();
+    
+    // Handle period button clicks
+    $('.period-btn').click(function() {
+        const selectedPeriod = $(this).data('period');
+        
+        // Update button states
+        $('.period-btn').removeClass('btn-primary').addClass('btn-outline-primary');
+        $(this).removeClass('btn-outline-primary').addClass('btn-primary');
+        
+        // Update hidden field
+        $('#period_type').val(selectedPeriod);
+        
+        // Update display
+        updatePeriodDisplay();
+        updateBillingNumber();
+    });
+    
+    // Handle date range calculation
+    $('#custom_start_date, #custom_end_date').change(function() {
+        calculateDateRange();
+        if ($('#period_type').val() === 'custom' && $('#custom_start_date').val()) {
+            updateBillingNumber();
+        }
+    });
+    
+    // Handle monthly period change
+    $('#monthly-period select').change(function() {
+        if ($('#period_type').val() === 'monthly') {
+            updateBillingNumber();
+        }
+    });
+    
+    function updatePeriodDisplay() {
+        const periodType = $('#period_type').val();
+        
+        // Update button states based on current period type
+        $('.period-btn').removeClass('btn-primary').addClass('btn-outline-primary');
+        if (periodType === 'custom') {
+            $('#customPeriodBtn').removeClass('btn-outline-primary').addClass('btn-primary');
+            $('#monthly-period').hide();
+            $('#custom-period').show();
+            
+            // Disable monthly fields
+            $('#monthly-period select').prop('disabled', true);
+            // Enable custom fields
+            $('#custom-period input').prop('disabled', false);
+        } else {
+            $('#monthlyPeriodBtn').removeClass('btn-outline-primary').addClass('btn-primary');
+            $('#monthly-period').show();
+            $('#custom-period').hide();
+            
+            // Enable monthly fields
+            $('#monthly-period select').prop('disabled', false);
+            // Disable custom fields
+            $('#custom-period input').prop('disabled', true);
+        }
+        
+        calculateDateRange();
+    }
+    
+    function calculateDateRange() {
+        const startDate = $('#custom_start_date').val();
+        const endDate = $('#custom_end_date').val();
+        const infoElement = $('#date-range-info');
+        
+        if (startDate && endDate) {
+            const start = new Date(startDate);
+            const end = new Date(endDate);
+            const diffTime = Math.abs(end - start);
+            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1; // +1 untuk include hari terakhir
+            
+            if (start > end) {
+                infoElement.html('<span class="text-danger">Tanggal awal tidak boleh lebih dari tanggal akhir</span>');
+                $('#custom_end_date').addClass('is-invalid');
+            } else if (diffDays > 60) {
+                infoElement.html('<span class="text-warning">' + diffDays + ' hari (maksimal 60 hari)</span>');
+                $('#custom_end_date').addClass('is-invalid');
+            } else {
+                infoElement.html('<span class="text-success">' + diffDays + ' hari</span>');
+                $('#custom_end_date').removeClass('is-invalid');
+            }
+        } else {
+            infoElement.html('');
+            $('#custom_end_date').removeClass('is-invalid');
+        }
+    }
+    
+    function updateBillingNumber() {
+        const periodType = $('#period_type').val();
+        let data = {
+            period_type: periodType,
+            _token: $('meta[name="csrf-token"]').attr('content')
+        };
+        
+        if (periodType === 'custom') {
+            data.custom_start_date = $('#custom_start_date').val();
+        }
+        
+        // Only make request if we have necessary data
+        if (periodType === 'monthly' || (periodType === 'custom' && data.custom_start_date)) {
+            $.ajax({
+                url: '{{ route("billings.generate-number", $customer) }}',
+                method: 'POST',
+                data: data,
+                success: function(response) {
+                    $('#billing_number').val(response.billing_number);
+                },
+                error: function(xhr) {
+                    console.log('Error generating billing number:', xhr);
+                }
+            });
+        }
+    }
+    
+    // Form validation sebelum submit
+    $('form').submit(function(e) {
+        const periodType = $('#period_type').val();
+        
+        if (periodType === 'custom') {
+            const startDate = $('#custom_start_date').val();
+            const endDate = $('#custom_end_date').val();
+            
+            if (!startDate || !endDate) {
+                e.preventDefault();
+                alert('Silakan pilih tanggal awal dan tanggal akhir untuk periode khusus.');
+                return false;
+            }
+            
+            const start = new Date(startDate);
+            const end = new Date(endDate);
+            const diffTime = Math.abs(end - start);
+            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+            
+            if (start > end) {
+                e.preventDefault();
+                alert('Tanggal awal tidak boleh lebih dari tanggal akhir.');
+                return false;
+            }
+            
+            if (diffDays > 60) {
+                e.preventDefault();
+                alert('Periode maksimal adalah 60 hari.');
+                return false;
+            }
+        }
+    });
+});
+</script>
+@endpush

@@ -11,6 +11,21 @@ use Illuminate\Support\Facades\DB;
 class BillingController extends Controller
 {
     /**
+     * Generate billing number via AJAX
+     */
+    public function generateBillingNumber(Request $request, User $customer)
+    {
+        $periodType = $request->input('period_type', 'monthly');
+        $customStartDate = $request->input('custom_start_date');
+        
+        $billingNumber = Billing::generateBillingNumber($customer, null, $periodType, $customStartDate);
+        
+        return response()->json([
+            'billing_number' => $billingNumber
+        ]);
+    }
+
+    /**
      * Display a listing of billings.
      */
     public function index()
@@ -39,8 +54,8 @@ class BillingController extends Controller
      */
     public function create(User $customer)
     {
-        // Generate a default billing number based on the current date
-        $billingNumber = Billing::generateBillingNumber($customer);
+        // Generate a default billing number based on the current date (monthly period)
+        $billingNumber = Billing::generateBillingNumber($customer, null, 'monthly');
         
         // Default to current month and year
         $month = now()->month;
@@ -54,38 +69,96 @@ class BillingController extends Controller
      */
     public function store(Request $request, User $customer)
     {
-        $request->validate([
+        // Validation rules berdasarkan period type
+        $baseRules = [
             'billing_number' => 'required|string|max:50',
             'billing_date' => 'required|date',
-            'month' => 'required|integer|min:1|max:12',
-            'year' => 'required|integer|min:2000|max:2100',
-        ]);
+            'period_type' => 'required|in:monthly,custom',
+        ];
+        
+        // Add conditional validation
+        if ($request->period_type === 'custom') {
+            $baseRules['custom_start_date'] = 'required|date';
+            $baseRules['custom_end_date'] = 'required|date|after_or_equal:custom_start_date';
+        } else {
+            $baseRules['month'] = 'required|integer|min:1|max:12';
+            $baseRules['year'] = 'required|integer|min:2000|max:2100';
+        }
+        
+        $request->validate($baseRules);
+        
+        // Additional validation for custom period
+        if ($request->period_type === 'custom') {
+            $startDate = Carbon::parse($request->custom_start_date);
+            $endDate = Carbon::parse($request->custom_end_date);
+            $diffDays = $startDate->diffInDays($endDate) + 1;
+            
+            if ($diffDays > 60) {
+                return back()->withErrors(['custom_end_date' => 'Periode maksimal adalah 60 hari.'])->withInput();
+            }
+        }
 
-        // Format filter untuk query
-        $yearMonth = $request->year . '-' . str_pad($request->month, 2, '0', STR_PAD_LEFT);
-
-        // Get pricing info for selected month
-        $pricingInfo = $customer->getPricingForYearMonth($yearMonth);
+        // Determine period for filtering data
+        if ($request->period_type === 'custom') {
+            $startDate = Carbon::parse($request->custom_start_date);
+            $endDate = Carbon::parse($request->custom_end_date);
+            $periodType = 'custom';
+            
+            // For billing number generation, use start date
+            $billingDate = $startDate;
+        } else {
+            // Format filter untuk query monthly
+            $yearMonth = $request->year . '-' . str_pad($request->month, 2, '0', STR_PAD_LEFT);
+            $periodType = 'monthly';
+            $billingDate = Carbon::createFromDate($request->year, $request->month, 1);
+        }
 
         // Base query - ambil semua data
         $dataPencatatan = $customer->dataPencatatan()->get();
 
-        // Filter data berdasarkan bulan dan tahun dari pembacaan awal
-        // PERBAIKAN: Gunakan logika filtering yang sama dengan customer detail
-        $dataPencatatan = $dataPencatatan->filter(function ($item) use ($yearMonth) {
-            $dataInput = $this->ensureArray($item->data_input);
+        // Filter data berdasarkan periode yang dipilih
+        if ($periodType === 'custom') {
+            // Filter berdasarkan range tanggal custom
+            $dataPencatatan = $dataPencatatan->filter(function ($item) use ($startDate, $endDate) {
+                $dataInput = $this->ensureArray($item->data_input);
 
-            // Jika data input kosong atau tidak ada waktu awal, skip
-            if (empty($dataInput) || empty($dataInput['pembacaan_awal']['waktu'])) {
-                return false;
-            }
+                // Jika data input kosong atau tidak ada waktu awal, skip
+                if (empty($dataInput) || empty($dataInput['pembacaan_awal']['waktu'])) {
+                    return false;
+                }
 
-            // Convert the timestamp to year-month format for comparison
-            $waktuAwal = Carbon::parse($dataInput['pembacaan_awal']['waktu'])->format('Y-m');
+                $waktuAwal = Carbon::parse($dataInput['pembacaan_awal']['waktu'])->startOfDay();
+                $startFilter = $startDate->copy()->startOfDay();
+                $endFilter = $endDate->copy()->endOfDay();
 
-            // Filter by year-month
-            return $waktuAwal === $yearMonth;
-        });
+                // Filter by date range
+                return $waktuAwal->between($startFilter, $endFilter);
+            });
+            
+            // Get pricing info for start date period
+            $yearMonth = $startDate->format('Y-m');
+            $pricingInfo = $customer->getPricingForYearMonth($yearMonth);
+        } else {
+            // Filter data berdasarkan bulan dan tahun dari pembacaan awal
+            // PERBAIKAN: Gunakan logika filtering yang sama dengan customer detail
+            $dataPencatatan = $dataPencatatan->filter(function ($item) use ($yearMonth) {
+                $dataInput = $this->ensureArray($item->data_input);
+
+                // Jika data input kosong atau tidak ada waktu awal, skip
+                if (empty($dataInput) || empty($dataInput['pembacaan_awal']['waktu'])) {
+                    return false;
+                }
+
+                // Convert the timestamp to year-month format for comparison
+                $waktuAwal = Carbon::parse($dataInput['pembacaan_awal']['waktu'])->format('Y-m');
+
+                // Filter by year-month
+                return $waktuAwal === $yearMonth;
+            });
+            
+            // Get pricing info for selected month
+            $pricingInfo = $customer->getPricingForYearMonth($yearMonth);
+        }
 
         // DEBUG: Log jumlah data yang ditemukan
         \Log::info('Billing store - Data filtering', [
@@ -157,64 +230,73 @@ class BillingController extends Controller
             ]);
         }
 
-        // Perhitungan untuk penerimaan deposit
+        // Perhitungan untuk penerimaan deposit (hanya untuk periode monthly)
         $totalDeposit = 0;
+        $prevMonthBalance = 0;
+        $currentMonthBalance = 0;
+        $amountToPay = 0;
 
-        $depositHistory = $this->ensureArray($customer->deposit_history);
-        foreach ($depositHistory as $deposit) {
-            if (isset($deposit['date'])) {
-                $depositDate = Carbon::parse($deposit['date']);
-                // PERBAIKAN: Gunakan format yang konsisten dengan customer detail
-                if ($depositDate->format('Y-m') === $yearMonth) {
-                    $totalDeposit += floatval($deposit['amount'] ?? 0);
+        if ($periodType === 'monthly') {
+            // Perhitungan deposit dan saldo hanya untuk periode bulanan
+            $depositHistory = $this->ensureArray($customer->deposit_history);
+            foreach ($depositHistory as $deposit) {
+                if (isset($deposit['date'])) {
+                    $depositDate = Carbon::parse($deposit['date']);
+                    // PERBAIKAN: Gunakan format yang konsisten dengan customer detail
+                    if ($depositDate->format('Y-m') === $yearMonth) {
+                        $totalDeposit += floatval($deposit['amount'] ?? 0);
+                    }
                 }
             }
-        }
-        
-        // DEBUG: Log total deposit yang ditemukan
-        \Log::info('Billing store - Deposit calculation', [
-            'customer_id' => $customer->id,
-            'period' => $yearMonth,
-            'total_deposit' => $totalDeposit,
-            'deposit_entries' => count($depositHistory)
-        ]);
+            
+            // DEBUG: Log total deposit yang ditemukan
+            \Log::info('Billing store - Deposit calculation', [
+                'customer_id' => $customer->id,
+                'period' => $yearMonth,
+                'total_deposit' => $totalDeposit,
+                'deposit_entries' => count($depositHistory)
+            ]);
 
-        // PERBAIKAN: Gunakan sistem monthly_balances yang sama dengan customer detail
-        // Menghitung saldo bulan sebelumnya
-        $prevDate = Carbon::createFromDate($request->year, $request->month, 1)->subMonth();
-        $prevMonthYear = $prevDate->format('Y-m');
-        $currentYearMonth = $yearMonth;
-        
-        // Pastikan monthly balances sudah terupdate
-        $customer->updateMonthlyBalances($prevMonthYear);
-        
-        // Reload customer untuk mendapatkan data terbaru
-        $customer = User::findOrFail($customer->id);
-        
-        // Ambil saldo bulanan dari sistem yang sama dengan customer detail
-        $monthlyBalances = $customer->monthly_balances ?: [];
-        
-        // Ambil saldo bulan sebelumnya dari monthly_balances
-        $prevMonthBalance = isset($monthlyBalances[$prevMonthYear]) ?
-            floatval($monthlyBalances[$prevMonthYear]) : 0;
-        
-        // DEBUG: Log saldo calculations dengan metode baru
-        \Log::info('Billing store - Balance calculation (monthly_balances method)', [
-            'customer_id' => $customer->id,
-            'prev_month_year' => $prevMonthYear,
-            'current_year_month' => $currentYearMonth,
-            'prev_month_balance_from_monthly_balances' => $prevMonthBalance,
-            'current_month_deposit' => $totalDeposit,
-            'current_month_purchase' => $totalBiaya,
-            'monthly_balances_available' => !empty($monthlyBalances),
-            'monthly_balances_count' => count($monthlyBalances)
-        ]);
-        
-        // Menghitung saldo bulan ini
-        $currentMonthBalance = $prevMonthBalance + $totalDeposit - $totalBiaya;
-        
-        // Menghitung biaya yang harus dibayar (jika saldo negatif)
-        $amountToPay = $currentMonthBalance < 0 ? abs($currentMonthBalance) : 0;
+            // PERBAIKAN: Gunakan sistem monthly_balances yang sama dengan customer detail
+            // Menghitung saldo bulan sebelumnya
+            $prevDate = Carbon::createFromDate($request->year, $request->month, 1)->subMonth();
+            $prevMonthYear = $prevDate->format('Y-m');
+            $currentYearMonth = $yearMonth;
+            
+            // Pastikan monthly balances sudah terupdate
+            $customer->updateMonthlyBalances($prevMonthYear);
+            
+            // Reload customer untuk mendapatkan data terbaru
+            $customer = User::findOrFail($customer->id);
+            
+            // Ambil saldo bulanan dari sistem yang sama dengan customer detail
+            $monthlyBalances = $customer->monthly_balances ?: [];
+            
+            // Ambil saldo bulan sebelumnya dari monthly_balances
+            $prevMonthBalance = isset($monthlyBalances[$prevMonthYear]) ?
+                floatval($monthlyBalances[$prevMonthYear]) : 0;
+            
+            // DEBUG: Log saldo calculations dengan metode baru
+            \Log::info('Billing store - Balance calculation (monthly_balances method)', [
+                'customer_id' => $customer->id,
+                'prev_month_year' => $prevMonthYear,
+                'current_year_month' => $currentYearMonth,
+                'prev_month_balance_from_monthly_balances' => $prevMonthBalance,
+                'current_month_deposit' => $totalDeposit,
+                'current_month_purchase' => $totalBiaya,
+                'monthly_balances_available' => !empty($monthlyBalances),
+                'monthly_balances_count' => count($monthlyBalances)
+            ]);
+            
+            // Menghitung saldo bulan ini
+            $currentMonthBalance = $prevMonthBalance + $totalDeposit - $totalBiaya;
+            
+            // Menghitung biaya yang harus dibayar (jika saldo negatif)
+            $amountToPay = $currentMonthBalance < 0 ? abs($currentMonthBalance) : 0;
+        } else {
+            // Untuk periode custom, amount to pay = total biaya pemakaian
+            $amountToPay = $totalBiaya;
+        }
 
         // Buat billing baru
         $billing = new Billing();
@@ -227,8 +309,21 @@ class BillingController extends Controller
         $billing->previous_balance = $prevMonthBalance;
         $billing->current_balance = $currentMonthBalance;
         $billing->amount_to_pay = $amountToPay;
-        $billing->period_month = $request->month;
-        $billing->period_year = $request->year;
+        $billing->period_type = $request->period_type;
+        
+        if ($request->period_type === 'custom') {
+            $billing->custom_start_date = $request->custom_start_date;
+            $billing->custom_end_date = $request->custom_end_date;
+            // Set period month/year berdasarkan start date untuk kompatibilitas
+            $billing->period_month = $startDate->month;
+            $billing->period_year = $startDate->year;
+        } else {
+            $billing->period_month = $request->month;
+            $billing->period_year = $request->year;
+            $billing->custom_start_date = null;
+            $billing->custom_end_date = null;
+        }
+        
         $billing->status = 'unpaid';
         $billing->save();
         
@@ -253,7 +348,15 @@ class BillingController extends Controller
     public function show(Billing $billing)
     {
         $customer = $billing->customer;
-        $yearMonth = $billing->period_year . '-' . str_pad($billing->period_month, 2, '0', STR_PAD_LEFT);
+        
+        // Determine period based on billing type
+        if ($billing->period_type === 'custom') {
+            $startDate = Carbon::parse($billing->custom_start_date);
+            $endDate = Carbon::parse($billing->custom_end_date);
+            $yearMonth = $startDate->format('Y-m'); // For pricing info
+        } else {
+            $yearMonth = $billing->period_year . '-' . str_pad($billing->period_month, 2, '0', STR_PAD_LEFT);
+        }
         
         // Get pricing info
         $pricingInfo = $customer->getPricingForYearMonth($yearMonth);
@@ -261,21 +364,41 @@ class BillingController extends Controller
         // Retrieve and filter the relevant data - SAMA DENGAN STORE METHOD
         $dataPencatatan = $customer->dataPencatatan()->get();
         
-        // Filter data berdasarkan bulan dan tahun dari pembacaan awal
-        $dataPencatatan = $dataPencatatan->filter(function ($item) use ($yearMonth) {
-            $dataInput = $this->ensureArray($item->data_input);
+        // Filter data berdasarkan periode billing
+        if ($billing->period_type === 'custom') {
+            // Filter berdasarkan range tanggal custom
+            $dataPencatatan = $dataPencatatan->filter(function ($item) use ($startDate, $endDate) {
+                $dataInput = $this->ensureArray($item->data_input);
 
-            // Jika data input kosong atau tidak ada waktu awal, skip
-            if (empty($dataInput) || empty($dataInput['pembacaan_awal']['waktu'])) {
-                return false;
-            }
+                // Jika data input kosong atau tidak ada waktu awal, skip
+                if (empty($dataInput) || empty($dataInput['pembacaan_awal']['waktu'])) {
+                    return false;
+                }
 
-            // Convert the timestamp to year-month format for comparison
-            $waktuAwal = Carbon::parse($dataInput['pembacaan_awal']['waktu'])->format('Y-m');
+                $waktuAwal = Carbon::parse($dataInput['pembacaan_awal']['waktu'])->startOfDay();
+                $startFilter = $startDate->copy()->startOfDay();
+                $endFilter = $endDate->copy()->endOfDay();
 
-            // Filter by year-month
-            return $waktuAwal === $yearMonth;
-        });
+                // Filter by date range
+                return $waktuAwal->between($startFilter, $endFilter);
+            });
+        } else {
+            // Filter data berdasarkan bulan dan tahun dari pembacaan awal
+            $dataPencatatan = $dataPencatatan->filter(function ($item) use ($yearMonth) {
+                $dataInput = $this->ensureArray($item->data_input);
+
+                // Jika data input kosong atau tidak ada waktu awal, skip
+                if (empty($dataInput) || empty($dataInput['pembacaan_awal']['waktu'])) {
+                    return false;
+                }
+
+                // Convert the timestamp to year-month format for comparison
+                $waktuAwal = Carbon::parse($dataInput['pembacaan_awal']['waktu'])->format('Y-m');
+
+                // Filter by year-month
+                return $waktuAwal === $yearMonth;
+            });
+        }
         
         // DEBUG: Log untuk verifikasi data show
         \Log::info('Billing show - Data filtering', [
@@ -397,47 +520,53 @@ class BillingController extends Controller
             unset($item['tanggal_pemakaian']); // Hapus field yang hanya untuk pengurutan
         }
 
-        // Perhitungan untuk penerimaan deposit
+        // Perhitungan untuk penerimaan deposit (hanya untuk periode monthly)
         // PERBAIKAN: Gunakan format yang konsisten dengan store method
         $penerimaanDeposit = [];
         $j = 1;
-        $depositHistory = $this->ensureArray($customer->deposit_history);
-        foreach ($depositHistory as $deposit) {
-            if (isset($deposit['date'])) {
-                $depositDate = Carbon::parse($deposit['date']);
-                // PERBAIKAN: Gunakan format yang konsisten dengan customer detail
-                if ($depositDate->format('Y-m') === $yearMonth) {
-                    $jumlahDeposit = floatval($deposit['amount'] ?? 0);
-                    $penerimaanDeposit[] = [
-                        'no' => $j++,
-                        'tanggal_deposit' => $depositDate->format('d/m/Y'),
-                        'tanggal_untuk_urutan' => $depositDate,
-                        'jumlah_penerimaan' => $jumlahDeposit
-                    ];
+        
+        if ($billing->period_type === 'monthly') {
+            // Hanya tampilkan deposit untuk periode bulanan
+            $depositHistory = $this->ensureArray($customer->deposit_history);
+            foreach ($depositHistory as $deposit) {
+                if (isset($deposit['date'])) {
+                    $depositDate = Carbon::parse($deposit['date']);
+                    // PERBAIKAN: Gunakan format yang konsisten dengan customer detail
+                    if ($depositDate->format('Y-m') === $yearMonth) {
+                        $jumlahDeposit = floatval($deposit['amount'] ?? 0);
+                        $penerimaanDeposit[] = [
+                            'no' => $j++,
+                            'tanggal_deposit' => $depositDate->format('d/m/Y'),
+                            'tanggal_untuk_urutan' => $depositDate,
+                            'jumlah_penerimaan' => $jumlahDeposit
+                        ];
+                    }
                 }
             }
-        }
-        
-        // Urutkan data penerimaan deposit berdasarkan tanggal
-        usort($penerimaanDeposit, function($a, $b) {
-            if (!isset($a['tanggal_untuk_urutan']) || !isset($b['tanggal_untuk_urutan'])) {
-                return 0;
+            
+            // Urutkan data penerimaan deposit berdasarkan tanggal
+            usort($penerimaanDeposit, function($a, $b) {
+                if (!isset($a['tanggal_untuk_urutan']) || !isset($b['tanggal_untuk_urutan'])) {
+                    return 0;
+                }
+                return $a['tanggal_untuk_urutan']->timestamp - $b['tanggal_untuk_urutan']->timestamp;
+            });
+            
+            // Reset nomor urut setelah pengurutan
+            $j = 1;
+            foreach ($penerimaanDeposit as &$item) {
+                $item['no'] = $j++;
+                unset($item['tanggal_untuk_urutan']); // Hapus field yang hanya untuk pengurutan
             }
-            return $a['tanggal_untuk_urutan']->timestamp - $b['tanggal_untuk_urutan']->timestamp;
-        });
-        
-        // Reset nomor urut setelah pengurutan
-        $j = 1;
-        foreach ($penerimaanDeposit as &$item) {
-            $item['no'] = $j++;
-            unset($item['tanggal_untuk_urutan']); // Hapus field yang hanya untuk pengurutan
         }
 
         // Setup data untuk view Billing
         $data = [
             'billing' => $billing,
             'customer' => $customer,
-            'periode_bulan' => Carbon::createFromDate($billing->period_year, $billing->period_month, 1)->format('F Y'),
+            'periode_bulan' => $billing->period_type === 'custom' ? 
+                Carbon::parse($billing->custom_start_date)->format('d/m/Y') . ' - ' . Carbon::parse($billing->custom_end_date)->format('d/m/Y') :
+                Carbon::createFromDate($billing->period_year, $billing->period_month, 1)->format('F Y'),
             'pemakaian_gas' => $pemakaianGas,
             'penerimaan_deposit' => $penerimaanDeposit,
         ];

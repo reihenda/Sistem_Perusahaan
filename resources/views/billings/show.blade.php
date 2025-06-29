@@ -102,126 +102,172 @@
                     <div class="row mt-4">
                         <div class="col-12">
                             <div class="row">
-                                <div class="col-md-6">
-                                    <div class="card shadow-sm">
-                                        <div class="card-header bg-gradient-success text-white">
-                                            <h5 class="mb-0 font-weight-bold" style="padding-left: 15px;"><i
-                                                    class="fas fa-money-bill-wave mr-2"></i>PENERIMAAN DEPOSIT</h5>
-                                        </div>
-                                        <div class="card-body">
-                                            <div class="table-responsive no-scroll-text">
-                                                <table class="table table-striped table-bordered">
-                                                    <thead class="thead-dark">
-                                                        <tr>
-                                                            <th class="text-center" style="width: 25px">No</th>
-                                                            <th style="width: 65px">Tanggal</th>
-                                                            <th class="text-right" style="width: 70px">Jumlah</th>
-                                                        </tr>
-                                                    </thead>
-                                                    <tbody>
-                                                        @forelse($penerimaan_deposit as $deposit)
+                                @if($billing->period_type === 'monthly')
+                                    <!-- Tampilkan untuk periode bulanan (dengan deposit dan saldo) -->
+                                    <div class="col-md-6">
+                                        <div class="card shadow-sm">
+                                            <div class="card-header bg-gradient-success text-white">
+                                                <h5 class="mb-0 font-weight-bold" style="padding-left: 15px;"><i
+                                                        class="fas fa-money-bill-wave mr-2"></i>PENERIMAAN DEPOSIT</h5>
+                                            </div>
+                                            <div class="card-body">
+                                                <div class="table-responsive no-scroll-text">
+                                                    <table class="table table-striped table-bordered">
+                                                        <thead class="thead-dark">
                                                             <tr>
-                                                                <td class="text-center">{{ $deposit['no'] }}</td>
-                                                                <td>
-                                                                    <span class="badge badge-success p-2">
-                                                                        <i class="far fa-calendar-check mr-1"></i>
-                                                                        {{ \Carbon\Carbon::createFromFormat('d/m/Y', $deposit['tanggal_deposit'])->format('d-M-y') }}
-                                                                    </span>
-                                                                </td>
-                                                                <td class="text-right font-weight-bold text-success">Rp
-                                                                    {{ number_format($deposit['jumlah_penerimaan'], 0, ',', '.') }}
-                                                                </td>
+                                                                <th class="text-center" style="width: 25px">No</th>
+                                                                <th style="width: 65px">Tanggal</th>
+                                                                <th class="text-right" style="width: 70px">Jumlah</th>
                                                             </tr>
-                                                        @empty
-                                                            <tr>
-                                                                <td colspan="3" class="text-center">
-                                                                    <span class="text-muted">
-                                                                        <i class="fas fa-info-circle mr-1"></i>
-                                                                        Tidak ada deposit pada periode ini
-                                                                    </span>
-                                                                </td>
+                                                        </thead>
+                                                        <tbody>
+                                                            @forelse($penerimaan_deposit as $deposit)
+                                                                <tr>
+                                                                    <td class="text-center">{{ $deposit['no'] }}</td>
+                                                                    <td>
+                                                                        <span class="badge badge-success p-2">
+                                                                            <i class="far fa-calendar-check mr-1"></i>
+                                                                            {{ \Carbon\Carbon::createFromFormat('d/m/Y', $deposit['tanggal_deposit'])->format('d-M-y') }}
+                                                                        </span>
+                                                                    </td>
+                                                                    <td class="text-right font-weight-bold text-success">Rp
+                                                                        {{ number_format($deposit['jumlah_penerimaan'], 0, ',', '.') }}
+                                                                    </td>
+                                                                </tr>
+                                                            @empty
+                                                                <tr>
+                                                                    <td colspan="3" class="text-center">
+                                                                        <span class="text-muted">
+                                                                            <i class="fas fa-info-circle mr-1"></i>
+                                                                            Tidak ada deposit pada periode ini
+                                                                        </span>
+                                                                    </td>
+                                                                </tr>
+                                                            @endforelse
+                                                        </tbody>
+                                                        <tfoot>
+                                                            <tr class="bg-light">
+                                                                <th colspan="2" class="text-center">Total Penerimaan</th>
+                                                                <th class="text-right text-success">Rp
+                                                                    {{ number_format($billing->total_deposit, 0, ',', '.') }}
+                                                                </th>
                                                             </tr>
-                                                        @endforelse
-                                                    </tbody>
-                                                    <tfoot>
-                                                        <tr class="bg-light">
-                                                            <th colspan="2" class="text-center">Total Penerimaan</th>
-                                                            <th class="text-right text-success">Rp
-                                                                {{ number_format($billing->total_deposit, 0, ',', '.') }}
-                                                            </th>
-                                                        </tr>
-                                                    </tfoot>
-                                                </table>
+                                                        </tfoot>
+                                                    </table>
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
-                                </div>
-                                <div class="col-md-6">
-                                    <div class="card shadow-sm">
-                                        <div class="card-header bg-gradient-info text-white">
-                                            <h5 class="mb-0 font-weight-bold" style="padding-left: 15px;"><i
-                                                    class="fas fa-calculator mr-2"></i>JUMLAH TAGIHAN BULAN INI</h5>
-                                        </div>
-                                        <div class="card-body">
-                                            <div class="table-responsive no-scroll-text">
-                                                <table class="table table-bordered">
-                                                    <tbody>
-                                                        <tr>
-                                                            <td class="bg-light" style="width: 45%"><strong>Saldo Bulan
-                                                                    Lalu</strong></td>
-                                                            <td
-                                                                class="text-right {{ $billing->previous_balance < 0 ? 'text-danger' : 'text-success' }} font-weight-bold">
-                                                                Rp
-                                                                {{ number_format($billing->previous_balance, 0, ',', '.') }}
-                                                            </td>
-                                                        </tr>
-                                                        <tr>
-                                                            <td><strong>Penerimaan Deposit</strong></td>
-                                                            <td class="text-right text-success font-weight-bold">
-                                                                <i class="fas fa-plus-circle mr-1"></i>
-                                                                Rp
-                                                                {{ number_format($billing->total_deposit, 0, ',', '.') }}
-                                                            </td>
-                                                        </tr>
-                                                        <tr>
-                                                            <td><strong>Biaya Pemakaian</strong></td>
-                                                            <td class="text-right text-danger font-weight-bold">
-                                                                <i class="fas fa-minus-circle mr-1"></i>
-                                                                Rp {{ number_format($billing->total_amount, 0, ',', '.') }}
-                                                            </td>
-                                                        </tr>
-                                                        <tr class="bg-light">
-                                                            <td class="font-weight-bold">Sisa Saldo</td>
-                                                            <td
-                                                                class="text-right {{ $billing->current_balance < 0 ? 'text-danger' : 'text-success' }} font-weight-bold">
-                                                                Rp
-                                                                {{ number_format($billing->current_balance, 0, ',', '.') }}
-                                                            </td>
-                                                        </tr>
-                                                        <tr class="bg-light">
-                                                            <td class="font-weight-bold">Biaya Yang Masih Harus Dibayarkan
-                                                            </td>
-                                                            <td class="text-right text-danger font-weight-bold">
-                                                                <i class="fas fa-exclamation-circle mr-1"></i>
-                                                                Rp
-                                                                {{ number_format($billing->current_balance < 0 ? abs($billing->current_balance) : 0, 0, ',', '.') }}
-                                                            </td>
-                                                        </tr>
-                                                        @if ($billing->amount_to_pay > 0)
-                                                            <tr class="bg-warning">
-                                                                <td class="font-weight-bold">Jumlah Yang Harus Dibayar</td>
-                                                                <td class="text-right text-danger">
+                                    <div class="col-md-6">
+                                        <div class="card shadow-sm">
+                                            <div class="card-header bg-gradient-info text-white">
+                                                <h5 class="mb-0 font-weight-bold" style="padding-left: 15px;"><i
+                                                        class="fas fa-calculator mr-2"></i>JUMLAH TAGIHAN BULAN INI</h5>
+                                            </div>
+                                            <div class="card-body">
+                                                <div class="table-responsive no-scroll-text">
+                                                    <table class="table table-bordered">
+                                                        <tbody>
+                                                            <tr>
+                                                                <td class="bg-light" style="width: 45%"><strong>Saldo Bulan
+                                                                        Lalu</strong></td>
+                                                                <td
+                                                                    class="text-right {{ $billing->previous_balance < 0 ? 'text-danger' : 'text-success' }} font-weight-bold">
                                                                     Rp
-                                                                    {{ number_format($billing->amount_to_pay, 0, ',', '.') }}
+                                                                    {{ number_format($billing->previous_balance, 0, ',', '.') }}
                                                                 </td>
                                                             </tr>
-                                                        @endif
-                                                    </tbody>
-                                                </table>
+                                                            <tr>
+                                                                <td><strong>Penerimaan Deposit</strong></td>
+                                                                <td class="text-right text-success font-weight-bold">
+                                                                    <i class="fas fa-plus-circle mr-1"></i>
+                                                                    Rp
+                                                                    {{ number_format($billing->total_deposit, 0, ',', '.') }}
+                                                                </td>
+                                                            </tr>
+                                                            <tr>
+                                                                <td><strong>Biaya Pemakaian</strong></td>
+                                                                <td class="text-right text-danger font-weight-bold">
+                                                                    <i class="fas fa-minus-circle mr-1"></i>
+                                                                    Rp {{ number_format($billing->total_amount, 0, ',', '.') }}
+                                                                </td>
+                                                            </tr>
+                                                            <tr class="bg-light">
+                                                                <td class="font-weight-bold">Sisa Saldo</td>
+                                                                <td
+                                                                    class="text-right {{ $billing->current_balance < 0 ? 'text-danger' : 'text-success' }} font-weight-bold">
+                                                                    Rp
+                                                                    {{ number_format($billing->current_balance, 0, ',', '.') }}
+                                                                </td>
+                                                            </tr>
+                                                            <tr class="bg-light">
+                                                                <td class="font-weight-bold">Biaya Yang Masih Harus Dibayarkan
+                                                                </td>
+                                                                <td class="text-right text-danger font-weight-bold">
+                                                                    <i class="fas fa-exclamation-circle mr-1"></i>
+                                                                    Rp
+                                                                    {{ number_format($billing->current_balance < 0 ? abs($billing->current_balance) : 0, 0, ',', '.') }}
+                                                                </td>
+                                                            </tr>
+                                                            @if ($billing->amount_to_pay > 0)
+                                                                <tr class="bg-warning">
+                                                                    <td class="font-weight-bold">Jumlah Yang Harus Dibayar</td>
+                                                                    <td class="text-right text-danger">
+                                                                        Rp
+                                                                        {{ number_format($billing->amount_to_pay, 0, ',', '.') }}
+                                                                    </td>
+                                                                </tr>
+                                                            @endif
+                                                        </tbody>
+                                                    </table>
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
-                                </div>
+                                @else
+                                    <!-- Tampilkan untuk periode custom (hanya biaya yang harus dibayar) -->
+                                    <div class="col-md-12">
+                                        <div class="card shadow-sm">
+                                            <div class="card-header bg-gradient-warning text-white">
+                                                <h5 class="mb-0 font-weight-bold" style="padding-left: 15px;"><i
+                                                        class="fas fa-file-invoice-dollar mr-2"></i>TOTAL BIAYA PEMAKAIAN</h5>
+                                            </div>
+                                            <div class="card-body">
+                                                <div class="row">
+                                                    <div class="col-md-6 offset-md-3">
+                                                        <div class="table-responsive no-scroll-text">
+                                                            <table class="table table-bordered">
+                                                                <tbody>
+                                                                    <tr>
+                                                                        <td class="bg-light" style="width: 50%"><strong>Total Biaya Pemakaian Gas</strong></td>
+                                                                        <td class="text-right text-primary font-weight-bold">
+                                                                            Rp {{ number_format($billing->total_amount, 0, ',', '.') }}
+                                                                        </td>
+                                                                    </tr>
+                                                                    <tr class="bg-warning">
+                                                                        <td class="font-weight-bold"><strong>Biaya Yang Harus Dibayarkan</strong></td>
+                                                                        <td class="text-right text-danger font-weight-bold" style="font-size: 1.2em;">
+                                                                            <i class="fas fa-exclamation-circle mr-1"></i>
+                                                                            Rp {{ number_format($billing->amount_to_pay, 0, ',', '.') }}
+                                                                        </td>
+                                                                    </tr>
+                                                                </tbody>
+                                                            </table>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div class="row mt-3">
+                                                    <div class="col-12 text-center">
+                                                        <div class="alert alert-warning">
+                                                            <i class="fas fa-info-circle mr-2"></i>
+                                                            <strong>Catatan:</strong> Billing ini adalah untuk periode khusus ({{ $periode_bulan }}) dan tidak termasuk perhitungan saldo atau deposit.
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                @endif
                             </div>
 
                             <!-- Call to Action -->
@@ -283,6 +329,10 @@
 
                 .bg-gradient-info {
                     background: linear-gradient(to right, #36b9cc, #258391);
+                }
+
+                .bg-gradient-warning {
+                    background: linear-gradient(to right, #f6c23e, #dba119);
                 }
 
                 .text-primary {
