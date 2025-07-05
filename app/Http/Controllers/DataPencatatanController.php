@@ -376,7 +376,17 @@ class DataPencatatanController extends Controller
                 $depositDate = Carbon::parse($deposit['date']);
                 // Pastikan hanya deposit pada bulan dan tahun yang dipilih menggunakan format yang konsisten
                 if ($depositDate->format('Y-m') === $currentYearMonth) {
-                    $filteredTotalDeposits += floatval($deposit['amount'] ?? 0);
+                    $amount = floatval($deposit['amount'] ?? 0);
+                    $keterangan = $deposit['keterangan'] ?? 'penambahan';
+                    
+                    // PERBAIKAN: Handle deposit dan pengurangan dengan benar
+                    if ($keterangan === 'pengurangan') {
+                        // Jika keterangan pengurangan, kurangi dari total deposit
+                        $filteredTotalDeposits -= abs($amount);
+                    } else {
+                        // Jika keterangan penambahan, tambahkan
+                        $filteredTotalDeposits += $amount;
+                    }
                 }
             }
         }
@@ -386,6 +396,59 @@ class DataPencatatanController extends Controller
         $prevDate = Carbon::createFromDate($tahun, $bulan, 1)->subMonth();
         $prevYearMonth = $prevDate->format('Y-m');
         $currentYearMonth = $tahun . '-' . str_pad($bulan, 2, '0', STR_PAD_LEFT);
+
+        // PERBAIKAN: Hitung saldo bulan sebelumnya secara real-time
+        $realTimePrevMonthBalance = 0;
+        
+        // 1. Hitung semua deposit dan pengurangan sampai akhir bulan sebelumnya
+        $deposits = $this->ensureArray($customer->deposit_history);
+        foreach ($deposits as $deposit) {
+            if (isset($deposit['date'])) {
+                $depositDate = Carbon::parse($deposit['date']);
+                // Ambil deposit sampai akhir bulan sebelumnya
+                if ($depositDate->format('Y-m') <= $prevYearMonth) {
+                    $amount = floatval($deposit['amount'] ?? 0);
+                    $keterangan = $deposit['keterangan'] ?? 'penambahan';
+                    
+                    // PERBAIKAN: Handle deposit dan pengurangan dengan benar
+                    if ($keterangan === 'pengurangan') {
+                        // Jika keterangan pengurangan, pastikan amount negatif
+                        $realTimePrevMonthBalance -= abs($amount);
+                    } else {
+                        // Jika keterangan penambahan, tambahkan (bisa positif atau negatif)
+                        $realTimePrevMonthBalance += $amount;
+                    }
+                }
+            }
+        }
+        
+        // 2. Kurangi semua pembelian sampai akhir bulan sebelumnya
+        $allDataPencatatan = $customer->dataPencatatan()->get();
+        foreach ($allDataPencatatan as $purchaseItem) {
+            $itemDataInput = $this->ensureArray($purchaseItem->data_input);
+            if (empty($itemDataInput) || empty($itemDataInput['pembacaan_awal']['waktu'])) {
+                continue;
+            }
+
+            $itemWaktuAwal = Carbon::parse($itemDataInput['pembacaan_awal']['waktu']);
+            
+            // Ambil pembelian sampai akhir bulan sebelumnya
+            if ($itemWaktuAwal->format('Y-m') <= $prevYearMonth) {
+                $volumeFlowMeter = floatval($itemDataInput['volume_flow_meter'] ?? 0);
+
+                // Ambil pricing yang sesuai (bulanan atau periode khusus)
+                $itemYearMonth = $itemWaktuAwal->format('Y-m');
+                $itemPricingInfo = $customer->getPricingForYearMonth($itemYearMonth, $itemWaktuAwal);
+
+                // Hitung volume dan harga
+                $itemKoreksiMeter = floatval($itemPricingInfo['koreksi_meter'] ?? $customer->koreksi_meter);
+                $itemHargaPerM3 = floatval($itemPricingInfo['harga_per_meter_kubik'] ?? $customer->harga_per_meter_kubik);
+                $itemVolumeSm3 = $volumeFlowMeter * $itemKoreksiMeter;
+                $itemHarga = $itemVolumeSm3 * $itemHargaPerM3;
+
+                $realTimePrevMonthBalance -= $itemHarga;
+            }
+        }
 
         // Pastikan saldo bulanan sudah terupdate
         if (!isset($customer->monthly_balances[$currentYearMonth])) {
@@ -400,9 +463,29 @@ class DataPencatatanController extends Controller
         // Ambil saldo bulan sebelumnya dan bulan ini
         $prevMonthBalance = isset($monthlyBalances[$prevYearMonth]) ?
             floatval($monthlyBalances[$prevYearMonth]) : 0;
-
-        $currentMonthBalance = isset($monthlyBalances[$currentYearMonth]) ?
+        
+        // Ambil saldo database untuk perbandingan (fallback calculation)
+        $currentMonthBalanceDb = isset($monthlyBalances[$currentYearMonth]) ?
             floatval($monthlyBalances[$currentYearMonth]) : ($prevMonthBalance + $filteredTotalDeposits - $filteredTotalPurchases);
+
+        // PERBAIKAN: Hitung saldo real-time untuk semua komponen
+        // Ini akan digunakan untuk card "Saldo Periode Bulan Ini" dan tabel
+        $realTimeCurrentMonthBalance = $realTimePrevMonthBalance + $filteredTotalDeposits - $filteredTotalPurchases;
+        
+        // Logging untuk debug dan monitoring
+        if ((Auth::user()->isAdmin() || Auth::user()->isSuperAdmin()) && abs($realTimePrevMonthBalance - $prevMonthBalance) > 0.01) {
+            \Log::info('Perbedaan saldo bulan sebelumnya ditemukan', [
+                'customer_id' => $customer->id,
+                'customer_name' => $customer->name,
+                'period' => $currentYearMonth,
+                'prev_month' => $prevYearMonth,
+                'real_time_prev_balance' => $realTimePrevMonthBalance,
+                'database_prev_balance' => $prevMonthBalance,
+                'difference' => $realTimePrevMonthBalance - $prevMonthBalance,
+                'real_time_current_balance' => $realTimeCurrentMonthBalance,
+                'old_calculation' => $filteredTotalDeposits - $filteredTotalPurchases + $prevMonthBalance
+            ]);
+        }
 
         $yearlyData = $this->calculateYearlyData($customer, $tahun);
 
@@ -423,7 +506,10 @@ class DataPencatatanController extends Controller
             'totalPemakaianTahunan' => $yearlyData['totalPemakaianTahunan'],
             'totalPembelianTahunan' => $yearlyData['totalPembelianTahunan'],
             'prevMonthBalance' => $prevMonthBalance,
-            'currentMonthBalance' => $currentMonthBalance
+            'currentMonthBalance' => $realTimeCurrentMonthBalance, // PERBAIKAN: Gunakan real-time
+            'currentMonthBalanceDb' => $currentMonthBalanceDb, // Database comparison
+            'realTimePrevMonthBalance' => $realTimePrevMonthBalance,
+            'realTimeCurrentMonthBalance' => $realTimeCurrentMonthBalance // PERBAIKAN: Tambahan untuk konsistensi
         ]);
     }
     // Fungsi untuk menghitung informasi tahunan

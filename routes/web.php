@@ -140,6 +140,10 @@ Route::middleware(['auth', 'role:admin,superadmin'])->group(function () {
         ->name('data-pencatatan.customer-details');
     Route::post('/customer/{userId}/add-deposit', [UserController::class, 'addDeposit'])
         ->name('customer.add-deposit');
+    Route::post('/customer/{userId}/reduce-balance', [UserController::class, 'reduceBalance'])
+        ->name('customer.reduce-balance');
+    Route::post('/customer/{userId}/zero-balance', [UserController::class, 'zeroBalance'])
+        ->name('customer.zero-balance');
     Route::delete('/customers/{userId}/remove-deposit', [UserController::class, 'removeDeposit'])
         ->name('customer.remove-deposit');
     Route::post('/data-pencatatan/{customer}/filter', [DataPencatatanController::class, 'filterByDateRange'])

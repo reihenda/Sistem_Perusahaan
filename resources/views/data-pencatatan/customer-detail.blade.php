@@ -102,7 +102,8 @@
                                     <p class="text-muted mb-0">
                                         Rp
                                         {{ number_format(($customer->total_deposit ?? 0) - ($customer->total_purchases ?? 0), 0) }}
-                                        <span class="badge badge-info" title="Saldo total dari seluruh periode"><i class="fas fa-info-circle"></i></span>
+                                        <span class="badge badge-info" title="Saldo total dari seluruh periode"><i
+                                                class="fas fa-info-circle"></i></span>
                                     </p>
                                 </div>
                             </div>
@@ -186,8 +187,9 @@
                                 'customer' => $customer->id,
                                 'bulan' => $selectedBulan,
                                 'tahun' => $selectedTahun,
-                                'refresh' => true
-                            ]) }}" class="btn btn-warning btn-sm">
+                                'refresh' => true,
+                            ]) }}"
+                                class="btn btn-warning btn-sm">
                                 <i class="fas fa-sync-alt mr-1"></i> Selaraskan Data
                             </a>
                         </div>
@@ -291,8 +293,10 @@
                                     <strong><i class="fas fa-balance-scale mr-1"></i> Saldo Periode Bulan Ini</strong>
                                     <p class="text-muted mb-0">
                                         Rp
-                                        {{ number_format($filteredTotalDeposits - $filteredTotalPurchases + $prevMonthBalance, 0) }}
-                                        <span class="badge badge-info" title="Saldo untuk periode bulan yang dipilih saja"><i class="fas fa-info-circle"></i></span>
+                                        {{ number_format($realTimeCurrentMonthBalance, 0) }}
+                                        <span class="badge badge-success"
+                                            title="Saldo real-time untuk periode bulan yang dipilih"><i
+                                                class="fas fa-sync-alt"></i> Real-time</span>
                                     </p>
                                 </div>
                             </div>
@@ -305,13 +309,14 @@
                                     <div class="info-box-content">
                                         <span class="info-box-text d-flex justify-content-between align-items-center">
                                             <span>Informasi Saldo Bulan
-                                            {{ \Carbon\Carbon::createFromDate($selectedTahun, $selectedBulan, 1)->format('F Y') }}</span>
+                                                {{ \Carbon\Carbon::createFromDate($selectedTahun, $selectedBulan, 1)->format('F Y') }}</span>
                                             <a href="{{ route('data-pencatatan.customer-detail', [
                                                 'customer' => $customer->id,
                                                 'bulan' => $selectedBulan,
                                                 'tahun' => $selectedTahun,
-                                                'refresh' => true
-                                            ]) }}" class="btn btn-warning btn-sm" title="Selaraskan Data">
+                                                'refresh' => true,
+                                            ]) }}"
+                                                class="btn btn-warning btn-sm" title="Selaraskan Data">
                                                 <i class="fas fa-sync-alt"></i>
                                             </a>
                                         </span>
@@ -319,7 +324,7 @@
                                             <table class="table table-sm table-bordered">
                                                 <tr>
                                                     <td width="60%">Saldo Bulan Sebelumnya</td>
-                                                    <td>Rp {{ number_format($prevMonthBalance, 0) }}</td>
+                                                    <td>Rp {{ number_format($realTimePrevMonthBalance, 0) }}</td>
                                                 </tr>
                                                 <tr>
                                                     <td>+ Deposit Bulan Ini</td>
@@ -330,12 +335,88 @@
                                                     <td>Rp {{ number_format($filteredTotalPurchases, 0) }}</td>
                                                 </tr>
                                                 @php
+                                                    /*
+                                                     * PERBAIKAN PERHITUNGAN SALDO:
+                                                     * Mengubah perhitungan 'Saldo Bulan Sebelumnya' dari menggunakan data
+                                                     * monthly_balances (yang bisa tidak akurat) menjadi perhitungan real-time
+                                                     * yang konsisten dengan 'Sisa Saldo Periode Bulan Ini'
+                                                     */
+
                                                     // Definisikan variabel currentYearMonth terlebih dahulu
                                                     $currentYearMonth = \Carbon\Carbon::createFromDate(
                                                         $selectedTahun,
                                                         $selectedBulan,
                                                         1,
                                                     )->format('Y-m');
+
+                                                    // PERBAIKAN: Hitung saldo bulan sebelumnya secara real-time
+                                                    $prevDate = \Carbon\Carbon::createFromDate($selectedTahun, $selectedBulan, 1)->subMonth();
+                                                    $prevYearMonth = $prevDate->format('Y-m');
+
+                                                    // Hitung total deposit dan pembelian sampai akhir bulan sebelumnya
+                                                    $realTimePrevMonthBalance = 0;
+
+                                                    // 1. Hitung semua deposit sampai akhir bulan sebelumnya
+                                                    $deposits = is_string($customer->deposit_history)
+                                                        ? json_decode($customer->deposit_history, true)
+                                                        : $customer->deposit_history;
+                                                    if (is_array($deposits)) {
+                                                        foreach ($deposits as $deposit) {
+                                                            if (isset($deposit['date'])) {
+                                                                $depositDate = \Carbon\Carbon::parse($deposit['date']);
+                                                                // Ambil deposit sampai akhir bulan sebelumnya
+                                                                if ($depositDate->format('Y-m') <= $prevYearMonth) {
+                                                                    $realTimePrevMonthBalance += floatval($deposit['amount'] ?? 0);
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+
+                                                    // 2. Kurangi semua pembelian sampai akhir bulan sebelumnya
+                                                    $allDataPencatatan = $customer->dataPencatatan()->get();
+                                                    foreach ($allDataPencatatan as $purchaseItem) {
+                                                        $itemDataInput = is_string($purchaseItem->data_input)
+                                                            ? json_decode($purchaseItem->data_input, true)
+                                                            : $purchaseItem->data_input;
+                                                        if (
+                                                            empty($itemDataInput) ||
+                                                            empty($itemDataInput['pembacaan_awal']['waktu'])
+                                                        ) {
+                                                            continue;
+                                                        }
+
+                                                        $itemWaktuAwal = \Carbon\Carbon::parse(
+                                                            $itemDataInput['pembacaan_awal']['waktu'],
+                                                        );
+
+                                                        // Ambil pembelian sampai akhir bulan sebelumnya
+                                                        if ($itemWaktuAwal->format('Y-m') <= $prevYearMonth) {
+                                                            $volumeFlowMeter = floatval(
+                                                                $itemDataInput['volume_flow_meter'] ?? 0,
+                                                            );
+
+                                                            // Ambil pricing yang sesuai (bulanan atau periode khusus)
+                                                            $itemYearMonth = $itemWaktuAwal->format('Y-m');
+                                                            $itemPricingInfo = $customer->getPricingForYearMonth(
+                                                                $itemYearMonth,
+                                                                $itemWaktuAwal,
+                                                            );
+
+                                                            // Hitung volume dan harga
+                                                            $itemKoreksiMeter = floatval(
+                                                                $itemPricingInfo['koreksi_meter'] ??
+                                                                    $customer->koreksi_meter,
+                                                            );
+                                                            $itemHargaPerM3 = floatval(
+                                                                $itemPricingInfo['harga_per_meter_kubik'] ??
+                                                                    $customer->harga_per_meter_kubik,
+                                                            );
+                                                            $itemVolumeSm3 = $volumeFlowMeter * $itemKoreksiMeter;
+                                                            $itemHarga = $itemVolumeSm3 * $itemHargaPerM3;
+
+                                                            $realTimePrevMonthBalance -= $itemHarga;
+                                                        }
+                                                    }
 
                                                     // Hitung ulang saldo bulan ini secara real-time
                                                     $realTimeFilteredTotalPurchases = 0;
@@ -353,7 +434,7 @@
                                                             continue;
                                                         }
 
-                                                        $itemWaktuAwal = Carbon\Carbon::parse(
+                                                        $itemWaktuAwal = \Carbon\Carbon::parse(
                                                             $itemDataInput['pembacaan_awal']['waktu'],
                                                         );
                                                         $volumeFlowMeter = floatval(
@@ -383,13 +464,10 @@
                                                     }
 
                                                     // Hitung deposit bulan ini
-                                                    $deposits = is_string($customer->deposit_history)
-                                                        ? json_decode($customer->deposit_history, true)
-                                                        : $customer->deposit_history;
                                                     if (is_array($deposits)) {
                                                         foreach ($deposits as $deposit) {
                                                             if (isset($deposit['date'])) {
-                                                                $depositDate = Carbon\Carbon::parse($deposit['date']);
+                                                                $depositDate = \Carbon\Carbon::parse($deposit['date']);
                                                                 if ($depositDate->format('Y-m') === $currentYearMonth) {
                                                                     $realTimeFilteredDeposits += floatval(
                                                                         $deposit['amount'] ?? 0,
@@ -399,19 +477,48 @@
                                                         }
                                                     }
 
-                                                    // Hitung saldo bulan ini
+                                                    // Hitung saldo bulan ini menggunakan saldo bulan sebelumnya yang real-time
                                                     $realTimeCurrentMonthBalance =
-                                                        $prevMonthBalance +
+                                                        $realTimePrevMonthBalance +
                                                         $realTimeFilteredDeposits -
                                                         $realTimeFilteredTotalPurchases;
+
+                                                    // Log untuk debugging (hanya untuk admin)
+                                                    if ((Auth::user()->isAdmin() || Auth::user()->isSuperAdmin()) && abs($realTimePrevMonthBalance - $prevMonthBalance) > 0.01) {
+                                                        \Log::info('Perbedaan saldo bulan sebelumnya ditemukan', [
+                                                            'customer_id' => $customer->id,
+                                                            'customer_name' => $customer->name,
+                                                            'period' => $selectedTahun . '-' . str_pad($selectedBulan, 2, '0', STR_PAD_LEFT),
+                                                            'prev_month' => \Carbon\Carbon::createFromDate($selectedTahun, $selectedBulan, 1)->subMonth()->format('Y-m'),
+                                                            'real_time_prev_balance' => $realTimePrevMonthBalance,
+                                                            'database_prev_balance' => $prevMonthBalance,
+                                                            'difference' => $realTimePrevMonthBalance - $prevMonthBalance
+                                                        ]);
+                                                    }
                                                 @endphp
                                                 <tr class="font-weight-bold">
                                                     <td>= Sisa Saldo Periode Bulan Ini</td>
                                                     <td>Rp {{ number_format($realTimeCurrentMonthBalance, 0) }}</td>
                                                 </tr>
                                                 <tr>
-                                                    <td colspan="2" class="text-muted"><small>* Saldo ini hanya menunjukkan saldo untuk periode {{ \Carbon\Carbon::createFromDate($selectedTahun, $selectedBulan, 1)->format('F Y') }} saja</small></td>
+                                                    <td colspan="2" class="text-muted"><small>* Saldo ini hanya
+                                                            menunjukkan saldo untuk periode
+                                                            {{ \Carbon\Carbon::createFromDate($selectedTahun, $selectedBulan, 1)->format('F Y') }}
+                                                            saja (Perhitungan Real-time)</small></td>
                                                 </tr>
+                                                {{-- @if(Auth::user()->isAdmin() || Auth::user()->isSuperAdmin())
+                                                <tr class="text-info" style="font-size: 0.8em;">
+                                                    <td colspan="2">
+                                                        <strong>Debug Info (Real-time vs Database):</strong><br>
+                                                        - Saldo Bulan Sebelumnya (Real-time): Rp {{ number_format($realTimePrevMonthBalance, 2) }}<br>
+                                                        - Saldo Bulan Sebelumnya (Database): Rp {{ number_format($prevMonthBalance, 2) }}<br>
+                                                        - Selisih Prev: Rp {{ number_format($realTimePrevMonthBalance - $prevMonthBalance, 2) }}<br>
+                                                        - Saldo Periode Ini (Real-time): Rp {{ number_format($realTimeCurrentMonthBalance, 2) }}<br>
+                                                        - Saldo Periode Ini (Database): Rp {{ number_format($currentMonthBalanceDb, 2) }}<br>
+                                                        - Selisih Current: Rp {{ number_format($realTimeCurrentMonthBalance - $currentMonthBalanceDb, 2) }}
+                                                    </td>
+                                                </tr>
+                                                @endif --}}
                                             </table>
                                         </div>
                                     </div>
@@ -465,341 +572,393 @@
                     @endif
                 </div>
                 <div class="card-body table-responsive p-0">
-                <table class="table table-bordered table-striped table-hover" id="dataPencatatanTable">
-                <thead>
-                <tr>
-                <th>No</th>
-                <th colspan="2">Pembacaan Awal</th>
-                <th colspan="2">Pembacaan Akhir</th>
-                <th>Volume</th>
-                <th>Sm³</th>
-                <th>Rupiah</th>
-                <th>Aksi</th>
-                </tr>
-                <tr>
-                <th></th>
-                <th>Tanggal</th>
-                <th>Meter</th>
-                <th>Tanggal</th>
-                <th>Meter</th>
-                <th></th>
-                <th></th>
-                <th></th>
-                <th></th>
-                </tr>
-                </thead>
-                <tbody>
-                @php 
-                    $no = 1;
-                
-                // Buat tanggal mulai dan akhir untuk bulan yang dipilih
-                $startDate = \Carbon\Carbon::createFromDate($selectedTahun, $selectedBulan, 1);
-                $endDate = $startDate->copy()->endOfMonth();
-                
-                // Debug Info
-                                    echo "<!-- DEBUG: StartDate: " . $startDate->format('Y-m-d') . " -->";
-                echo "<!-- DEBUG: EndDate: " . $endDate->format('Y-m-d') . " -->";
-                echo "<!-- DEBUG: Total Records: " . count($dataPencatatan) . " -->";
-                
-                // Logging semua data pencatatan untuk debugging
-                echo "<!-- BEGIN DATA DUMP -->";
-                foreach ($dataPencatatan as $record) {
-                $dataInput = is_string($record->data_input)
-                    ? json_decode($record->data_input, true)
-                    : (is_array($record->data_input) ? $record->data_input : []);
-                                        $waktuAwal = isset($dataInput['pembacaan_awal']['waktu']) 
-                    ? $dataInput['pembacaan_awal']['waktu'] 
-                    : 'N/A';
-                echo "<!-- DUMP RECORD: ID=" . $record->id . 
-                 " | Waktu Awal=" . $waktuAwal . 
-                 " | Format=" . (isset($dataInput['pembacaan_awal']['waktu']) ? date('Y-m-d', strtotime($dataInput['pembacaan_awal']['waktu'])) : 'N/A') . 
-                     " | Volume=" . ($dataInput['volume_flow_meter'] ?? 0) . 
-                 " | Harga=" . $record->harga_final . " -->";
-                }
-                                    echo "<!-- END DATA DUMP -->";
-                
-                // Buat array tanggal untuk periode penuh dan tandai tanggal yang memiliki data
-                $allDatesInPeriod = [];
-                $currentDate = clone $startDate;
-                while ($currentDate->lte($endDate)) {
-                                        $dateKey = $currentDate->format('Y-m-d');
-                $allDatesInPeriod[$dateKey] = null;
-                $currentDate->addDay();
-                }
-                
-                // Debug array tanggal
-                                    echo "<!-- DEBUG: Total dates in period: " . count($allDatesInPeriod) . " -->";
-                echo "<!-- DEBUG: Period date keys: " . implode(',', array_keys($allDatesInPeriod)) . " -->";
-                
-                // Masukkan data pencatatan yang ada ke array berdasarkan tanggal
-                $recordsFound = 0;
-                foreach ($dataPencatatan as $record) {
-                $dataInput = is_string($record->data_input)
-                        ? json_decode($record->data_input, true)
-                        : (is_array($record->data_input) ? $record->data_input : []);
-                
-                if (!empty($dataInput['pembacaan_awal']['waktu'])) {
-                    // Standarisasi format tanggal dengan strtotime
-                    $recordDateStr = date('Y-m-d', strtotime($dataInput['pembacaan_awal']['waktu']));
-                    
-                    echo "<!-- DEBUG: Record #" . $record->id . " date: " . $recordDateStr . " -->";
-                    
-                    if (array_key_exists($recordDateStr, $allDatesInPeriod)) {
-                        echo "<!-- DEBUG: MATCH found for date: " . $recordDateStr . " -->";
-                        $allDatesInPeriod[$recordDateStr] = $record;
-                                                $recordsFound++;
-                    } else {
-                    echo "<!-- DEBUG: NO MATCH for date: " . $recordDateStr . " (not in period keys) -->";
-                // Cek jika tanggalnya close match (mungkin ada masalah timezone atau format)
-                foreach (array_keys($allDatesInPeriod) as $periodDate) {
-                $diff = abs(strtotime($recordDateStr) - strtotime($periodDate));
-                    if ($diff < 86400) { // selisih kurang dari 1 hari (dalam detik)
-                        echo "<!-- DEBUG: CLOSE MATCH found: record=" . $recordDateStr . ", period=" . $periodDate . " -->";
-                    $allDatesInPeriod[$periodDate] = $record; // gunakan key dari period
-                $recordsFound++;
-                break;
-                }
-                }
-                }
-                }
-                }
-                echo "<!-- DEBUG: Records found in period: " . $recordsFound . " -->";
-                @endphp
-                
-                @forelse($allDatesInPeriod as $date => $record)
-                <tr class="{{ $record ? 'has-data' : 'table-light no-data' }}">
-                <td>{{ $no++ }}</td>
-                <td>
-                @if($record)
-                    @php
-                            $dataInput = is_string($record->data_input)
-                                    ? json_decode($record->data_input, true)
-                                        : (is_array($record->data_input) ? $record->data_input : []);
-                                    @endphp
-                                        {{ \Carbon\Carbon::parse($dataInput['pembacaan_awal']['waktu'])->format('d M Y H:i') }}
+                    <table class="table table-bordered table-striped table-hover" id="dataPencatatanTable">
+                        <thead>
+                            <tr>
+                                <th>No</th>
+                                <th colspan="2">Pembacaan Awal</th>
+                                <th colspan="2">Pembacaan Akhir</th>
+                                <th>Volume</th>
+                                <th>Sm³</th>
+                                <th>Rupiah</th>
+                                <th>Aksi</th>
+                            </tr>
+                            <tr>
+                                <th></th>
+                                <th>Tanggal</th>
+                                <th>Meter</th>
+                                <th>Tanggal</th>
+                                <th>Meter</th>
+                                <th></th>
+                                <th></th>
+                                <th></th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @php
+                                $no = 1;
+
+                                // Buat tanggal mulai dan akhir untuk bulan yang dipilih
+                                $startDate = \Carbon\Carbon::createFromDate($selectedTahun, $selectedBulan, 1);
+                                $endDate = $startDate->copy()->endOfMonth();
+
+                                // Debug Info
+                                echo '<!-- DEBUG: StartDate: ' . $startDate->format('Y-m-d') . ' -->';
+                                echo '<!-- DEBUG: EndDate: ' . $endDate->format('Y-m-d') . ' -->';
+                                echo '<!-- DEBUG: Total Records: ' . count($dataPencatatan) . ' -->';
+
+                                // Logging semua data pencatatan untuk debugging
+                                echo '<!-- BEGIN DATA DUMP -->';
+                                foreach ($dataPencatatan as $record) {
+                                    $dataInput = is_string($record->data_input)
+                                        ? json_decode($record->data_input, true)
+                                        : (is_array($record->data_input)
+                                            ? $record->data_input
+                                            : []);
+                                    $waktuAwal = isset($dataInput['pembacaan_awal']['waktu'])
+                                        ? $dataInput['pembacaan_awal']['waktu']
+                                        : 'N/A';
+                                    echo '<!-- DUMP RECORD: ID=' .
+                                        $record->id .
+                                        ' | Waktu Awal=' .
+                                        $waktuAwal .
+                                        ' | Format=' .
+                                        (isset($dataInput['pembacaan_awal']['waktu'])
+                                            ? date('Y-m-d', strtotime($dataInput['pembacaan_awal']['waktu']))
+                                            : 'N/A') .
+                                        ' | Volume=' .
+                                        ($dataInput['volume_flow_meter'] ?? 0) .
+                                        ' | Harga=' .
+                                        $record->harga_final .
+                                        ' -->';
+                                }
+                                echo '<!-- END DATA DUMP -->';
+
+                                // Buat array tanggal untuk periode penuh dan tandai tanggal yang memiliki data
+                                $allDatesInPeriod = [];
+                                $currentDate = clone $startDate;
+                                while ($currentDate->lte($endDate)) {
+                                    $dateKey = $currentDate->format('Y-m-d');
+                                    $allDatesInPeriod[$dateKey] = null;
+                                    $currentDate->addDay();
+                                }
+
+                                // Debug array tanggal
+                                echo '<!-- DEBUG: Total dates in period: ' . count($allDatesInPeriod) . ' -->';
+                                echo '<!-- DEBUG: Period date keys: ' .
+                                    implode(',', array_keys($allDatesInPeriod)) .
+                                    ' -->';
+
+                                // Masukkan data pencatatan yang ada ke array berdasarkan tanggal
+                                $recordsFound = 0;
+                                foreach ($dataPencatatan as $record) {
+                                    $dataInput = is_string($record->data_input)
+                                        ? json_decode($record->data_input, true)
+                                        : (is_array($record->data_input)
+                                            ? $record->data_input
+                                            : []);
+
+                                    if (!empty($dataInput['pembacaan_awal']['waktu'])) {
+                                        // Standarisasi format tanggal dengan strtotime
+                                        $recordDateStr = date(
+                                            'Y-m-d',
+                                            strtotime($dataInput['pembacaan_awal']['waktu']),
+                                        );
+
+                                        echo '<!-- DEBUG: Record #' . $record->id . ' date: ' . $recordDateStr . ' -->';
+
+                                        if (array_key_exists($recordDateStr, $allDatesInPeriod)) {
+                                            echo '<!-- DEBUG: MATCH found for date: ' . $recordDateStr . ' -->';
+                                            $allDatesInPeriod[$recordDateStr] = $record;
+                                            $recordsFound++;
+                                        } else {
+                                            echo '<!-- DEBUG: NO MATCH for date: ' .
+                                                $recordDateStr .
+                                                ' (not in period keys) -->';
+                                            // Cek jika tanggalnya close match (mungkin ada masalah timezone atau format)
+                                            foreach (array_keys($allDatesInPeriod) as $periodDate) {
+                                                $diff = abs(strtotime($recordDateStr) - strtotime($periodDate));
+                                                if ($diff < 86400) {
+                                                    // selisih kurang dari 1 hari (dalam detik)
+                                                    echo '<!-- DEBUG: CLOSE MATCH found: record=' .
+                                                        $recordDateStr .
+                                                        ', period=' .
+                                                        $periodDate .
+                                                        ' -->';
+                                                    $allDatesInPeriod[$periodDate] = $record; // gunakan key dari period
+                                                    $recordsFound++;
+                                                    break;
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                echo '<!-- DEBUG: Records found in period: ' . $recordsFound . ' -->';
+                            @endphp
+
+                            @forelse($allDatesInPeriod as $date => $record)
+                                <tr class="{{ $record ? 'has-data' : 'table-light no-data' }}">
+                                    <td>{{ $no++ }}</td>
+                                    <td>
+                                        @if ($record)
+                                            @php
+                                                $dataInput = is_string($record->data_input)
+                                                    ? json_decode($record->data_input, true)
+                                                    : (is_array($record->data_input)
+                                                        ? $record->data_input
+                                                        : []);
+                                            @endphp
+                                            {{ \Carbon\Carbon::parse($dataInput['pembacaan_awal']['waktu'])->format('d M Y H:i') }}
                                         @else
-                                                {{ \Carbon\Carbon::parse($date)->format('d M Y') }}
-                                            @endif
-                                        </td>
-                                        <td>
-                                            @if($record)
-                                                @php
-                                                    $dataInput = is_string($record->data_input)
-                                                        ? json_decode($record->data_input, true)
-                                                        : (is_array($record->data_input) ? $record->data_input : []);
-                                                    $pembacaanAwal = $dataInput['pembacaan_awal'] ?? ['volume' => 0];
-                                                @endphp
-                                                {{ number_format($pembacaanAwal['volume'] ?? 0, 2) }} m³
-                                            @else
-                                                -
-                                            @endif
-                                        </td>
-                                        <td>
-                                            @if($record)
-                                                @php
-                                                    $dataInput = is_string($record->data_input)
-                                                        ? json_decode($record->data_input, true)
-                                                        : (is_array($record->data_input) ? $record->data_input : []);
-                                                @endphp
-                                                {{ \Carbon\Carbon::parse($dataInput['pembacaan_akhir']['waktu'])->format('d M Y H:i') }}
-                                            @else
-                                                -
-                                            @endif
-                                        </td>
-                                        <td>
-                                            @if($record)
-                                                @php
-                                                    $dataInput = is_string($record->data_input)
-                                                        ? json_decode($record->data_input, true)
-                                                        : (is_array($record->data_input) ? $record->data_input : []);
-                                                    $pembacaanAkhir = $dataInput['pembacaan_akhir'] ?? ['volume' => 0];
-                                                @endphp
-                                                {{ number_format($pembacaanAkhir['volume'] ?? 0, 2) }} m³
-                                            @else
-                                                -
-                                            @endif
-                                        </td>
-                                        <td>
-                                            @if($record)
-                                                @php
-                                                    $dataInput = is_string($record->data_input)
-                                                        ? json_decode($record->data_input, true)
-                                                        : (is_array($record->data_input) ? $record->data_input : []);
-                                                    $volumeFlowMeter = $dataInput['volume_flow_meter'] ?? 0;
-                                                @endphp
-                                                {{ number_format($volumeFlowMeter, 2) }} m³
-                                                <!-- Debug info -->
-                                                <!-- ID: {{ $record->id }} | Date: {{ $date }} -->
-                                            @else
-                                                -
-                                            @endif
-                                        </td>
-                                        <td>
-                                            @if($record)
-                                                @php
-                                                    $dataInput = is_string($record->data_input)
-                                                        ? json_decode($record->data_input, true)
-                                                        : (is_array($record->data_input) ? $record->data_input : []);
-                                                    
-                                                    // Get the timestamp for pricing period
-                                                    $waktuAwalTimestamp = strtotime($dataInput['pembacaan_awal']['waktu'] ?? '');
-                                                    $waktuAwalYearMonth = $waktuAwalTimestamp
-                                                        ? date('Y-m', $waktuAwalTimestamp)
-                                                        : date('Y-m');
-                                                    $waktuAwalDatetime = $waktuAwalTimestamp
-                                                        ? \Carbon\Carbon::createFromTimestamp($waktuAwalTimestamp)
-                                                        : null;
+                                            {{ \Carbon\Carbon::parse($date)->format('d M Y') }}
+                                        @endif
+                                    </td>
+                                    <td>
+                                        @if ($record)
+                                            @php
+                                                $dataInput = is_string($record->data_input)
+                                                    ? json_decode($record->data_input, true)
+                                                    : (is_array($record->data_input)
+                                                        ? $record->data_input
+                                                        : []);
+                                                $pembacaanAwal = $dataInput['pembacaan_awal'] ?? ['volume' => 0];
+                                            @endphp
+                                            {{ number_format($pembacaanAwal['volume'] ?? 0, 2) }} m³
+                                        @else
+                                            -
+                                        @endif
+                                    </td>
+                                    <td>
+                                        @if ($record)
+                                            @php
+                                                $dataInput = is_string($record->data_input)
+                                                    ? json_decode($record->data_input, true)
+                                                    : (is_array($record->data_input)
+                                                        ? $record->data_input
+                                                        : []);
+                                            @endphp
+                                            {{ \Carbon\Carbon::parse($dataInput['pembacaan_akhir']['waktu'])->format('d M Y H:i') }}
+                                        @else
+                                            -
+                                        @endif
+                                    </td>
+                                    <td>
+                                        @if ($record)
+                                            @php
+                                                $dataInput = is_string($record->data_input)
+                                                    ? json_decode($record->data_input, true)
+                                                    : (is_array($record->data_input)
+                                                        ? $record->data_input
+                                                        : []);
+                                                $pembacaanAkhir = $dataInput['pembacaan_akhir'] ?? ['volume' => 0];
+                                            @endphp
+                                            {{ number_format($pembacaanAkhir['volume'] ?? 0, 2) }} m³
+                                        @else
+                                            -
+                                        @endif
+                                    </td>
+                                    <td>
+                                        @if ($record)
+                                            @php
+                                                $dataInput = is_string($record->data_input)
+                                                    ? json_decode($record->data_input, true)
+                                                    : (is_array($record->data_input)
+                                                        ? $record->data_input
+                                                        : []);
+                                                $volumeFlowMeter = $dataInput['volume_flow_meter'] ?? 0;
+                                            @endphp
+                                            {{ number_format($volumeFlowMeter, 2) }} m³
+                                            <!-- Debug info -->
+                                            <!-- ID: {{ $record->id }} | Date: {{ $date }} -->
+                                        @else
+                                            -
+                                        @endif
+                                    </td>
+                                    <td>
+                                        @if ($record)
+                                            @php
+                                                $dataInput = is_string($record->data_input)
+                                                    ? json_decode($record->data_input, true)
+                                                    : (is_array($record->data_input)
+                                                        ? $record->data_input
+                                                        : []);
 
-                                                    // Dapatkan pricing info berdasarkan periode bulan dan tanggal spesifik
-                                                    $itemPricingInfo = $customer->getPricingForYearMonth(
-                                                        $waktuAwalYearMonth,
-                                                        $waktuAwalDatetime,
-                                                    );
+                                                // Get the timestamp for pricing period
+                                                $waktuAwalTimestamp = strtotime(
+                                                    $dataInput['pembacaan_awal']['waktu'] ?? '',
+                                                );
+                                                $waktuAwalYearMonth = $waktuAwalTimestamp
+                                                    ? date('Y-m', $waktuAwalTimestamp)
+                                                    : date('Y-m');
+                                                $waktuAwalDatetime = $waktuAwalTimestamp
+                                                    ? \Carbon\Carbon::createFromTimestamp($waktuAwalTimestamp)
+                                                    : null;
 
-                                                    // Hitung Volume Sm³ dengan koreksi meter yang sesuai periode
-                                                    $koreksiMeter = floatval(
-                                                        $itemPricingInfo['koreksi_meter'] ?? $customer->koreksi_meter,
-                                                    );
-                                                    $volumeFlowMeter = $dataInput['volume_flow_meter'] ?? 0;
-                                                    $volumeSm3 = $volumeFlowMeter * $koreksiMeter;
-                                                @endphp
-                                                {{ number_format($volumeSm3, 2) }}
-                                            @else
-                                                -
-                                            @endif
-                                        </td>
-                                        <td>
-                                            @if($record)
-                                                @php
-                                                    // Hitung Pembelian dengan harga sesuai periode
-                                                    $hargaPerM3 = floatval(
-                                                        $itemPricingInfo['harga_per_meter_kubik'] ?? $customer->harga_per_meter_kubik,
-                                                    );
-                                                    $pembelian = $volumeSm3 * $hargaPerM3;
-                                                @endphp
-                                                Rp {{ number_format($pembelian, 2) }}
-                                            @else
-                                                -
-                                            @endif
-                                        </td>
-                                        <td>
-                                            @if($record)
-                                                <div class="btn-group">
-                                                    <a href="{{ route('data-pencatatan.show', $record->id) }}"
-                                                        class="btn btn-info btn-sm">
-                                                        <i class="fas fa-eye"></i>
-                                                    </a>
-                                                    @if (Auth::user()->isAdmin() || Auth::user()->isSuperAdmin())
-                                                        <a href="{{ route('data-pencatatan.edit', $record->id) }}"
-                                                            class="btn btn-warning btn-sm">
-                                                            <i class="fas fa-edit"></i>
-                                                        </a>
-                                                        <form action="{{ route('data-pencatatan.destroy', $record->id) }}"
-                                                            method="POST" class="d-inline"
-                                                            onsubmit="return confirm('Apakah Anda yakin ingin menghapus data ini?');">
-                                                            @csrf
-                                                            @method('DELETE')
-                                                            <input type="hidden" name="bulan" value="{{ $selectedBulan }}">
-                                                            <input type="hidden" name="tahun" value="{{ $selectedTahun }}">
-                                                            <button type="submit" class="btn btn-danger btn-sm">
-                                                                <i class="fas fa-trash"></i>
-                                                            </button>
-                                                        </form>
-                                                    @endif
-                                                </div>
-                                            @else
+                                                // Dapatkan pricing info berdasarkan periode bulan dan tanggal spesifik
+                                                $itemPricingInfo = $customer->getPricingForYearMonth(
+                                                    $waktuAwalYearMonth,
+                                                    $waktuAwalDatetime,
+                                                );
+
+                                                // Hitung Volume Sm³ dengan koreksi meter yang sesuai periode
+                                                $koreksiMeter = floatval(
+                                                    $itemPricingInfo['koreksi_meter'] ?? $customer->koreksi_meter,
+                                                );
+                                                $volumeFlowMeter = $dataInput['volume_flow_meter'] ?? 0;
+                                                $volumeSm3 = $volumeFlowMeter * $koreksiMeter;
+                                            @endphp
+                                            {{ number_format($volumeSm3, 2) }}
+                                        @else
+                                            -
+                                        @endif
+                                    </td>
+                                    <td>
+                                        @if ($record)
+                                            @php
+                                                // Hitung Pembelian dengan harga sesuai periode
+                                                $hargaPerM3 = floatval(
+                                                    $itemPricingInfo['harga_per_meter_kubik'] ??
+                                                        $customer->harga_per_meter_kubik,
+                                                );
+                                                $pembelian = $volumeSm3 * $hargaPerM3;
+                                            @endphp
+                                            Rp {{ number_format($pembelian, 2) }}
+                                        @else
+                                            -
+                                        @endif
+                                    </td>
+                                    <td>
+                                        @if ($record)
+                                            <div class="btn-group">
+                                                <a href="{{ route('data-pencatatan.show', $record->id) }}"
+                                                    class="btn btn-info btn-sm">
+                                                    <i class="fas fa-eye"></i>
+                                                </a>
                                                 @if (Auth::user()->isAdmin() || Auth::user()->isSuperAdmin())
-                                                    <a href="{{ route('data-pencatatan.create-with-customer', ['customerId' => $customer->id, 'tanggal' => $date]) }}" class="btn btn-success btn-sm">
-                                                        <i class="fas fa-plus"></i> Input Data
+                                                    <a href="{{ route('data-pencatatan.edit', $record->id) }}"
+                                                        class="btn btn-warning btn-sm">
+                                                        <i class="fas fa-edit"></i>
                                                     </a>
+                                                    <form action="{{ route('data-pencatatan.destroy', $record->id) }}"
+                                                        method="POST" class="d-inline"
+                                                        onsubmit="return confirm('Apakah Anda yakin ingin menghapus data ini?');">
+                                                        @csrf
+                                                        @method('DELETE')
+                                                        <input type="hidden" name="bulan"
+                                                            value="{{ $selectedBulan }}">
+                                                        <input type="hidden" name="tahun"
+                                                            value="{{ $selectedTahun }}">
+                                                        <button type="submit" class="btn btn-danger btn-sm">
+                                                            <i class="fas fa-trash"></i>
+                                                        </button>
+                                                    </form>
                                                 @endif
+                                            </div>
+                                        @else
+                                            @if (Auth::user()->isAdmin() || Auth::user()->isSuperAdmin())
+                                                <a href="{{ route('data-pencatatan.create-with-customer', ['customerId' => $customer->id, 'tanggal' => $date]) }}"
+                                                    class="btn btn-success btn-sm">
+                                                    <i class="fas fa-plus"></i> Input Data
+                                                </a>
                                             @endif
-                                        </td>
-                                    </tr>
-                                @empty
-                                    <tr>
-                                        <td colspan="9" class="text-center">Belum ada data pencatatan dalam periode ini.</td>
-                                    </tr>
-                                @endforelse
-                            </tbody>
-                            <tfoot>
-                                <tr>
-                                    <th colspan="6" class="text-right">Total:</th>
-                                    <th>
-                                        @php
-                                            $totalVolumeSm3Period = 0;
-                                            foreach ($allDatesInPeriod as $date => $record) {
-                                                if ($record) {
-                                                    $dataInput = is_string($record->data_input)
-                                                        ? json_decode($record->data_input, true)
-                                                        : (is_array($record->data_input) ? $record->data_input : []);
-                                                    
-                                                    $waktuAwalTimestamp = strtotime($dataInput['pembacaan_awal']['waktu'] ?? '');
-                                                    $waktuAwalYearMonth = $waktuAwalTimestamp
-                                                        ? date('Y-m', $waktuAwalTimestamp)
-                                                        : date('Y-m');
-                                                    $waktuAwalDatetime = $waktuAwalTimestamp
-                                                        ? \Carbon\Carbon::createFromTimestamp($waktuAwalTimestamp)
-                                                        : null;
-
-                                                    $itemPricingInfo = $customer->getPricingForYearMonth(
-                                                        $waktuAwalYearMonth,
-                                                        $waktuAwalDatetime,
-                                                    );
-
-                                                    $koreksiMeter = floatval(
-                                                        $itemPricingInfo['koreksi_meter'] ?? $customer->koreksi_meter,
-                                                    );
-                                                    $volumeFlowMeter = $dataInput['volume_flow_meter'] ?? 0;
-                                                    $volumeSm3 = $volumeFlowMeter * $koreksiMeter;
-                                                    $totalVolumeSm3Period += $volumeSm3;
-                                                }
-                                            }
-                                        @endphp
-                                        {{ number_format($totalVolumeSm3Period, 2) }}
-                                    </th>
-                                    <th>
-                                        @php
-                                            $totalPembelianPeriod = 0;
-                                            foreach ($allDatesInPeriod as $date => $record) {
-                                                if ($record) {
-                                                    $dataInput = is_string($record->data_input)
-                                                        ? json_decode($record->data_input, true)
-                                                        : (is_array($record->data_input) ? $record->data_input : []);
-                                                    
-                                                    $waktuAwalTimestamp = strtotime($dataInput['pembacaan_awal']['waktu'] ?? '');
-                                                    $waktuAwalYearMonth = $waktuAwalTimestamp
-                                                        ? date('Y-m', $waktuAwalTimestamp)
-                                                        : date('Y-m');
-                                                    $waktuAwalDatetime = $waktuAwalTimestamp
-                                                        ? \Carbon\Carbon::createFromTimestamp($waktuAwalTimestamp)
-                                                        : null;
-
-                                                    $itemPricingInfo = $customer->getPricingForYearMonth(
-                                                        $waktuAwalYearMonth,
-                                                        $waktuAwalDatetime,
-                                                    );
-
-                                                    $koreksiMeter = floatval(
-                                                        $itemPricingInfo['koreksi_meter'] ?? $customer->koreksi_meter,
-                                                    );
-                                                    $hargaPerM3 = floatval(
-                                                        $itemPricingInfo['harga_per_meter_kubik'] ?? $customer->harga_per_meter_kubik,
-                                                    );
-                                                    $volumeFlowMeter = $dataInput['volume_flow_meter'] ?? 0;
-                                                    $volumeSm3 = $volumeFlowMeter * $koreksiMeter;
-                                                    $pembelian = $volumeSm3 * $hargaPerM3;
-                                                    $totalPembelianPeriod += $pembelian;
-                                                }
-                                            }
-                                        @endphp
-                                        Rp {{ number_format($totalPembelianPeriod, 0) }}
-                                    </th>
-                                    <th></th>
+                                        @endif
+                                    </td>
                                 </tr>
-                            </tfoot>
-                        </table>
-                    </div>
+                            @empty
+                                <tr>
+                                    <td colspan="9" class="text-center">Belum ada data pencatatan dalam periode ini.
+                                    </td>
+                                </tr>
+                            @endforelse
+                        </tbody>
+                        <tfoot>
+                            <tr>
+                                <th colspan="6" class="text-right">Total:</th>
+                                <th>
+                                    @php
+                                        $totalVolumeSm3Period = 0;
+                                        foreach ($allDatesInPeriod as $date => $record) {
+                                            if ($record) {
+                                                $dataInput = is_string($record->data_input)
+                                                    ? json_decode($record->data_input, true)
+                                                    : (is_array($record->data_input)
+                                                        ? $record->data_input
+                                                        : []);
+
+                                                $waktuAwalTimestamp = strtotime(
+                                                    $dataInput['pembacaan_awal']['waktu'] ?? '',
+                                                );
+                                                $waktuAwalYearMonth = $waktuAwalTimestamp
+                                                    ? date('Y-m', $waktuAwalTimestamp)
+                                                    : date('Y-m');
+                                                $waktuAwalDatetime = $waktuAwalTimestamp
+                                                    ? \Carbon\Carbon::createFromTimestamp($waktuAwalTimestamp)
+                                                    : null;
+
+                                                $itemPricingInfo = $customer->getPricingForYearMonth(
+                                                    $waktuAwalYearMonth,
+                                                    $waktuAwalDatetime,
+                                                );
+
+                                                $koreksiMeter = floatval(
+                                                    $itemPricingInfo['koreksi_meter'] ?? $customer->koreksi_meter,
+                                                );
+                                                $volumeFlowMeter = $dataInput['volume_flow_meter'] ?? 0;
+                                                $volumeSm3 = $volumeFlowMeter * $koreksiMeter;
+                                                $totalVolumeSm3Period += $volumeSm3;
+                                            }
+                                        }
+                                    @endphp
+                                    {{ number_format($totalVolumeSm3Period, 2) }}
+                                </th>
+                                <th>
+                                    @php
+                                        $totalPembelianPeriod = 0;
+                                        foreach ($allDatesInPeriod as $date => $record) {
+                                            if ($record) {
+                                                $dataInput = is_string($record->data_input)
+                                                    ? json_decode($record->data_input, true)
+                                                    : (is_array($record->data_input)
+                                                        ? $record->data_input
+                                                        : []);
+
+                                                $waktuAwalTimestamp = strtotime(
+                                                    $dataInput['pembacaan_awal']['waktu'] ?? '',
+                                                );
+                                                $waktuAwalYearMonth = $waktuAwalTimestamp
+                                                    ? date('Y-m', $waktuAwalTimestamp)
+                                                    : date('Y-m');
+                                                $waktuAwalDatetime = $waktuAwalTimestamp
+                                                    ? \Carbon\Carbon::createFromTimestamp($waktuAwalTimestamp)
+                                                    : null;
+
+                                                $itemPricingInfo = $customer->getPricingForYearMonth(
+                                                    $waktuAwalYearMonth,
+                                                    $waktuAwalDatetime,
+                                                );
+
+                                                $koreksiMeter = floatval(
+                                                    $itemPricingInfo['koreksi_meter'] ?? $customer->koreksi_meter,
+                                                );
+                                                $hargaPerM3 = floatval(
+                                                    $itemPricingInfo['harga_per_meter_kubik'] ??
+                                                        $customer->harga_per_meter_kubik,
+                                                );
+                                                $volumeFlowMeter = $dataInput['volume_flow_meter'] ?? 0;
+                                                $volumeSm3 = $volumeFlowMeter * $koreksiMeter;
+                                                $pembelian = $volumeSm3 * $hargaPerM3;
+                                                $totalPembelianPeriod += $pembelian;
+                                            }
+                                        }
+                                    @endphp
+                                    Rp {{ number_format($totalPembelianPeriod, 0) }}
+                                </th>
+                                <th></th>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
             </div>
         </div>
     </div>
@@ -828,10 +987,14 @@
                                         {{ number_format($customer->total_deposit - $customer->total_purchases, 2) }}</span>
                                 </h5>
                             </div>
-                            <div class="col-md-6 col-sm-12 text-right">
-                                <button class="btn btn-primary w-100 w-md-auto" data-toggle="modal"
+                            <div class="col-md-6 col-sm-12">
+                                <button class="btn btn-primary w-100 mb-2" data-toggle="modal"
                                     data-target="#tambahDepositModal">
                                     <i class="fas fa-plus mr-1"></i> Tambah Deposit
+                                </button>
+                                <button class="btn btn-warning w-100" data-toggle="modal"
+                                    data-target="#penguranganSaldoModal">
+                                    <i class="fas fa-minus mr-1"></i> Pengurangan Saldo
                                 </button>
                             </div>
                         </div>
@@ -841,22 +1004,16 @@
                                     <tr>
                                         <th>No</th>
                                         <th>Tanggal</th>
-                                        <th>Jumlah Deposit</th>
                                         <th>Keterangan</th>
+                                        <th>Jumlah Deposit</th>
+                                        <th>Deskripsi</th>
                                         <th>Aksi</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     @php
                                         // Ensure deposit_history is an array before looping
-                                        $depositHistory = $customer->deposit_history;
-                                        if (is_string($depositHistory)) {
-                                            $depositHistory = json_decode($depositHistory, true) ?? [];
-                                        }
-                                        // If it's still not an array (could be null), make it an empty array
-                                        if (!is_array($depositHistory)) {
-                                            $depositHistory = [];
-                                        }
+                                        $depositHistory = $customer->getDepositHistoryWithKeterangan();
                                     @endphp
 
                                     @php
@@ -868,7 +1025,9 @@
                                                     'index' => $index,
                                                     'date' => $deposit['date'] ?? '',
                                                     'amount' => $deposit['amount'] ?? 0,
-                                                    'description' => $deposit['description'] ?? '-',
+                                                    'keterangan' => $deposit['keterangan'] ?? 'penambahan',
+                                                    'deskripsi' =>
+                                                        $deposit['deskripsi'] ?? ($deposit['description'] ?? '-'),
                                                 ];
                                             })
                                             ->sortByDesc('date')
@@ -885,12 +1044,27 @@
                                                     Tanggal tidak tersedia
                                                 @endif
                                             </td>
-                                            <td>Rp {{ number_format($deposit['amount'] ?? 0, 2) }}</td>
-                                            <td>{{ $deposit['description'] ?? '-' }}</td>
+                                            <td>
+                                                @if ($deposit['keterangan'] === 'penambahan')
+                                                    <span class="badge badge-success">Penambahan</span>
+                                                @else
+                                                    <span class="badge badge-danger">Pengurangan</span>
+                                                @endif
+                                            </td>
+                                            <td>
+                                                @if ($deposit['amount'] >= 0)
+                                                    <span class="text-success">Rp
+                                                        {{ number_format($deposit['amount'] ?? 0, 2) }}</span>
+                                                @else
+                                                    <span class="text-danger">Rp
+                                                        {{ number_format($deposit['amount'] ?? 0, 2) }}</span>
+                                                @endif
+                                            </td>
+                                            <td>{{ $deposit['deskripsi'] ?? '-' }}</td>
                                             <td>
                                                 <form action="{{ route('customer.remove-deposit', $customer->id) }}"
                                                     method="POST" class="d-inline"
-                                                    onsubmit="return confirm('Apakah Anda yakin ingin menghapus deposit ini?');">
+                                                    onsubmit="return confirm('Apakah Anda yakin ingin menghapus entry ini?');">
                                                     @csrf
                                                     @method('DELETE')
                                                     <input type="hidden" name="deposit_index"
@@ -943,8 +1117,8 @@
                                         value="{{ now()->format('Y-m-d\TH:i') }}" required>
                                 </div>
                                 <div class="form-group mb-0">
-                                    <label>Keterangan (Opsional)</label>
-                                    <textarea name="description" class="form-control" placeholder="Keterangan deposit (opsional)" rows="2"></textarea>
+                                    <label>Deskripsi (Opsional)</label>
+                                    <textarea name="description" class="form-control" placeholder="Deskripsi deposit (opsional)" rows="2"></textarea>
                                 </div>
                             </div>
                             <div class="modal-footer">
@@ -953,6 +1127,116 @@
                                 </button>
                                 <button type="submit" class="btn btn-primary">
                                     <i class="fas fa-save mr-1"></i>Simpan
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        @endif
+
+        {{-- Pengurangan Saldo Modal --}}
+        @if (Auth::user()->isAdmin() || Auth::user()->isSuperAdmin())
+            <div class="modal fade" id="penguranganSaldoModal" tabindex="-1" role="dialog">
+                <div class="modal-dialog" role="document">
+                    <div class="modal-content">
+                        <div class="modal-header bg-warning text-white">
+                            <h5 class="modal-title">
+                                <i class="fas fa-minus-circle mr-2"></i>Pengurangan Saldo
+                            </h5>
+                            <button type="button" class="close text-white" data-dismiss="modal" aria-label="Close">
+                                <span aria-hidden="true">&times;</span>
+                            </button>
+                        </div>
+                        <form action="{{ route('customer.reduce-balance', $customer->id) }}" method="POST"
+                            id="penguranganSaldoForm">
+                            @csrf
+                            <div class="modal-body">
+                                <div class="alert alert-info">
+                                    <i class="fas fa-info-circle mr-2"></i>
+                                    <strong>Saldo Saat Ini:</strong> Rp
+                                    {{ number_format($customer->getCurrentBalance(), 2) }}
+                                </div>
+
+                                <div class="form-group">
+                                    <label>Jumlah Pengurangan <span class="text-danger">*</span></label>
+                                    <div class="input-group">
+                                        <div class="input-group-prepend">
+                                            <span class="input-group-text">Rp</span>
+                                        </div>
+                                        <input type="number" step="0.01" name="amount" class="form-control"
+                                            placeholder="Jumlah yang akan dikurangi" required>
+                                    </div>
+                                </div>
+                                <div class="form-group">
+                                    <label>Tanggal Pengurangan <span class="text-danger">*</span></label>
+                                    <input type="datetime-local" name="reduction_date" class="form-control"
+                                        value="{{ now()->format('Y-m-d\TH:i') }}" required>
+                                </div>
+                                <div class="form-group mb-0">
+                                    <label>Deskripsi (Opsional)</label>
+                                    <textarea name="description" class="form-control" placeholder="Alasan pengurangan saldo (opsional)" rows="2"></textarea>
+                                </div>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-danger" data-toggle="modal"
+                                    data-target="#nolkanSaldoModal" data-dismiss="modal">
+                                    <i class="fas fa-ban mr-1"></i>Nol-kan Saldo
+                                </button>
+                                <button type="button" class="btn btn-secondary" data-dismiss="modal">
+                                    <i class="fas fa-times mr-1"></i>Batal
+                                </button>
+                                <button type="submit" class="btn btn-warning">
+                                    <i class="fas fa-save mr-1"></i>Kurangi Saldo
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        @endif
+
+        {{-- Nol-kan Saldo Modal --}}
+        @if (Auth::user()->isAdmin() || Auth::user()->isSuperAdmin())
+            <div class="modal fade" id="nolkanSaldoModal" tabindex="-1" role="dialog">
+                <div class="modal-dialog" role="document">
+                    <div class="modal-content">
+                        <div class="modal-header bg-danger text-white">
+                            <h5 class="modal-title">
+                                <i class="fas fa-ban mr-2"></i>Nol-kan Saldo
+                            </h5>
+                            <button type="button" class="close text-white" data-dismiss="modal" aria-label="Close">
+                                <span aria-hidden="true">&times;</span>
+                            </button>
+                        </div>
+                        <form action="{{ route('customer.zero-balance', $customer->id) }}" method="POST"
+                            id="nolkanSaldoForm">
+                            @csrf
+                            <div class="modal-body">
+                                <div class="alert alert-warning">
+                                    <i class="fas fa-exclamation-triangle mr-2"></i>
+                                    <strong>Peringatan!</strong> Tindakan ini akan membuat saldo menjadi nol (0).
+                                    <br><strong>Saldo Saat Ini:</strong> Rp
+                                    {{ number_format($customer->getCurrentBalance(), 2) }}
+                                </div>
+
+                                <div class="form-group">
+                                    <label>Tanggal <span class="text-danger">*</span></label>
+                                    <input type="datetime-local" name="zero_date" class="form-control"
+                                        value="{{ now()->format('Y-m-d\TH:i') }}" required>
+                                </div>
+                                <div class="form-group mb-0">
+                                    <label>Deskripsi (Opsional)</label>
+                                    <textarea name="description" class="form-control" placeholder="Alasan nol-kan saldo (opsional)" rows="2"></textarea>
+                                </div>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-secondary" data-dismiss="modal">
+                                    <i class="fas fa-times mr-1"></i>Batal
+                                </button>
+                                <button type="submit" class="btn btn-danger"
+                                    onclick="return confirm('Apakah Anda yakin ingin menol-kan saldo? Tindakan ini tidak dapat dibatalkan!')">
+                                    <i class="fas fa-ban mr-1"></i>Ya, Nol-kan Saldo
                                 </button>
                             </div>
                         </form>
@@ -1526,18 +1810,19 @@
 
         /* Highlight rows with data */
         tr.has-data {
-            background-color: rgba(40, 167, 69, 0.05) !important; /* slight green tint */
+            background-color: rgba(40, 167, 69, 0.05) !important;
+            /* slight green tint */
         }
-        
+
         tr.has-data:hover {
             background-color: rgba(40, 167, 69, 0.1) !important;
         }
-        
+
         /* Style untuk baris tanpa data */
         tr.no-data {
             background-color: #f8f9fa !important;
         }
-        
+
         tr.no-data:hover {
             background-color: #e9ecef !important;
         }
@@ -1599,7 +1884,7 @@
             border-color: #80bdff;
             box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
         }
-        
+
         /* Styling untuk badge info */
         .badge-info {
             background-color: #17a2b8;
@@ -1608,13 +1893,77 @@
             margin-left: 5px;
             padding: 2px 5px;
         }
-        
+
         /* Styling untuk tombol selaraskan data */
         .btn-warning.btn-sm {
             padding: 0.25rem 0.5rem;
             font-size: 0.765625rem;
             line-height: 1.5;
             border-radius: 0.2rem;
+        }
+
+        /* Styling untuk button deposit dan pengurangan saldo */
+        .btn-primary.w-100.mb-2 {
+            margin-bottom: 0.5rem !important;
+        }
+
+        .btn-warning.w-100 {
+            border-color: #ffc107;
+            background-color: #ffc107;
+            color: #212529;
+        }
+
+        .btn-warning.w-100:hover {
+            border-color: #e0a800;
+            background-color: #e0a800;
+            color: #212529;
+        }
+
+        /* Styling untuk badge keterangan */
+        .badge-success {
+            background-color: #28a745;
+        }
+
+        .badge-danger {
+            background-color: #dc3545;
+        }
+
+        /* Styling untuk amount text colors */
+        .text-success {
+            color: #28a745 !important;
+        }
+
+        .text-danger {
+            color: #dc3545 !important;
+        }
+
+        /* Modal styling improvements */
+        .modal-header.bg-warning {
+            background-color: #ffc107 !important;
+            border-bottom: 1px solid rgba(0, 0, 0, 0.125);
+        }
+
+        .modal-header.bg-danger {
+            background-color: #dc3545 !important;
+            border-bottom: 1px solid rgba(0, 0, 0, 0.125);
+        }
+
+        .modal-header.bg-warning .modal-title,
+        .modal-header.bg-danger .modal-title {
+            color: #fff;
+        }
+
+        /* Alert styling dalam modal */
+        .alert-info {
+            background-color: #d1ecf1;
+            border-color: #bee5eb;
+            color: #0c5460;
+        }
+
+        .alert-warning {
+            background-color: #fff3cd;
+            border-color: #ffeaa7;
+            color: #856404;
         }
 
         /* Memperbaiki tampilan input type="month" pada berbagai browser */

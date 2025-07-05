@@ -87,6 +87,61 @@ class UserController extends Controller
         }
     }
 
+    /**
+     * Reduce balance (pengurangan saldo)
+     */
+    public function reduceBalance(Request $request, $userId)
+    {
+        $request->validate([
+            'amount' => 'required|numeric|min:0.01',
+            'reduction_date' => 'required|date',
+            'description' => 'nullable|string|max:255',
+        ]);
+
+        $user = User::findOrFail($userId);
+
+        // Validate user permissions (only admin can reduce balance)
+        if (!Auth::user()->isAdmin() && !Auth::user()->isSuperAdmin()) {
+            return redirect()->back()->with('error', 'Anda tidak memiliki izin untuk mengurangi saldo');
+        }
+        
+        $reductionDate = Carbon::parse($request->reduction_date);
+
+        // Reduce balance
+        if ($user->reduceBalance($request->amount, $request->description, $reductionDate)) {
+            return redirect()->back()->with('success', 'Saldo berhasil dikurangi');
+        } else {
+            return redirect()->back()->with('error', 'Gagal mengurangi saldo');
+        }
+    }
+
+    /**
+     * Zero balance (nol-kan saldo)
+     */
+    public function zeroBalance(Request $request, $userId)
+    {
+        $request->validate([
+            'zero_date' => 'required|date',
+            'description' => 'nullable|string|max:255',
+        ]);
+
+        $user = User::findOrFail($userId);
+
+        // Validate user permissions (only admin can zero balance)
+        if (!Auth::user()->isAdmin() && !Auth::user()->isSuperAdmin()) {
+            return redirect()->back()->with('error', 'Anda tidak memiliki izin untuk menol-kan saldo');
+        }
+        
+        $zeroDate = Carbon::parse($request->zero_date);
+
+        // Zero balance
+        if ($user->zeroBalance($request->description, $zeroDate)) {
+            return redirect()->back()->with('success', 'Saldo berhasil dinolkan');
+        } else {
+            return redirect()->back()->with('error', 'Gagal menolkan saldo');
+        }
+    }
+
     public function removeDeposit(Request $request, $userId)
     {
         // Validate user permissions (only admin can remove deposit)
@@ -329,6 +384,106 @@ class UserController extends Controller
         }
     }
 
+    /**
+     * Rekalkulasi total deposit berdasarkan deposit_history dengan keterangan
+     * Menangani deposit dengan keterangan 'penambahan' dan 'pengurangan'
+     * 
+     * @param User $customer
+     * @return float Total deposit yang sudah diperbaiki
+     */
+    public function rekalkulasiTotalDeposit($customer)
+    {
+        try {
+            DB::beginTransaction();
+            
+            \Log::info('Memulai rekalkulasiTotalDeposit', [
+                'user_id' => $customer->id,
+                'name' => $customer->name,
+                'current_total_deposit' => $customer->total_deposit
+            ]);
+
+            // Reset total deposit
+            $customer->total_deposit = 0;
+
+            // Ambil semua deposit history
+            $depositHistory = $this->ensureArray($customer->deposit_history);
+
+            $totalDeposit = 0;
+            $totalPenambahan = 0;
+            $totalPengurangan = 0;
+            
+            // Logging untuk debugging
+            \Log::info('Jumlah deposit history untuk rekalkulasi', [
+                'user_id' => $customer->id,
+                'total_entries' => count($depositHistory)
+            ]);
+
+            foreach ($depositHistory as $index => $deposit) {
+                $amount = floatval($deposit['amount'] ?? 0);
+                $keterangan = $deposit['keterangan'] ?? 'penambahan';
+                $tanggal = $deposit['date'] ?? 'N/A';
+
+                // PERBAIKAN: Handle deposit berdasarkan keterangan
+                if ($keterangan === 'pengurangan') {
+                    // Jika keterangan pengurangan, kurangi dari total
+                    $totalDeposit -= abs($amount);
+                    $totalPengurangan += abs($amount);
+                    
+                    \Log::debug('Mengurangi deposit', [
+                        'index' => $index,
+                        'amount' => $amount,
+                        'abs_amount' => abs($amount),
+                        'tanggal' => $tanggal,
+                        'running_total' => $totalDeposit
+                    ]);
+                } else {
+                    // Jika keterangan penambahan (atau tidak ada keterangan), tambahkan
+                    $totalDeposit += $amount;
+                    $totalPenambahan += $amount;
+                    
+                    \Log::debug('Menambahkan deposit', [
+                        'index' => $index,
+                        'amount' => $amount,
+                        'tanggal' => $tanggal,
+                        'running_total' => $totalDeposit
+                    ]);
+                }
+            }
+
+            // Update total deposit - pastikan numerik
+            $customer->total_deposit = floatval($totalDeposit);
+            $result = $customer->save();
+
+            \Log::info('Hasil rekalkulasi total deposit', [
+                'user_id' => $customer->id,
+                'total_penambahan' => $totalPenambahan,
+                'total_pengurangan' => $totalPengurangan,
+                'total_deposit_final' => $totalDeposit,
+                'save_result' => $result
+            ]);
+
+            DB::commit();
+
+            return $totalDeposit;
+        } catch (\Exception $e) {
+            DB::rollBack();
+            \Log::error('Error in rekalkulasiTotalDeposit: ' . $e->getMessage(), [
+                'user_id' => $customer->id,
+                'error' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            return 0;
+        }
+    }
+
+    /**
+     * Rekalkulasi total pembelian untuk customer
+     * 
+     * @param User $customer
+     * @return float Total pembelian yang sudah diperbaiki
+     */
     public function rekalkulasiTotalPembelian($customer)
     {
         try {
