@@ -250,6 +250,9 @@ class InvoiceController extends Controller
             $totalBiaya = $totalVolume * $hargaGas;
         }
 
+        // Bulatkan total biaya untuk konsistensi
+        $totalBiaya = round($totalBiaya);
+        
         // Buat invoice baru
         $invoice = new Invoice();
         $invoice->customer_id = $customer->id;
@@ -455,6 +458,9 @@ class InvoiceController extends Controller
         
         // Generate ID Pelanggan (contoh format)
         $idPelanggan = sprintf('03C%04d', $customer->id);
+        
+        // Bulatkan total biaya untuk konsistensi dengan tampilan
+        $totalBiaya = round($totalBiaya);
         
         // Terbilang untuk total tagihan
         $terbilang = $this->terbilang($totalBiaya);
