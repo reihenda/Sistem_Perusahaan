@@ -381,195 +381,119 @@ class KasExcelController extends Controller
             'excel_file' => 'required|file|mimes:xlsx,xls|max:5120', // 5MB max
         ]);
 
+        $file = $request->file('excel_file');
+
+        // 1. Validasi semua baris terlebih dahulu sebelum melakukan operasi database
+        $validatedData = [];
+        $errors = [];
+
         try {
-            $file = $request->file('excel_file');
             $spreadsheet = IOFactory::load($file->getPathname());
-            $worksheet = $spreadsheet->getActiveSheet();
+            $rows = $spreadsheet->getActiveSheet()->toArray();
 
-            // Simple approach - get all rows as array
-            $rows = $worksheet->toArray();
+            $allAccounts = FinancialAccount::ofType('kas')
+                ->get()
+                ->keyBy(function ($item) {
+                    return strtolower($item->account_name);
+                });
 
-            \Log::info('Excel loaded successfully, total rows: ' . count($rows));
-
-            // Skip header row (first row)
-            $dataStartRow = 1; // Start from second row (index 1)
-
-            $importedCount = 0;
-            $errors = [];
-
-            DB::beginTransaction();
-
-            // Process each row starting from data rows
-            for ($i = $dataStartRow; $i < count($rows); $i++) {
-                $rowNumber = $i + 1; // Excel row number for error messages
+            for ($i = 1; $i < count($rows); $i++) { // Mulai dari baris ke-2 (index 1)
+                $rowNumber = $i + 1;
                 $dataRow = $rows[$i];
 
-                // Skip empty rows
-                if (empty($dataRow[0]) && empty($dataRow[1]) && empty($dataRow[2])) {
-                    continue;
-                }
+                if (empty(array_filter($dataRow))) continue;
 
                 try {
-                    // Check if row has enough columns (Date, Voucher, Account, Description, Credit, Debit)
-                    if (count($dataRow) < 6) {
-                        $errors[] = "Baris {$rowNumber}: Format data tidak valid, kurang dari 6 kolom";
-                        continue;
-                    }
+                    $tanggal = $this->parseDate($dataRow[0] ?? null);
+                    $accountName = strtolower(trim($dataRow[2] ?? ''));
+                    $credit = $this->parseNumber($dataRow[4] ?? 0);
+                    $debit = $this->parseNumber($dataRow[5] ?? 0);
 
-                    // Extract data from row
-                    $tanggal = $dataRow[0] ?? null;     // Date
-                    $voucher = $dataRow[1] ?? null;     // Voucher
-                    $account = $dataRow[2] ?? null;     // Account
-                    $description = $dataRow[3] ?? null; // Description
-                    $credit = $dataRow[4] ?? null;      // Credit
-                    $debit = $dataRow[5] ?? null;       // Debit
+                    if ($credit == 0 && $debit == 0) throw new \Exception("Kredit atau Debit harus diisi.");
+                    if (!$allAccounts->has($accountName)) throw new \Exception("Account '{$dataRow[2]}' tidak ditemukan.");
 
-                    \Log::info("Processing row {$rowNumber}: Date=" . json_encode($tanggal));
-
-                    // Parse tanggal - handle both DateTime objects and strings
-                    try {
-                        $transactionDate = $this->parseDate($tanggal);
-                    } catch (\Exception $e) {
-                        $errors[] = "Baris {$rowNumber}: Error parsing tanggal - " . $e->getMessage();
-                        continue;
-                    }
-
-                    // Validate account
-                    if (empty($account)) {
-                        $errors[] = "Baris {$rowNumber}: Account tidak boleh kosong";
-                        continue;
-                    }
-
-                    // Parse credit and debit amounts
-                    $creditAmount = $this->parseNumber($credit);
-                    $debitAmount = $this->parseNumber($debit);
-
-                    // Validate that at least one of credit or debit is filled
-                    if ($creditAmount == 0 && $debitAmount == 0) {
-                        $errors[] = "Baris {$rowNumber}: Minimal salah satu dari Credit atau Debit harus diisi";
-                        continue;
-                    }
-
-                    // Find account (case-insensitive)
-                    $accountModel = FinancialAccount::whereRaw('LOWER(account_name) = ?', [strtolower(trim($account))])->first();
-                    if (!$accountModel) {
-                        $errors[] = "Baris {$rowNumber}: Account '{$account}' tidak ditemukan";
-                        continue;
-                    }
-
-                    // Generate voucher number if empty
-                    if (!empty($voucher)) {
-                        $voucherNumber = trim($voucher);
-                    } else {
-                        $voucherNumber = KasTransaction::generateVoucherNumber();
-
-                        // Ensure uniqueness
-                        $suffix = 1;
-                        while (KasTransaction::where('voucher_number', $voucherNumber)->exists()) {
-                            $voucherNumber = KasTransaction::generateVoucherNumber() . '_' . $suffix;
-                            $suffix++;
-                            if ($suffix > 100) {
-                                $errors[] = "Baris {$rowNumber}: Tidak dapat generate voucher number yang unik";
-                                continue 2;
-                            }
-                        }
-                    }
-
-                    // Check for duplicate voucher
-                    if (KasTransaction::where('voucher_number', $voucherNumber)->exists()) {
-                        $errors[] = "Baris {$rowNumber}: Voucher number '{$voucherNumber}' sudah ada";
-                        continue;
-                    }
-
-                    // Calculate balance
-                    $previousTransaction = KasTransaction::where(function ($query) use ($transactionDate) {
-                        $query->where('transaction_date', '<', $transactionDate)
-                            ->orWhere(function ($q) use ($transactionDate) {
-                                $q->where('transaction_date', $transactionDate)
-                                    ->where('id', '<', DB::raw('(SELECT COALESCE(MAX(id), 0) FROM kas_transactions)'));
-                            });
-                    })
-                        ->orderBy('transaction_date', 'desc')
-                        ->orderBy('id', 'desc')
-                        ->first();
-
-                    $previousBalance = $previousTransaction ? $previousTransaction->balance : 0;
-                    $newBalance = $previousBalance + $creditAmount - $debitAmount;
-
-                    // Save transaction
-                    $transaction = new KasTransaction([
-                        'voucher_number' => $voucherNumber,
-                        'account_id' => $accountModel->id,
-                        'transaction_date' => $transactionDate,
-                        'description' => !empty($description) ? trim($description) : null,
-                        'credit' => $creditAmount,
-                        'debit' => $debitAmount,
-                        'balance' => $newBalance,
-                        'year' => $transactionDate->year,
-                        'month' => $transactionDate->month,
-                    ]);
-
-                    $transaction->save();
-
-                    // Update future balances
-                    $this->updateFutureBalances($transaction);
-
-                    $importedCount++;
+                    $validatedData[] = [
+                        'voucher_number' => trim($dataRow[1] ?? '') ?: KasTransaction::generateVoucherNumber($tanggal->year),
+                        'account_id' => $allAccounts[$accountName]->id,
+                        'transaction_date' => $tanggal,
+                        'description' => trim($dataRow[3] ?? null),
+                        'credit' => $credit,
+                        'debit' => $debit,
+                        'year' => $tanggal->year,
+                        'month' => $tanggal->month,
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ];
                 } catch (\Exception $e) {
                     $errors[] = "Baris {$rowNumber}: " . $e->getMessage();
-                    \Log::error("Error processing row {$rowNumber}: " . $e->getMessage());
                 }
             }
+        } catch (\Exception $e) {
+            return redirect()->back()->withErrors(['excel_file' => 'Gagal memproses file Excel: ' . $e->getMessage()]);
+        }
 
-            // Check if we have any errors
-            if (!empty($errors)) {
-                DB::rollBack();
-                return redirect()->back()
-                    ->withErrors(['excel_file' => 'Terdapat error pada beberapa baris:'])
-                    ->with('excel_errors', $errors);
-            }
+        if (!empty($errors)) {
+            return redirect()->back()->withErrors(['excel_file' => 'Terdapat error pada file:'])->with('excel_errors', $errors);
+        }
 
-            // If we have successful imports
-            if ($importedCount > 0) {
-                DB::commit();
-                return redirect()->route('keuangan.kas.index')
-                    ->with('success', "Berhasil mengimpor {$importedCount} transaksi kas dari file Excel.");
-            } else {
-                DB::rollBack();
-                return redirect()->back()
-                    ->withErrors(['excel_file' => 'Tidak ada data valid yang ditemukan dalam file Excel.']);
+        if (empty($validatedData)) {
+            return redirect()->back()->withErrors(['excel_file' => 'Tidak ada data valid untuk diimpor.']);
+        }
+
+        DB::beginTransaction();
+        try {
+            usort($validatedData, function ($a, $b) {
+                return $a['transaction_date'] <=> $b['transaction_date'];
+            });
+
+            $firstDate = $validatedData[0]['transaction_date'];
+            $previousTransaction = KasTransaction::where('transaction_date', '<', $firstDate)
+                ->orderBy('transaction_date', 'desc')->orderBy('id', 'desc')->first();
+
+            $runningBalance = $previousTransaction ? (float)$previousTransaction->balance : 0;
+
+            foreach ($validatedData as &$row) {
+                $runningBalance += (float)$row['credit'] - (float)$row['debit'];
+                $row['balance'] = $runningBalance;
             }
+            unset($row);
+
+            KasTransaction::insert($validatedData);
+
+            $lastTransaction = (object)$validatedData[count($validatedData) - 1];
+            $this->updateFutureBalancesFrom($lastTransaction->transaction_date, $lastTransaction->balance);
+
+            DB::commit();
+            return redirect()->route('keuangan.kas.index')->with('success', 'Berhasil mengimpor ' . count($validatedData) . ' transaksi.');
         } catch (\Exception $e) {
             DB::rollBack();
-            \Log::error('Error processing Excel file: ' . $e->getMessage());
-            return redirect()->back()
-                ->withErrors(['excel_file' => 'Error saat memproses file: ' . $e->getMessage()]);
+            return redirect()->back()->withErrors(['excel_file' => 'Terjadi kesalahan saat menyimpan ke database: ' . $e->getMessage()]);
         }
     }
 
     /**
      * Update balances for all future transactions after a transaction is added or modified.
      */
-    private function updateFutureBalances(KasTransaction $transaction)
+    private function updateFutureBalancesFrom(Carbon $startDate, float $startBalance)
     {
-        $laterTransactions = KasTransaction::where(function ($query) use ($transaction) {
-            $query->where('transaction_date', '>', $transaction->transaction_date)
-                ->orWhere(function ($q) use ($transaction) {
-                    $q->where('transaction_date', $transaction->transaction_date)
-                        ->where('id', '>', $transaction->id);
+        $lastTransactionOnDate = KasTransaction::whereDate('transaction_date', $startDate)->orderBy('id', 'desc')->first();
+        if (!$lastTransactionOnDate) return;
+
+        $transactionsToUpdate = KasTransaction::where(function ($query) use ($startDate, $lastTransactionOnDate) {
+            $query->where('transaction_date', '>', $startDate)
+                ->orWhere(function ($q) use ($startDate, $lastTransactionOnDate) {
+                    $q->where('transaction_date', $startDate)
+                        ->where('id', '>', $lastTransactionOnDate->id);
                 });
         })
-            ->orderBy('transaction_date')
-            ->orderBy('id')
-            ->get();
+            ->orderBy('transaction_date')->orderBy('id')->get();
 
-        if ($laterTransactions->count() > 0) {
-            $runningBalance = $transaction->balance;
-
-            foreach ($laterTransactions as $laterTransaction) {
-                $runningBalance = $runningBalance + $laterTransaction->credit - $laterTransaction->debit;
-                $laterTransaction->balance = $runningBalance;
-                $laterTransaction->save();
+        $runningBalance = $startBalance;
+        foreach ($transactionsToUpdate as $transaction) {
+            $runningBalance += (float)$transaction->credit - (float)$transaction->debit;
+            if ((float)$transaction->balance != $runningBalance) {
+                $transaction->balance = $runningBalance;
+                $transaction->saveQuietly();
             }
         }
     }

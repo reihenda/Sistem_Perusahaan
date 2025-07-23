@@ -60,6 +60,7 @@ Route::middleware(['auth', 'role:admin,superadmin'])->group(function () {
     // Rute untuk Keuangan
     Route::get('/keuangan', [KeuanganController::class, 'index'])->name('keuangan.index');
 
+
     // Rute untuk Financial Accounts
     Route::get('/keuangan/accounts', [FinancialAccountController::class, 'index'])->name('keuangan.accounts.index');
     Route::get('/keuangan/accounts/create', [FinancialAccountController::class, 'create'])->name('keuangan.accounts.create');
@@ -84,22 +85,25 @@ Route::middleware(['auth', 'role:admin,superadmin'])->group(function () {
     Route::get('/keuangan/kas/{transaction}/edit', [KasController::class, 'edit'])->name('keuangan.kas.edit');
     Route::put('/keuangan/kas/{transaction}', [KasController::class, 'update'])->name('keuangan.kas.update');
     Route::delete('/keuangan/kas/{transaction}', [KasController::class, 'destroy'])->name('keuangan.kas.destroy');
-    
+    Route::get('/keuangan/kas/recalculate-all', [KasController::class, 'recalculateAllBalances'])->name('keuangan.kas.recalculate-all');
+
+    // ... route excel ...
+
     // Rute untuk Excel Import/Export Kas
     Route::get('/keuangan/kas/download-template', [App\Http\Controllers\KasExcelController::class, 'downloadTemplate'])->name('keuangan.kas.download-template');
     Route::post('/keuangan/kas/upload-excel', [App\Http\Controllers\KasExcelController::class, 'uploadExcel'])->name('keuangan.kas.upload-excel');
-    
+
     // Testing routes untuk development (hapus di production)
     Route::get('/test/process-queue', [App\Http\Controllers\QueueTestController::class, 'processQueue'])->name('test.process-queue');
     Route::get('/test/check-cache', [App\Http\Controllers\QueueTestController::class, 'checkCache'])->name('test.check-cache');
-    
+
     // Debug routes untuk troubleshooting
     Route::get('/debug/system-check', [App\Http\Controllers\DebugKasController::class, 'checkSystem'])->name('debug.system-check');
     Route::get('/debug/check-import', [App\Http\Controllers\DebugKasController::class, 'checkLastImport'])->name('debug.check-import');
     Route::get('/debug/simulate-import', [App\Http\Controllers\DebugKasController::class, 'simulateImport'])->name('debug.simulate-import');
-        
-        // Debug route untuk FOB calculations
-        Route::get('/debug/fob-calculations/{customer}', [FobController::class, 'debugAndFixCalculations'])->name('debug.fob-calculations');
+
+    // Debug route untuk FOB calculations
+    Route::get('/debug/fob-calculations/{customer}', [FobController::class, 'debugAndFixCalculations'])->name('debug.fob-calculations');
 
     // Rute untuk Bank
     Route::get('/keuangan/bank', [BankController::class, 'index'])->name('keuangan.bank.index');
@@ -201,7 +205,7 @@ Route::middleware(['auth', 'role:admin,superadmin'])->group(function () {
     // Route untuk cetak invoice dalam bentuk PDF
     Route::get('/customer/{customer}/print-invoice', [DataPencatatanController::class, 'printInvoice'])
         ->name('data-pencatatan.print-invoice');
-        
+
     // Route untuk sinkronisasi saldo
     Route::get('/sync-balance/{customer}', [UserController::class, 'syncBalance'])
         ->name('sync.balance');
@@ -245,7 +249,7 @@ Route::middleware(['auth', 'role:admin,superadmin'])->group(function () {
     Route::get('/billings/{billing}/edit', [BillingController::class, 'edit'])->name('billings.edit');
     Route::put('/billings/{billing}', [BillingController::class, 'update'])->name('billings.update');
     Route::delete('/billings/{billing}', [BillingController::class, 'destroy'])->name('billings.destroy');
-    
+
     // Debug routes untuk data sync
     Route::prefix('debug')->group(function () {
         Route::get('/compare-data', [DataSyncDebugController::class, 'compareCustomerBillingData'])
@@ -256,7 +260,7 @@ Route::middleware(['auth', 'role:admin,superadmin'])->group(function () {
             ->name('debug.compare-balance');
         Route::post('/quick-fix', [DataSyncDebugController::class, 'quickFixDataSync'])
             ->name('debug.quick-fix');
-        
+
         // PERBAIKAN: Route untuk debugging dan cleanup FOB
         Route::get('/fob/{customer}/analyze', [FobController::class, 'analyzeFobData'])
             ->name('debug.fob.analyze');
