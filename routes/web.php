@@ -18,6 +18,7 @@ use App\Http\Controllers\FinancialAccountController;
 use App\Http\Controllers\TransactionDescriptionController;
 use App\Http\Controllers\ExcelImportController;
 use App\Http\Controllers\Debug\DataSyncDebugController;
+use App\Http\Controllers\ProformaInvoiceController;
 
 
 // Rute Autentikasi
@@ -249,6 +250,17 @@ Route::middleware(['auth', 'role:admin,superadmin'])->group(function () {
     Route::get('/billings/{billing}/edit', [BillingController::class, 'edit'])->name('billings.edit');
     Route::put('/billings/{billing}', [BillingController::class, 'update'])->name('billings.update');
     Route::delete('/billings/{billing}', [BillingController::class, 'destroy'])->name('billings.destroy');
+
+    // Rute untuk Proforma Invoice
+    Route::get('/proforma-invoices', [ProformaInvoiceController::class, 'index'])->name('proforma-invoices.index');
+    Route::get('/proforma-invoices/select-customer', [ProformaInvoiceController::class, 'selectCustomer'])->name('proforma-invoices.select-customer');
+    Route::get('/proforma-invoices/create/{customer}', [ProformaInvoiceController::class, 'create'])->name('proforma-invoices.create');
+    Route::post('/proforma-invoices/{customer}', [ProformaInvoiceController::class, 'store'])->name('proforma-invoices.store');
+    Route::post('/proforma-invoices/{customer}/generate-number', [ProformaInvoiceController::class, 'generateProformaNumber'])->name('proforma-invoices.generate-number');
+    Route::get('/proforma-invoices/{proformaInvoice}', [ProformaInvoiceController::class, 'show'])->name('proforma-invoices.show');
+    Route::get('/proforma-invoices/{proformaInvoice}/edit', [ProformaInvoiceController::class, 'edit'])->name('proforma-invoices.edit');
+    Route::put('/proforma-invoices/{proformaInvoice}', [ProformaInvoiceController::class, 'update'])->name('proforma-invoices.update');
+    Route::delete('/proforma-invoices/{proformaInvoice}', [ProformaInvoiceController::class, 'destroy'])->name('proforma-invoices.destroy');
 
     // Debug routes untuk data sync
     Route::prefix('debug')->group(function () {

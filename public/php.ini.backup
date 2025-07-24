@@ -1,0 +1,9 @@
+; Local PHP configuration for Excel processing
+; Place this file in the same directory if needed
+
+memory_limit = 512M
+max_execution_time = 300
+max_input_time = 300
+upload_max_filesize = 10M
+post_max_size = 12M
+max_file_uploads = 20

@@ -255,6 +255,12 @@
                                         </a>
                                     </li>
                                     <li class="nav-item">
+                                        <a href="{{ route('proforma-invoices.index') }}" class="nav-link">
+                                            <i class="far fa-file-powerpoint nav-icon"></i>
+                                            <p>Proforma Invoice</p>
+                                        </a>
+                                    </li>
+                                    <li class="nav-item">
                                         <a href="{{ route('invoices.select-customer') }}" class="nav-link">
                                             <i class="fas fa-file-invoice nav-icon"></i>
                                             <p>Tambah Invoice</p>
@@ -264,6 +270,13 @@
                                         <a href="{{ route('billings.select-customer') }}" class="nav-link">
                                             <i class="fas fa-plus-circle nav-icon"></i>
                                             <p>Tambah Billing</p>
+                                        </a>
+                                    </li>
+
+                                    <li class="nav-item">
+                                        <a href="{{ route('proforma-invoices.select-customer') }}" class="nav-link">
+                                            <i class="fas fa-file-contract nav-icon"></i>
+                                            <p>Tambah Proforma</p>
                                         </a>
                                     </li>
                                 </ul>
@@ -526,9 +539,9 @@
             });
             // Inisialisasi komponen AdminLTE
             // Only initialize DataTables that don't already have specific initialization
-if (typeof $.fn.dataTable !== 'undefined') {
-    $('.dataTable:not(.custom-datatable)').dataTable();
-}
+            if (typeof $.fn.dataTable !== 'undefined') {
+                $('.dataTable:not(.custom-datatable)').dataTable();
+            }
 
             // Inisialisasi lainnya yang mungkin diperlukan
             if (typeof $.fn.daterangepicker !== 'undefined') {
