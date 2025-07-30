@@ -60,6 +60,9 @@ class AuthController extends Controller
             'email' => 'required|string|email|max:255|unique:users',
             'password' => 'required|string|min:3',
             'role' => 'required|string|in:admin,customer,fob,demo',
+            'no_kontrak' => 'nullable|string|max:255',
+            'alamat' => 'nullable|string',
+            'nomor_tlpn' => 'nullable|string|max:20',
         ], [
             'name.required' => 'Nama harus diisi',
             'email.required' => 'Email harus diisi',
@@ -84,6 +87,9 @@ class AuthController extends Controller
             $user->email = $request->email;
             $user->password = Hash::make($request->password);
             $user->role = $request->role;
+            $user->no_kontrak = $request->no_kontrak;
+            $user->alamat = $request->alamat;
+            $user->nomor_tlpn = $request->nomor_tlpn;
 
             // Tambahkan nilai default untuk field lain jika diperlukan
             if ($request->role == 'customer') {

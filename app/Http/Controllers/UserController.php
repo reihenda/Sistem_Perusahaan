@@ -19,29 +19,56 @@ class UserController extends Controller
      */
     public function index(Request $request)
     {
-        // Query dasar
-        $query = User::query()->orderBy('role');
+        // Query untuk Admin (admin, superadmin)
+        $adminQuery = User::query()
+            ->whereIn('role', ['admin', 'superadmin'])
+            ->orderBy('role');
 
-        // Filter berdasarkan pencarian jika ada
-        if ($request->has('search') && !empty($request->search)) {
-            $searchTerm = $request->search;
-            $query->where(function ($q) use ($searchTerm) {
+        // Query untuk Customer/FOB (customer, fob, demo)
+        $customerQuery = User::query()
+            ->whereIn('role', ['customer', 'fob', 'demo'])
+            ->orderBy('role');
+
+        // Filter berdasarkan pencarian untuk admin jika ada
+        if ($request->has('search_admin') && !empty($request->search_admin)) {
+            $searchTerm = $request->search_admin;
+            $adminQuery->where(function ($q) use ($searchTerm) {
                 $q->where('name', 'like', '%' . $searchTerm . '%')
                     ->orWhere('email', 'like', '%' . $searchTerm . '%')
                     ->orWhere('role', 'like', '%' . $searchTerm . '%');
             });
         }
 
-        $users = $query->get();
+        // Filter berdasarkan pencarian untuk customer jika ada
+        if ($request->has('search_customer') && !empty($request->search_customer)) {
+            $searchTerm = $request->search_customer;
+            $customerQuery->where(function ($q) use ($searchTerm) {
+                $q->where('name', 'like', '%' . $searchTerm . '%')
+                    ->orWhere('email', 'like', '%' . $searchTerm . '%')
+                    ->orWhere('role', 'like', '%' . $searchTerm . '%')
+                    ->orWhere('no_kontrak', 'like', '%' . $searchTerm . '%')
+                    ->orWhere('alamat', 'like', '%' . $searchTerm . '%')
+                    ->orWhere('nomor_tlpn', 'like', '%' . $searchTerm . '%');
+            });
+        }
+
+        $adminUsers = $adminQuery->get();
+        $customerUsers = $customerQuery->get();
 
         // Deteksi jika request adalah AJAX untuk pencarian real-time
         if ($request->ajax()) {
-            return response()->json([
-                'html' => view('user.partials.user-table', compact('users'))->render(),
-            ]);
+            if ($request->has('search_admin')) {
+                return response()->json([
+                    'html' => view('user.partials.admin-table', ['users' => $adminUsers])->render(),
+                ]);
+            } elseif ($request->has('search_customer')) {
+                return response()->json([
+                    'html' => view('user.partials.customer-table', ['users' => $customerUsers])->render(),
+                ]);
+            }
         }
 
-        return view('user.index', compact('users'));
+        return view('user.index', compact('adminUsers', 'customerUsers'));
     }
 
     /**
@@ -992,6 +1019,9 @@ class UserController extends Controller
             'email' => 'required|string|email|max:255|unique:users,email,' . $user->id,
             'role' => 'required|in:admin,customer,fob,demo',
             'password' => 'nullable|string|min:3',
+            'no_kontrak' => 'nullable|string|max:255',
+            'alamat' => 'nullable|string',
+            'nomor_tlpn' => 'nullable|string|max:20',
         ], [
             'name.required' => 'Nama harus diisi',
             'email.required' => 'Email harus diisi',
@@ -1015,6 +1045,9 @@ class UserController extends Controller
             $user->name = $request->name;
             $user->email = $request->email;
             $user->role = $request->role;
+            $user->no_kontrak = $request->no_kontrak;
+            $user->alamat = $request->alamat;
+            $user->nomor_tlpn = $request->nomor_tlpn;
 
             // Update password jika diisi
             if ($request->filled('password')) {

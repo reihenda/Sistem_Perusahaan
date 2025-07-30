@@ -40,6 +40,23 @@
                                 <strong>Email:</strong> {{ $customer->email }}<br>
                                 <strong>Role:</strong> {{ ucfirst($customer->role) }}
                             </p>
+                            
+                            <!-- Info Saldo Real-time -->
+                            <div class="mt-3 p-3 border rounded" id="saldoContainer">
+                                <h6 class="mb-2">
+                                    <i class="fas fa-wallet mr-2"></i>Saldo Customer
+                                </h6>
+                                <div id="saldoInfo">
+                                    <strong>Saldo per <span id="saldoDate">{{ now()->format('d M Y') }}</span>:</strong><br>
+                                    <span class="badge badge-{{ $currentBalance >= 0 ? 'success' : 'danger' }} p-2" id="saldoBadge">
+                                        Rp {{ number_format($currentBalance, 0, ',', '.') }}
+                                    </span>
+                                </div>
+                                <small class="text-muted d-block mt-2">
+                                    <i class="fas fa-info-circle mr-1"></i>
+                                    Saldo akan update otomatis sesuai tanggal awal periode
+                                </small>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -56,13 +73,14 @@
                                 <div class="input-group">
                                     <input type="text" class="form-control @error('proforma_number') is-invalid @enderror" 
                                            id="proforma_number" name="proforma_number" 
-                                           value="{{ old('proforma_number', $proformaNumber) }}" required readonly>
+                                           value="{{ old('proforma_number', $proformaNumber) }}" required>
                                     <div class="input-group-append">
-                                        <button type="button" class="btn btn-outline-secondary" id="generateNumber">
+                                        <button type="button" class="btn btn-outline-secondary" id="generateNumber" title="Generate Otomatis">
                                             <i class="fas fa-sync-alt"></i>
                                         </button>
                                     </div>
                                 </div>
+                                <small class="text-muted">Anda bisa edit nomor atau klik tombol refresh untuk generate otomatis</small>
                                 @error('proforma_number')
                                     <div class="invalid-feedback">{{ $message }}</div>
                                 @enderror
@@ -153,7 +171,8 @@
                         <label for="no_kontrak">No. Kontrak <span class="text-danger">*</span></label>
                         <input type="text" class="form-control @error('no_kontrak') is-invalid @enderror" 
                                id="no_kontrak" name="no_kontrak" 
-                               value="{{ old('no_kontrak') }}" required>
+                               value="{{ old('no_kontrak', $customer->no_kontrak) }}" required>
+                        <small class="text-muted">Diambil dari data customer, bisa diedit</small>
                         @error('no_kontrak')
                             <div class="invalid-feedback">{{ $message }}</div>
                         @enderror
@@ -168,6 +187,77 @@
                         @error('id_pelanggan')
                             <div class="invalid-feedback">{{ $message }}</div>
                         @enderror
+                    </div>
+                </div>
+            </div>
+
+            <!-- Input Manual Volume dan Harga -->
+            <div class="row">
+                <div class="col-md-12">
+                    <h5 class="mt-3 mb-3">
+                        <i class="fas fa-calculator mr-2"></i>Input Manual Perhitungan
+                    </h5>
+                </div>
+                <div class="col-md-4">
+                    <div class="form-group">
+                        <label for="volume_per_day">
+                            Volume Pemakaian (Sm3) / Hari 
+                            <span class="text-danger">*</span>
+                            <i class="fas fa-info-circle text-info ml-1" 
+                               title="Volume pemakaian gas per hari dalam satuan Sm3. Angka ini akan dikalikan dengan jumlah hari di periode." 
+                               data-toggle="tooltip"></i>
+                        </label>
+                        <input type="number" step="0.001" class="form-control @error('volume_per_day') is-invalid @enderror" 
+                               id="volume_per_day" name="volume_per_day" 
+                               value="{{ old('volume_per_day', '0') }}" required>
+                        @error('volume_per_day')
+                            <div class="invalid-feedback">{{ $message }}</div>
+                        @enderror
+                        <small class="text-muted">Contoh: 1.500 (untuk 1.5 Sm3 per hari)</small>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="form-group">
+                        <label for="price_per_sm3">
+                            Harga Satuan (Rp) 
+                            <span class="text-danger">*</span>
+                        </label>
+                        <input type="number" step="0.01" class="form-control @error('price_per_sm3') is-invalid @enderror" 
+                               id="price_per_sm3" name="price_per_sm3" 
+                               value="{{ old('price_per_sm3', $customer->harga_per_meter_kubik ?? '0') }}" required>
+                        @error('price_per_sm3')
+                            <div class="invalid-feedback">{{ $message }}</div>
+                        @enderror
+                        <small class="text-muted">Harga diambil dari data customer, bisa diedit</small>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="form-group">
+                        <label for="total_days">Total Hari (otomatis)</label>
+                        <input type="number" class="form-control" id="total_days" name="total_days" readonly 
+                               value="{{ old('total_days', '0') }}">
+                        <small class="text-muted">Dihitung otomatis dari periode tanggal (tanggal akhir tidak termasuk)</small>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Preview Perhitungan -->
+            <div class="row">
+                <div class="col-md-12">
+                    <div class="card bg-light">
+                        <div class="card-body">
+                            <h6 class="card-title"><i class="fas fa-calculator mr-2"></i>Preview Perhitungan</h6>
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <p class="mb-1"><strong>Total Volume:</strong> <span id="preview_total_volume">0</span> Sm3</p>
+                                    <p class="mb-0"><small class="text-muted">Volume per hari × Total hari</small></p>
+                                </div>
+                                <div class="col-md-6">
+                                    <p class="mb-1"><strong>Total Amount:</strong> Rp <span id="preview_total_amount">0</span></p>
+                                    <p class="mb-0"><small class="text-muted">Total volume × Harga per Sm3</small></p>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -247,7 +337,81 @@ $(document).ready(function() {
     $('#period_start_date').change(function() {
         const selectedDate = $(this).val();
         $('#period_end_date').attr('min', selectedDate);
+        calculateDaysAndPreview();
+        updateSaldoInfo(selectedDate); // Update saldo saat tanggal berubah
     });
+    
+    $('#period_end_date').change(function() {
+        calculateDaysAndPreview();
+    });
+    
+    // Function untuk update info saldo
+    function updateSaldoInfo(date) {
+        if (!date) return;
+        
+        // Show loading state
+        $('#saldoBadge').html('<i class="fas fa-spinner fa-spin"></i> Loading...');
+        
+        $.ajax({
+            url: '{{ route('proforma-invoices.get-balance', $customer) }}',
+            method: 'GET',
+            data: { date: date },
+            success: function(response) {
+                const badgeClass = response.balance >= 0 ? 'badge-success' : 'badge-danger';
+                $('#saldoDate').text(response.date);
+                $('#saldoBadge')
+                    .removeClass('badge-success badge-danger')
+                    .addClass(badgeClass)
+                    .html('Rp ' + response.formatted_balance);
+            },
+            error: function() {
+                $('#saldoBadge')
+                    .removeClass('badge-success badge-danger')
+                    .addClass('badge-secondary')
+                    .html('Error loading balance');
+            }
+        });
+    }
+    
+    // Event listener untuk perhitungan real-time
+    $('#volume_per_day, #price_per_sm3').on('input', function() {
+        calculatePreview();
+    });
+    
+    // Function untuk menghitung total hari
+    function calculateDaysAndPreview() {
+        const startDate = $('#period_start_date').val();
+        const endDate = $('#period_end_date').val();
+        
+        if (startDate && endDate) {
+            const start = new Date(startDate);
+            const end = new Date(endDate);
+            const diffTime = Math.abs(end - start);
+            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); // Tanpa +1, jadi exclusive
+            
+            $('#total_days').val(diffDays);
+            calculatePreview();
+        }
+    }
+    
+    // Function untuk menghitung preview
+    function calculatePreview() {
+        const volumePerDay = parseFloat($('#volume_per_day').val()) || 0;
+        const pricePerSm3 = parseFloat($('#price_per_sm3').val()) || 0;
+        const totalDays = parseFloat($('#total_days').val()) || 0;
+        
+        const totalVolume = volumePerDay * totalDays;
+        const totalAmount = totalVolume * pricePerSm3;
+        
+        $('#preview_total_volume').text(totalVolume.toFixed(2));
+        $('#preview_total_amount').text(new Intl.NumberFormat('id-ID').format(Math.round(totalAmount)));
+    }
+    
+    // Initialize tooltips
+    $('[data-toggle="tooltip"]').tooltip();
+    
+    // Initialize calculation on page load
+    calculateDaysAndPreview();
     
     // Initialize minimum dates
     const today = new Date().toISOString().split('T')[0];

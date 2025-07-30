@@ -17,6 +17,9 @@ class ProformaInvoice extends Model
         'due_date',
         'total_amount',
         'total_volume',
+        'volume_per_day',
+        'price_per_sm3',
+        'total_days',
         'status',
         'description',
         'no_kontrak',
@@ -110,5 +113,27 @@ class ProformaInvoice extends Model
         }
         
         return now()->diffInDays($this->validity_date, false);
+    }
+
+    // Calculate total volume based on volume per day and total days
+    public function calculateTotalVolume()
+    {
+        return $this->volume_per_day * $this->total_days;
+    }
+
+    // Calculate total amount based on total volume and price per sm3
+    public function calculateTotalAmount()
+    {
+        return $this->calculateTotalVolume() * $this->price_per_sm3;
+    }
+
+    // Calculate total days from period dates
+    public function calculateTotalDays()
+    {
+        if (!$this->period_start_date || !$this->period_end_date) {
+            return 0;
+        }
+        
+        return $this->period_start_date->diffInDays($this->period_end_date); // Tanpa +1, jadi exclusive
     }
 }

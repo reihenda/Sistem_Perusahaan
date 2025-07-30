@@ -122,6 +122,15 @@
                                             <span class="badge badge-secondary p-2">{{ $proformaInvoice->id_pelanggan }}</span>
                                         </td>
                                     </tr>
+                                    <tr>
+                                        <td colspan="3"></td>
+                                        <td class="text-center">
+                                            <strong>Saldo per {{ $tanggal_saldo->format('d M Y') }} :</strong><br>
+                                            <span class="badge badge-{{ $saldo_per_tanggal >= 0 ? 'success' : 'danger' }} p-2">
+                                                Rp {{ number_format($saldo_per_tanggal, 0, ',', '.') }}
+                                            </span>
+                                        </td>
+                                    </tr>
                                 </table>
                             </div>
                             

@@ -11,6 +11,21 @@ use Illuminate\Support\Facades\DB;
 class ProformaInvoiceController extends Controller
 {
     /**
+     * Get customer balance on specific date via AJAX
+     */
+    public function getCustomerBalance(Request $request, User $customer)
+    {
+        $date = $request->input('date', now());
+        $balance = $this->getCustomerBalanceOnDate($customer, $date);
+        
+        return response()->json([
+            'balance' => $balance,
+            'formatted_balance' => number_format($balance, 0, ',', '.'),
+            'date' => Carbon::parse($date)->format('d M Y')
+        ]);
+    }
+
+    /**
      * Generate proforma number via AJAX
      */
     public function generateProformaNumber(Request $request, User $customer)
@@ -92,7 +107,10 @@ class ProformaInvoiceController extends Controller
         $startDate = now()->startOfMonth()->format('Y-m-d');
         $endDate = now()->endOfMonth()->format('Y-m-d');
         
-        return view('proforma-invoices.create', compact('customer', 'proformaNumber', 'startDate', 'endDate'));
+        // Get current balance (saldo per hari ini)
+        $currentBalance = $this->getCustomerBalanceOnDate($customer, now());
+        
+        return view('proforma-invoices.create', compact('customer', 'proformaNumber', 'startDate', 'endDate', 'currentBalance'));
     }
 
     /**
@@ -101,12 +119,14 @@ class ProformaInvoiceController extends Controller
     public function store(Request $request, User $customer)
     {
         $request->validate([
-            'proforma_number' => 'required|string|max:50',
+            'proforma_number' => 'required|string|max:50|unique:proforma_invoices,proforma_number',
             'proforma_date' => 'required|date',
             'due_date' => 'required|date|after_or_equal:proforma_date',
             'period_start_date' => 'required|date',
             'period_end_date' => 'required|date|after_or_equal:period_start_date',
             'validity_date' => 'nullable|date|after_or_equal:proforma_date',
+            'volume_per_day' => 'required|numeric|min:0',
+            'price_per_sm3' => 'required|numeric|min:0',
             'no_kontrak' => 'required|string|max:50',
             'id_pelanggan' => 'required|string|max:20',
             'description' => 'nullable|string',
@@ -115,80 +135,26 @@ class ProformaInvoiceController extends Controller
         // Validasi periode maksimal 60 hari
         $startDate = Carbon::parse($request->period_start_date);
         $endDate = Carbon::parse($request->period_end_date);
-        $diffDays = $startDate->diffInDays($endDate) + 1;
+        $diffDays = $startDate->diffInDays($endDate); // Tanpa +1, jadi exclusive
         
         if ($diffDays > 60) {
             return back()->withErrors(['period_end_date' => 'Periode maksimal adalah 60 hari.'])->withInput();
         }
-
-        // Get pricing info untuk periode yang dipilih
-        $yearMonth = $startDate->format('Y-m');
-        $pricingInfo = $customer->getPricingForYearMonth($yearMonth);
-
-        // Base query untuk data pencatatan
-        $query = $customer->dataPencatatan();
-        $dataPencatatan = $query->get();
-
-        // Filter data berdasarkan periode yang dipilih
-        $dataPencatatan = $dataPencatatan->filter(function ($item) use ($startDate, $endDate) {
-            $dataInput = $this->ensureArray($item->data_input);
-
-            if (empty($dataInput) || empty($dataInput['pembacaan_awal']['waktu'])) {
-                return false;
-            }
-
-            $waktuAwal = Carbon::parse($dataInput['pembacaan_awal']['waktu'])->startOfDay();
-            $startFilter = $startDate->copy()->startOfDay();
-            $endFilter = $endDate->copy()->endOfDay();
-
-            return $waktuAwal->between($startFilter, $endFilter);
-        });
-
-        // Perhitungan volume dan biaya total
-        $totalVolume = 0;
-        $totalBiaya = 0;
-        $processedDates = [];
-        $pricingPeriods = [];
         
-        foreach ($dataPencatatan as $item) {
-            $dataInput = $this->ensureArray($item->data_input);
-            $volumeFlowMeter = floatval($dataInput['volume_flow_meter'] ?? 0);
-            
-            $waktuAwal = Carbon::parse($dataInput['pembacaan_awal']['waktu']);
-            $tanggalKey = $waktuAwal->format('Y-m-d');
-            
-            // Skip jika tanggal sudah diproses (hindari duplikasi)
-            if (isset($processedDates[$tanggalKey])) {
-                continue;
-            }
-            
-            $processedDates[$tanggalKey] = true;
-            
-            // Get pricing info for this specific date
-            $waktuAwalYearMonth = $waktuAwal->format('Y-m');
-            $itemPricingInfo = $customer->getPricingForYearMonth($waktuAwalYearMonth, $waktuAwal);
-            
-            $volumeSm3 = $volumeFlowMeter * floatval($itemPricingInfo['koreksi_meter'] ?? $customer->koreksi_meter);
-            $hargaGas = floatval($itemPricingInfo['harga_per_meter_kubik'] ?? $customer->harga_per_meter_kubik);
-            
-            // Group by price to detect price changes
-            $priceKey = $hargaGas;
-            if (!isset($pricingPeriods[$priceKey])) {
-                $pricingPeriods[$priceKey] = [
-                    'harga' => $hargaGas,
-                    'volume' => 0
-                ];
-            }
-            
-            $pricingPeriods[$priceKey]['volume'] += $volumeSm3;
-            $totalVolume += $volumeSm3;
-        }
-        
-        // Calculate total cost from all pricing periods
-        foreach ($pricingPeriods as $period) {
-            $totalBiaya += $period['volume'] * $period['harga'];
+        // Minimal harus 1 hari
+        if ($diffDays < 1) {
+            return back()->withErrors(['period_end_date' => 'Periode minimal adalah 1 hari.'])->withInput();
         }
 
+        // Perhitungan berdasarkan input manual
+        $volumePerDay = (float) $request->volume_per_day;
+        $pricePerSm3 = (float) $request->price_per_sm3;
+        $totalDays = $diffDays;
+        
+        // Kalkulasi total volume dan biaya
+        $totalVolume = $volumePerDay * $totalDays;
+        $totalBiaya = $totalVolume * $pricePerSm3;
+        
         // Bulatkan total biaya untuk konsistensi
         $totalBiaya = round($totalBiaya);
         
@@ -200,6 +166,9 @@ class ProformaInvoiceController extends Controller
         $proformaInvoice->due_date = $request->due_date;
         $proformaInvoice->total_amount = $totalBiaya;
         $proformaInvoice->total_volume = $totalVolume;
+        $proformaInvoice->volume_per_day = $volumePerDay;
+        $proformaInvoice->price_per_sm3 = $pricePerSm3;
+        $proformaInvoice->total_days = $totalDays;
         $proformaInvoice->status = 'draft';
         $proformaInvoice->description = $request->description;
         $proformaInvoice->no_kontrak = $request->no_kontrak;
@@ -223,114 +192,28 @@ class ProformaInvoiceController extends Controller
         $startDate = $proformaInvoice->period_start_date;
         $endDate = $proformaInvoice->period_end_date;
         
-        // Get pricing info
-        $yearMonth = $startDate->format('Y-m');
-        $pricingInfo = $customer->getPricingForYearMonth($yearMonth);
+        // Ambil saldo customer pada tanggal awal periode
+        $saldoPerTanggal = $this->getCustomerBalanceOnDate($customer, $proformaInvoice->period_start_date);
         
-        // Retrieve and filter the relevant data
-        $dataPencatatan = $customer->dataPencatatan()->get();
-        
-        // Filter data berdasarkan periode proforma invoice
-        $dataPencatatan = $dataPencatatan->filter(function ($item) use ($startDate, $endDate) {
-            $dataInput = $this->ensureArray($item->data_input);
-
-            if (empty($dataInput) || empty($dataInput['pembacaan_awal']['waktu'])) {
-                return false;
-            }
-
-            $waktuAwal = Carbon::parse($dataInput['pembacaan_awal']['waktu'])->startOfDay();
-            $startFilter = $startDate->copy()->startOfDay();
-            $endFilter = $endDate->copy()->endOfDay();
-
-            return $waktuAwal->between($startFilter, $endFilter);
-        });
-
-        // Perhitungan untuk volume dan biaya pemakaian gas
-        $pemakaianGas = [];
-        $totalVolume = 0;
-        $totalBiaya = 0;
-        $processedDates = [];
-        $pricingPeriods = [];
-        
-        foreach ($dataPencatatan as $item) {
-            $dataInput = $this->ensureArray($item->data_input);
-            $volumeFlowMeter = floatval($dataInput['volume_flow_meter'] ?? 0);
-            
-            $waktuAwal = Carbon::parse($dataInput['pembacaan_awal']['waktu']);
-            $tanggalKey = $waktuAwal->format('Y-m-d');
-            
-            // Skip jika tanggal sudah diproses (hindari duplikasi)
-            if (isset($processedDates[$tanggalKey])) {
-                continue;
-            }
-            
-            $processedDates[$tanggalKey] = true;
-            
-            // Get pricing info for this specific date
-            $waktuAwalYearMonth = $waktuAwal->format('Y-m');
-            $itemPricingInfo = $customer->getPricingForYearMonth($waktuAwalYearMonth, $waktuAwal);
-            
-            $volumeSm3 = $volumeFlowMeter * floatval($itemPricingInfo['koreksi_meter'] ?? $customer->koreksi_meter);
-            $hargaGas = floatval($itemPricingInfo['harga_per_meter_kubik'] ?? $customer->harga_per_meter_kubik);
-            
-            // Group by price to detect price changes
-            $priceKey = $hargaGas;
-            if (!isset($pricingPeriods[$priceKey])) {
-                $pricingPeriods[$priceKey] = [
-                    'harga' => $hargaGas,
-                    'volume' => 0,
-                    'dates' => [],
-                    'start_date' => $waktuAwal,
-                    'end_date' => $waktuAwal
-                ];
-            }
-            
-            $pricingPeriods[$priceKey]['volume'] += $volumeSm3;
-            $pricingPeriods[$priceKey]['dates'][] = $waktuAwal;
-            
-            // Update date range for this price period
-            if ($waktuAwal->lt($pricingPeriods[$priceKey]['start_date'])) {
-                $pricingPeriods[$priceKey]['start_date'] = $waktuAwal;
-            }
-            if ($waktuAwal->gt($pricingPeriods[$priceKey]['end_date'])) {
-                $pricingPeriods[$priceKey]['end_date'] = $waktuAwal;
-            }
-            
-            $totalVolume += $volumeSm3;
-        }
-        
-        // Sort pricing periods by start date
-        uasort($pricingPeriods, function($a, $b) {
-            return $a['start_date']->timestamp - $b['start_date']->timestamp;
-        });
-        
-        // Create rows for each pricing period
-        $rowNumber = 1;
-        foreach ($pricingPeriods as $period) {
-            $biayaPemakaian = $period['volume'] * $period['harga'];
-            $totalBiaya += $biayaPemakaian;
-            
-            // Format periode based on date range
-            if ($period['start_date']->format('Y-m-d') === $period['end_date']->format('Y-m-d')) {
-                $periodePemakaian = $period['start_date']->format('d F Y');
-            } else {
-                $periodePemakaian = $period['start_date']->format('d F Y') . ' - ' . $period['end_date']->format('d F Y');
-            }
-            
-            $pemakaianGas[] = [
-                'no' => $rowNumber++,
-                'periode_pemakaian' => $periodePemakaian,
-                'volume_sm3' => $period['volume'],
-                'harga_gas' => $period['harga'],
-                'biaya_pemakaian' => $biayaPemakaian
-            ];
-        }
+        // Data untuk tampilan berdasarkan input manual
+        $pemakaianGas = [
+            [
+                'no' => 1,
+                'periode_pemakaian' => $proformaInvoice->period_formatted,
+                'volume_sm3' => $proformaInvoice->total_volume,
+                'harga_gas' => $proformaInvoice->price_per_sm3,
+                'biaya_pemakaian' => $proformaInvoice->total_amount,
+                'volume_per_day' => $proformaInvoice->volume_per_day,
+                'total_days' => $proformaInvoice->total_days,
+            ]
+        ];
         
         // Generate ID Pelanggan (contoh format)
-        $idPelanggan = sprintf('03C%04d', $customer->id);
+        $idPelanggan = $proformaInvoice->id_pelanggan;
         
-        // Bulatkan total biaya untuk konsistensi dengan tampilan
-        $totalBiaya = round($totalBiaya);
+        // Total dari data yang sudah disimpan
+        $totalVolume = $proformaInvoice->total_volume;
+        $totalBiaya = $proformaInvoice->total_amount;
         
         // Terbilang untuk total tagihan
         $terbilang = $this->terbilang($totalBiaya);
@@ -344,7 +227,9 @@ class ProformaInvoiceController extends Controller
             'total_volume' => $totalVolume,
             'total_biaya' => $totalBiaya,
             'id_pelanggan' => $idPelanggan,
-            'terbilang' => $terbilang
+            'terbilang' => $terbilang,
+            'saldo_per_tanggal' => $saldoPerTanggal,
+            'tanggal_saldo' => $proformaInvoice->period_start_date
         ];
 
         return view('proforma-invoices.show', $data);
@@ -365,21 +250,54 @@ class ProformaInvoiceController extends Controller
     public function update(Request $request, ProformaInvoice $proformaInvoice)
     {
         $request->validate([
-            'proforma_number' => 'required|string|max:50',
+            'proforma_number' => 'required|string|max:50|unique:proforma_invoices,proforma_number,' . $proformaInvoice->id,
             'proforma_date' => 'required|date',
             'due_date' => 'required|date|after_or_equal:proforma_date',
             'period_start_date' => 'required|date',
             'period_end_date' => 'required|date|after_or_equal:period_start_date',
             'validity_date' => 'nullable|date|after_or_equal:proforma_date',
+            'volume_per_day' => 'required|numeric|min:0',
+            'price_per_sm3' => 'required|numeric|min:0',
             'status' => 'required|in:draft,sent,expired,converted',
             'no_kontrak' => 'required|string|max:50',
             'id_pelanggan' => 'required|string|max:20',
             'description' => 'nullable|string',
         ]);
 
+        // Validasi periode maksimal 60 hari
+        $startDate = Carbon::parse($request->period_start_date);
+        $endDate = Carbon::parse($request->period_end_date);
+        $diffDays = $startDate->diffInDays($endDate); // Tanpa +1, jadi exclusive
+        
+        if ($diffDays > 60) {
+            return back()->withErrors(['period_end_date' => 'Periode maksimal adalah 60 hari.'])->withInput();
+        }
+        
+        // Minimal harus 1 hari
+        if ($diffDays < 1) {
+            return back()->withErrors(['period_end_date' => 'Periode minimal adalah 1 hari.'])->withInput();
+        }
+
+        // Perhitungan berdasarkan input manual
+        $volumePerDay = (float) $request->volume_per_day;
+        $pricePerSm3 = (float) $request->price_per_sm3;
+        $totalDays = $diffDays;
+        
+        // Kalkulasi total volume dan biaya
+        $totalVolume = $volumePerDay * $totalDays;
+        $totalBiaya = $totalVolume * $pricePerSm3;
+        
+        // Bulatkan total biaya untuk konsistensi
+        $totalBiaya = round($totalBiaya);
+
         $proformaInvoice->proforma_number = $request->proforma_number;
         $proformaInvoice->proforma_date = $request->proforma_date;
         $proformaInvoice->due_date = $request->due_date;
+        $proformaInvoice->total_amount = $totalBiaya;
+        $proformaInvoice->total_volume = $totalVolume;
+        $proformaInvoice->volume_per_day = $volumePerDay;
+        $proformaInvoice->price_per_sm3 = $pricePerSm3;
+        $proformaInvoice->total_days = $totalDays;
         $proformaInvoice->period_start_date = $request->period_start_date;
         $proformaInvoice->period_end_date = $request->period_end_date;
         $proformaInvoice->validity_date = $request->validity_date;
@@ -416,8 +334,63 @@ class ProformaInvoiceController extends Controller
     }
     
     /**
-     * Convert number to Indonesian words.
+     * Get customer balance on specific date
      */
+    private function getCustomerBalanceOnDate(User $customer, $date)
+    {
+        $targetDate = Carbon::parse($date);
+        
+        // Get all deposits until target date
+        $totalDeposits = 0;
+        $deposits = is_string($customer->deposit_history) 
+            ? json_decode($customer->deposit_history, true) 
+            : $customer->deposit_history;
+            
+        if (is_array($deposits)) {
+            foreach ($deposits as $deposit) {
+                if (isset($deposit['date'])) {
+                    $depositDate = Carbon::parse($deposit['date']);
+                    if ($depositDate->lte($targetDate)) {
+                        $totalDeposits += floatval($deposit['amount'] ?? 0);
+                    }
+                }
+            }
+        }
+        
+        // Get all purchases until target date
+        $totalPurchases = 0;
+        $allDataPencatatan = $customer->dataPencatatan()->get();
+        
+        foreach ($allDataPencatatan as $purchaseItem) {
+            $itemDataInput = is_string($purchaseItem->data_input)
+                ? json_decode($purchaseItem->data_input, true)
+                : $purchaseItem->data_input;
+                
+            if (empty($itemDataInput) || empty($itemDataInput['pembacaan_awal']['waktu'])) {
+                continue;
+            }
+            
+            $itemWaktuAwal = Carbon::parse($itemDataInput['pembacaan_awal']['waktu']);
+            
+            if ($itemWaktuAwal->lte($targetDate)) {
+                $volumeFlowMeter = floatval($itemDataInput['volume_flow_meter'] ?? 0);
+                
+                // Get pricing info for this specific date
+                $itemYearMonth = $itemWaktuAwal->format('Y-m');
+                $itemPricingInfo = $customer->getPricingForYearMonth($itemYearMonth, $itemWaktuAwal);
+                
+                // Calculate volume and price
+                $itemKoreksiMeter = floatval($itemPricingInfo['koreksi_meter'] ?? $customer->koreksi_meter);
+                $itemHargaPerM3 = floatval($itemPricingInfo['harga_per_meter_kubik'] ?? $customer->harga_per_meter_kubik);
+                $itemVolumeSm3 = $volumeFlowMeter * $itemKoreksiMeter;
+                $itemHarga = $itemVolumeSm3 * $itemHargaPerM3;
+                
+                $totalPurchases += $itemHarga;
+            }
+        }
+        
+        return $totalDeposits - $totalPurchases;
+    }
     private function terbilang($angka) {
         $angka = abs($angka);
         $baca = array('', 'satu', 'dua', 'tiga', 'empat', 'lima', 'enam', 'tujuh', 'delapan', 'sembilan', 'sepuluh', 'sebelas');

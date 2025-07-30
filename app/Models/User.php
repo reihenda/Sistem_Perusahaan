@@ -30,6 +30,9 @@ class User extends Authenticatable
         'email',
         'password',
         'role',
+        'no_kontrak',
+        'alamat',
+        'nomor_tlpn',
         // Tambahkan kolom baru
         'total_deposit',
         'total_purchases',

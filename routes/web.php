@@ -257,6 +257,7 @@ Route::middleware(['auth', 'role:admin,superadmin'])->group(function () {
     Route::get('/proforma-invoices/create/{customer}', [ProformaInvoiceController::class, 'create'])->name('proforma-invoices.create');
     Route::post('/proforma-invoices/{customer}', [ProformaInvoiceController::class, 'store'])->name('proforma-invoices.store');
     Route::post('/proforma-invoices/{customer}/generate-number', [ProformaInvoiceController::class, 'generateProformaNumber'])->name('proforma-invoices.generate-number');
+    Route::get('/proforma-invoices/{customer}/balance', [ProformaInvoiceController::class, 'getCustomerBalance'])->name('proforma-invoices.get-balance');
     Route::get('/proforma-invoices/{proformaInvoice}', [ProformaInvoiceController::class, 'show'])->name('proforma-invoices.show');
     Route::get('/proforma-invoices/{proformaInvoice}/edit', [ProformaInvoiceController::class, 'edit'])->name('proforma-invoices.edit');
     Route::put('/proforma-invoices/{proformaInvoice}', [ProformaInvoiceController::class, 'update'])->name('proforma-invoices.update');

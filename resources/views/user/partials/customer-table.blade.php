@@ -22,11 +22,7 @@
                     @php $currentRole = $user->role; @endphp
                     <tr class="bg-light">
                         <td colspan="9" class="font-weight-bold">
-                            @if($user->role == 'superadmin')
-                                <i class="fas fa-crown text-danger mr-2"></i> Superadmin
-                            @elseif($user->role == 'admin')
-                                <i class="fas fa-user-shield text-primary mr-2"></i> Admin
-                            @elseif($user->role == 'customer')
+                            @if($user->role == 'customer')
                                 <i class="fas fa-user-tie text-success mr-2"></i> Customer
                             @elseif($user->role == 'fob')
                                 <i class="fas fa-truck text-warning mr-2"></i> FOB
@@ -44,9 +40,7 @@
                     <td>{{ $user->nomor_tlpn ?? '-' }}</td>
                     <td>
                         <span class="badge 
-                            @if($user->role == 'superadmin') badge-danger
-                            @elseif($user->role == 'admin') badge-primary
-                            @elseif($user->role == 'customer') badge-success
+                            @if($user->role == 'customer') badge-success
                             @elseif($user->role == 'fob') badge-warning
                             @else badge-info
                             @endif">
@@ -87,7 +81,7 @@
             @endforeach
             @if(count($users) == 0)
                 <tr>
-                    <td colspan="9" class="text-center">Tidak ada data user yang ditemukan</td>
+                    <td colspan="9" class="text-center">Tidak ada data customer/FOB yang ditemukan</td>
                 </tr>
             @endif
         </tbody>
