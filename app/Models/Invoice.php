@@ -11,6 +11,7 @@ class Invoice extends Model
 
     protected $fillable = [
         'customer_id',
+        'billing_id',
         'invoice_number',
         'invoice_date',
         'due_date',
@@ -39,7 +40,13 @@ class Invoice extends Model
         return $this->belongsTo(User::class, 'customer_id');
     }
 
-    // Mendapatkan format nomor invoice
+    // Relasi dengan Billing
+    public function billing()
+    {
+        return $this->belongsTo(Billing::class, 'billing_id');
+    }
+
+    // Mendapatkan format nomor invoice (sama dengan billing)
     public static function generateInvoiceNumber($customer, $date = null, $periodType = 'monthly', $customStartDate = null)
     {
         // Untuk periode custom, gunakan custom start date
@@ -49,15 +56,21 @@ class Invoice extends Model
             $date = $date ? \Carbon\Carbon::parse($date) : now();
         }
         
-        // Format: 'no'/MPS/INV-'CUSTOMER'/'tgl'/'thn'
-        // Misalnya: 001/MPS/INV-NOMI/12/2023
+        // Format invoice number sama dengan billing (hanya prefix yang berbeda)
         $customerCode = substr(strtoupper($customer->name), 0, 4);
         
-        // Dapatkan nomor urut invoice untuk customer ini
-        $count = self::where('customer_id', $customer->id)
-                    ->whereMonth('created_at', $date->month)
-                    ->whereYear('created_at', $date->year)
-                    ->count() + 1;
+        // Dapatkan nomor urut gabungan untuk customer ini (billing + invoice)
+        $billingCount = \App\Models\Billing::where('customer_id', $customer->id)
+                                           ->whereMonth('created_at', $date->month)
+                                           ->whereYear('created_at', $date->year)
+                                           ->count();
+                           
+        $invoiceCount = self::where('customer_id', $customer->id)
+                           ->whereMonth('created_at', $date->month)
+                           ->whereYear('created_at', $date->year)
+                           ->count();
+        
+        $count = $billingCount + $invoiceCount + 1;
         
         $invoiceNumber = sprintf('%03d/MPS/INV-%s/%s/%s', 
             $count,
@@ -67,5 +80,11 @@ class Invoice extends Model
         );
         
         return $invoiceNumber;
+    }
+
+    // Generate nomor yang sama dengan pasangan billing
+    public static function generateSyncedNumber($customer, $billingNumber)
+    {
+        return str_replace('/BIL-', '/INV-', $billingNumber);
     }
 }

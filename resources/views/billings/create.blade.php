@@ -1,3 +1,39 @@
+@push('styles')
+<style>
+.card.border-primary {
+    border-color: #007bff !important;
+}
+
+.card.border-primary .card-header.bg-primary {
+    background-color: #007bff !important;
+    border-color: #007bff !important;
+}
+
+.period-section {
+    transition: all 0.3s ease;
+}
+
+.btn-group .btn {
+    border-radius: 0;
+}
+
+.btn-group .btn:first-child {
+    border-top-left-radius: 0.25rem;
+    border-bottom-left-radius: 0.25rem;
+}
+
+.btn-group .btn:last-child {
+    border-top-right-radius: 0.25rem;
+    border-bottom-right-radius: 0.25rem;
+}
+
+.form-control:focus {
+    border-color: #007bff;
+    box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
+}
+</style>
+@endpush
+
 @extends('layouts.app')
 
 @section('title', 'Buat Billing Baru')
@@ -21,6 +57,92 @@
                 </div>
             @endif
 
+            <!-- PERIODE PENCATATAN - DILETAKKAN PALING ATAS -->
+            <div class="row mb-4">
+                <div class="col-12">
+                    <div class="card border-primary">
+                        <div class="card-header bg-primary text-white">
+                            <h6 class="mb-0"><i class="fas fa-calendar-alt mr-2"></i>Periode Pencatatan</h6>
+                        </div>
+                        <div class="card-body">
+                            <!-- Tab Buttons untuk Tipe Periode -->
+                            <div class="mb-3">
+                                <div class="btn-group" role="group" aria-label="Period Type">
+                                    <button type="button" class="btn btn-outline-primary period-btn" id="monthlyPeriodBtn" data-period="monthly">
+                                        <i class="fas fa-calendar mr-1"></i>Periode Bulanan
+                                    </button>
+                                    <button type="button" class="btn btn-outline-primary period-btn" id="customPeriodBtn" data-period="custom">
+                                        <i class="fas fa-calendar-week mr-1"></i>Periode Khusus
+                                    </button>
+                                </div>
+                                <input type="hidden" name="period_type" id="period_type" value="{{ old('period_type', 'monthly') }}">
+                            </div>
+                            
+                            <!-- Periode Bulanan -->
+                            <div id="monthly-period" class="period-section">
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <label for="month"><strong>Bulan</strong></label>
+                                        <select class="form-control @error('month') is-invalid @enderror" name="month">
+                                            @for ($i = 1; $i <= 12; $i++)
+                                                <option value="{{ $i }}" {{ old('month', $month) == $i ? 'selected' : '' }}>
+                                                    {{ date('F', mktime(0, 0, 0, $i, 1)) }}
+                                                </option>
+                                            @endfor
+                                        </select>
+                                        @error('month')
+                                            <div class="invalid-feedback">{{ $message }}</div>
+                                        @enderror
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label for="year"><strong>Tahun</strong></label>
+                                        <select class="form-control @error('year') is-invalid @enderror" name="year">
+                                            @for ($i = date('Y') - 3; $i <= date('Y') + 1; $i++)
+                                                <option value="{{ $i }}" {{ old('year', $year) == $i ? 'selected' : '' }}>
+                                                    {{ $i }}
+                                                </option>
+                                            @endfor
+                                        </select>
+                                        @error('year')
+                                            <div class="invalid-feedback">{{ $message }}</div>
+                                        @enderror
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Periode Khusus -->
+                            <div id="custom-period" class="period-section" style="display: none;">
+                                <div class="row">
+                                    <div class="col-md-5">
+                                        <label for="custom_start_date"><strong>Dari Tanggal</strong></label>
+                                        <input type="date" class="form-control @error('custom_start_date') is-invalid @enderror" 
+                                            id="custom_start_date" name="custom_start_date" value="{{ old('custom_start_date') }}">
+                                        @error('custom_start_date')
+                                            <div class="invalid-feedback">{{ $message }}</div>
+                                        @enderror
+                                    </div>
+                                    <div class="col-md-5">
+                                        <label for="custom_end_date"><strong>Sampai Tanggal</strong></label>
+                                        <input type="date" class="form-control @error('custom_end_date') is-invalid @enderror" 
+                                            id="custom_end_date" name="custom_end_date" value="{{ old('custom_end_date') }}">
+                                        @error('custom_end_date')
+                                            <div class="invalid-feedback">{{ $message }}</div>
+                                        @enderror
+                                    </div>
+                                    <div class="col-md-2">
+                                        <label>&nbsp;</label>
+                                        <div class="form-control-plaintext">
+                                            <small id="date-range-info" class="text-muted"></small>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- DETAIL BILLING -->
             <div class="row">
                 <div class="col-md-6">
                     <div class="form-group">
@@ -47,88 +169,14 @@
                 </div>
             </div>
 
-            <div class="row">
-                <div class="col-md-12">
-                    <div class="form-group">
-                        <label>Periode Pencatatan</label>
-                        
-                        <!-- Tab Buttons untuk Tipe Periode -->
-                        <div class="mb-3">
-                            <div class="btn-group" role="group" aria-label="Period Type">
-                                <button type="button" class="btn btn-outline-primary period-btn" id="monthlyPeriodBtn" data-period="monthly">
-                                    Periode Bulanan
-                                </button>
-                                <button type="button" class="btn btn-outline-primary period-btn" id="customPeriodBtn" data-period="custom">
-                                    Periode Khusus
-                                </button>
-                            </div>
-                            <input type="hidden" name="period_type" id="period_type" value="{{ old('period_type', 'monthly') }}">
-                        </div>
-                        
-                        <!-- Periode Bulanan -->
-                        <div id="monthly-period" class="period-section">
-                            <div class="row">
-                                <div class="col-md-6">
-                                    <select class="form-control @error('month') is-invalid @enderror" name="month">
-                                        @for ($i = 1; $i <= 12; $i++)
-                                            <option value="{{ $i }}" {{ old('month', $month) == $i ? 'selected' : '' }}>
-                                                {{ date('F', mktime(0, 0, 0, $i, 1)) }}
-                                            </option>
-                                        @endfor
-                                    </select>
-                                    @error('month')
-                                        <div class="invalid-feedback">{{ $message }}</div>
-                                    @enderror
-                                </div>
-                                <div class="col-md-6">
-                                    <select class="form-control @error('year') is-invalid @enderror" name="year">
-                                        @for ($i = date('Y') - 3; $i <= date('Y') + 1; $i++)
-                                            <option value="{{ $i }}" {{ old('year', $year) == $i ? 'selected' : '' }}>
-                                                {{ $i }}
-                                            </option>
-                                        @endfor
-                                    </select>
-                                    @error('year')
-                                        <div class="invalid-feedback">{{ $message }}</div>
-                                    @enderror
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <!-- Periode Khusus -->
-                        <div id="custom-period" class="period-section" style="display: none;">
-                            <div class="row">
-                                <div class="col-md-5">
-                                    <label for="custom_start_date">Dari Tanggal</label>
-                                    <input type="date" class="form-control @error('custom_start_date') is-invalid @enderror" 
-                                        id="custom_start_date" name="custom_start_date" value="{{ old('custom_start_date') }}">
-                                    @error('custom_start_date')
-                                        <div class="invalid-feedback">{{ $message }}</div>
-                                    @enderror
-                                </div>
-                                <div class="col-md-5">
-                                    <label for="custom_end_date">Sampai Tanggal</label>
-                                    <input type="date" class="form-control @error('custom_end_date') is-invalid @enderror" 
-                                        id="custom_end_date" name="custom_end_date" value="{{ old('custom_end_date') }}">
-                                    @error('custom_end_date')
-                                        <div class="invalid-feedback">{{ $message }}</div>
-                                    @enderror
-                                </div>
-                                <div class="col-md-2">
-                                    <label>&nbsp;</label>
-                                    <div class="form-control-plaintext">
-                                        <small id="date-range-info" class="text-muted"></small>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
+
             
             <div class="alert alert-info">
-                <p class="mb-0">
+                <p class="mb-2">
                     <i class="fas fa-info-circle mr-1"></i> Semua perhitungan biaya, deposit, dan saldo akan dihitung otomatis berdasarkan data pencatatan dan deposit untuk periode yang dipilih.
+                </p>
+                <p class="mb-0">
+                    <i class="fas fa-sync mr-1"></i> <strong>Invoice akan dibuat secara otomatis</strong> dengan nomor yang sama saat Anda menyimpan billing ini.
                 </p>
             </div>
         </div>

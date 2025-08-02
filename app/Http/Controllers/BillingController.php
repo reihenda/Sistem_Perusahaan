@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Billing;
+use App\Models\Invoice;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Carbon\Carbon;
@@ -298,34 +299,77 @@ class BillingController extends Controller
             $amountToPay = $totalBiaya;
         }
 
-        // Buat billing baru
-        $billing = new Billing();
-        $billing->customer_id = $customer->id;
-        $billing->billing_number = $request->billing_number;
-        $billing->billing_date = $request->billing_date;
-        $billing->total_volume = $totalVolume;
-        $billing->total_amount = $totalBiaya;
-        $billing->total_deposit = $totalDeposit;
-        $billing->previous_balance = $prevMonthBalance;
-        $billing->current_balance = $currentMonthBalance;
-        $billing->amount_to_pay = $amountToPay;
-        $billing->period_type = $request->period_type;
+        // Buat billing dan invoice secara bersamaan dalam database transaction
+        DB::beginTransaction();
         
-        if ($request->period_type === 'custom') {
-            $billing->custom_start_date = $request->custom_start_date;
-            $billing->custom_end_date = $request->custom_end_date;
-            // Set period month/year berdasarkan start date untuk kompatibilitas
-            $billing->period_month = $startDate->month;
-            $billing->period_year = $startDate->year;
-        } else {
-            $billing->period_month = $request->month;
-            $billing->period_year = $request->year;
-            $billing->custom_start_date = null;
-            $billing->custom_end_date = null;
+        try {
+            // 1. Buat billing terlebih dahulu
+            $billing = new Billing();
+            $billing->customer_id = $customer->id;
+            $billing->billing_number = $request->billing_number;
+            $billing->billing_date = $request->billing_date;
+            $billing->total_volume = $totalVolume;
+            $billing->total_amount = $totalBiaya;
+            $billing->total_deposit = $totalDeposit;
+            $billing->previous_balance = $prevMonthBalance;
+            $billing->current_balance = $currentMonthBalance;
+            $billing->amount_to_pay = $amountToPay;
+            $billing->period_type = $request->period_type;
+            
+            if ($request->period_type === 'custom') {
+                $billing->custom_start_date = $request->custom_start_date;
+                $billing->custom_end_date = $request->custom_end_date;
+                $billing->period_month = $startDate->month;
+                $billing->period_year = $startDate->year;
+            } else {
+                $billing->period_month = $request->month;
+                $billing->period_year = $request->year;
+                $billing->custom_start_date = null;
+                $billing->custom_end_date = null;
+            }
+            
+            $billing->save();
+            
+            // 2. Auto-create invoice dengan nomor yang sama
+            $invoice = new Invoice();
+            $invoice->customer_id = $customer->id;
+            $invoice->billing_id = $billing->id;
+            $invoice->invoice_number = Invoice::generateSyncedNumber($customer, $billing->billing_number);
+            $invoice->invoice_date = $billing->billing_date;
+            $invoice->due_date = Carbon::parse($billing->billing_date)->addDays(10); // Default 10 hari
+            $invoice->total_amount = $totalBiaya;
+            $invoice->total_volume = $totalVolume;
+            $invoice->status = 'unpaid';
+            $invoice->description = 'Pemakaian CNG';
+            $invoice->no_kontrak = $customer->no_kontrak ?: ('AUTO-' . date('Y')); // Gunakan dari customer atau default
+            $invoice->id_pelanggan = sprintf('03C%04d', $customer->id);
+            $invoice->period_type = $request->period_type;
+            
+            if ($request->period_type === 'custom') {
+                $invoice->custom_start_date = $request->custom_start_date;
+                $invoice->custom_end_date = $request->custom_end_date;
+                $invoice->period_month = $startDate->month;
+                $invoice->period_year = $startDate->year;
+            } else {
+                $invoice->period_month = $request->month;
+                $invoice->period_year = $request->year;
+                $invoice->custom_start_date = null;
+                $invoice->custom_end_date = null;
+            }
+            
+            $invoice->save();
+            
+            // 3. Update billing dengan invoice_id
+            $billing->invoice_id = $invoice->id;
+            $billing->save();
+            
+            DB::commit();
+            
+        } catch (\Exception $e) {
+            DB::rollback();
+            \Log::error('Error creating billing and invoice sync: ' . $e->getMessage());
+            return back()->withErrors(['error' => 'Gagal membuat billing dan invoice: ' . $e->getMessage()])->withInput();
         }
-        
-        $billing->status = 'unpaid';
-        $billing->save();
         
         // FINAL DEBUG: Log billing results
         \Log::info('Billing created successfully', [
@@ -339,7 +383,7 @@ class BillingController extends Controller
         ]);
 
         return redirect()->route('billings.show', $billing)
-            ->with('success', 'Billing berhasil dibuat.');
+            ->with('success', 'Billing dan Invoice berhasil dibuat secara bersamaan.');
     }
 
     /**
@@ -605,16 +649,33 @@ class BillingController extends Controller
         $request->validate([
             'billing_number' => 'required|string|max:50',
             'billing_date' => 'required|date',
-            'status' => 'required|in:paid,unpaid,partial,cancelled',
         ]);
 
-        $billing->billing_number = $request->billing_number;
-        $billing->billing_date = $request->billing_date;
-        $billing->status = $request->status;
-        $billing->save();
+        DB::beginTransaction();
+        
+        try {
+            // Update billing
+            $billing->billing_number = $request->billing_number;
+            $billing->billing_date = $request->billing_date;
+            $billing->save();
+            
+            // Sync update ke invoice jika ada
+            if ($billing->invoice) {
+                $billing->invoice->invoice_number = Invoice::generateSyncedNumber($billing->customer, $billing->billing_number);
+                $billing->invoice->invoice_date = $billing->billing_date;
+                $billing->invoice->save();
+            }
+            
+            DB::commit();
+            
+        } catch (\Exception $e) {
+            DB::rollback();
+            \Log::error('Error updating billing and invoice sync: ' . $e->getMessage());
+            return back()->withErrors(['error' => 'Gagal memperbarui billing dan invoice: ' . $e->getMessage()])->withInput();
+        }
 
         return redirect()->route('billings.show', $billing)
-            ->with('success', 'Billing berhasil diperbarui.');
+            ->with('success', 'Billing dan Invoice berhasil diperbarui.');
     }
 
     /**
@@ -622,9 +683,27 @@ class BillingController extends Controller
      */
     public function destroy(Billing $billing)
     {
-        $billing->delete();
+        DB::beginTransaction();
+        
+        try {
+            // Hapus invoice terkait jika ada
+            if ($billing->invoice) {
+                $billing->invoice->delete();
+            }
+            
+            // Hapus billing
+            $billing->delete();
+            
+            DB::commit();
+            
+        } catch (\Exception $e) {
+            DB::rollback();
+            \Log::error('Error deleting billing and invoice sync: ' . $e->getMessage());
+            return back()->withErrors(['error' => 'Gagal menghapus billing dan invoice: ' . $e->getMessage()]);
+        }
+        
         return redirect()->route('billings.index')
-            ->with('success', 'Billing berhasil dihapus.');
+            ->with('success', 'Billing dan Invoice berhasil dihapus.');
     }
 
     /**

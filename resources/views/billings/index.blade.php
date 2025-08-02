@@ -36,7 +36,6 @@
                         <th>Total Biaya</th>
                         <th>Sisa Saldo</th>
                         <th>Harus Dibayar</th>
-                        <th>Status</th>
                         <th style="width: 180px">Aksi</th>
                     </tr>
                 </thead>
@@ -60,17 +59,6 @@
                                 @endif
                             </td>
                             <td>
-                                @if($billing->status == 'paid')
-                                    <span class="badge badge-success">Lunas</span>
-                                @elseif($billing->status == 'partial')
-                                    <span class="badge badge-warning">Sebagian</span>
-                                @elseif($billing->status == 'cancelled')
-                                    <span class="badge badge-danger">Dibatalkan</span>
-                                @else
-                                    <span class="badge badge-secondary">Belum Lunas</span>
-                                @endif
-                            </td>
-                            <td>
                                 <div class="btn-group">
                                     <a href="{{ route('billings.show', $billing) }}" class="btn btn-sm btn-info">
                                         <i class="fas fa-eye"></i>
@@ -87,7 +75,7 @@
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="10" class="text-center">Belum ada data billing</td>
+                            <td colspan="8" class="text-center">Belum ada data billing</td>
                         </tr>
                     @endforelse
                 </tbody>

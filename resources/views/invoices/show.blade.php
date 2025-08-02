@@ -21,6 +21,11 @@
                             </small>
                         </div>
                         <div class="btn-group">
+                            @if($invoice->billing)
+                                <a href="{{ route('billings.show', $invoice->billing) }}" class="btn btn-sm btn-info" title="Lihat Billing Terkait">
+                                    <i class="fas fa-file-invoice-dollar mr-1"></i><span class="d-none d-sm-inline">Billing</span>
+                                </a>
+                            @endif
                             <button onclick="window.print();" class="btn btn-sm btn-light">
                                 <i class="fas fa-print mr-1"></i><span class="d-none d-sm-inline">Cetak</span>
                             </button>
@@ -69,10 +74,20 @@
                                             <td><span
                                                     class="text-primary font-weight-bold">{{ $invoice->invoice_number }}</span>
                                             </td>
-                                            <td rowspan="4" class="align-middle bg-light d-none d-md-table-cell kepada-cell" width="200px" style="width: 200px;">
+                                            <td rowspan="6" class="align-middle bg-light d-none d-md-table-cell kepada-cell" width="200px" style="width: 200px;">
                                                 <strong>Kepada :</strong><br>
                                                 <h5 class="font-weight-bold text-center text-primary">
                                                     {{ strtoupper($customer->name) }}</h5>
+                                                @if($customer->alamat)
+                                                    <p class="mb-1 text-muted small text-center">
+                                                        <i class="fas fa-map-marker-alt mr-1"></i>{{ $customer->alamat }}
+                                                    </p>
+                                                @endif
+                                                @if($customer->nomor_tlpn)
+                                                    <p class="mb-0 text-muted small text-center">
+                                                        <i class="fas fa-phone mr-1"></i>{{ $customer->nomor_tlpn }}
+                                                    </p>
+                                                @endif
                                             </td>
                                         </tr>
                                         <tr>
@@ -96,6 +111,16 @@
                                             <td>{{ $invoice->no_kontrak }}</td>
                                         </tr>
                                         <tr class="bg-light">
+                                            <td><strong>Alamat</strong></td>
+                                            <td>:</td>
+                                            <td>{{ $customer->alamat ?: 'Alamat tidak tersedia' }}</td>
+                                        </tr>
+                                        <tr>
+                                            <td><strong>Telepon</strong></td>
+                                            <td>:</td>
+                                            <td>{{ $customer->nomor_tlpn ?: 'Telepon tidak tersedia' }}</td>
+                                        </tr>
+                                        <tr class="bg-light">
                                             <td colspan="3"></td>
                                             <td class="d-none d-md-table-cell">
                                                 <div style="white-space: nowrap; display: flex; align-items: center;">
@@ -111,7 +136,17 @@
                                             <td colspan="3" class="text-center bg-light">
                                                 <strong>Kepada :</strong><br>
                                                 <h5 class="font-weight-bold text-primary mb-2">{{ strtoupper($customer->name) }}</h5>
-                                                <span class="badge badge-secondary p-2 mb-2">ID: {{ $invoice->id_pelanggan }}</span>
+                                                <span class="badge badge-secondary p-2 mb-2">ID: {{ $invoice->id_pelanggan }}</span><br>
+                                                @if($customer->alamat)
+                                                    <small class="text-muted d-block mb-1">
+                                                        <i class="fas fa-map-marker-alt mr-1"></i>{{ $customer->alamat }}
+                                                    </small>
+                                                @endif
+                                                @if($customer->nomor_tlpn)
+                                                    <small class="text-muted d-block">
+                                                        <i class="fas fa-phone mr-1"></i>{{ $customer->nomor_tlpn }}
+                                                    </small>
+                                                @endif
                                             </td>
                                         </tr>
                                     </table>
@@ -256,6 +291,42 @@
                                 </div>
                             </div>
                         </div>
+                        
+                        <!-- Informasi Sinkronisasi -->
+                        @if($invoice->billing)
+                        <div class="row mt-4 d-print-none">
+                            <div class="col-12">
+                                <div class="alert alert-info shadow-sm">
+                                    <div class="d-flex align-items-center">
+                                        <div class="mr-3">
+                                            <i class="fas fa-sync fa-2x"></i>
+                                        </div>
+                                        <div class="flex-grow-1">
+                                            <h6 class="alert-heading mb-1">Dokumen Tersinkronisasi</h6>
+                                            <p class="mb-0">Invoice ini terhubung dengan <strong>Billing {{ $invoice->billing->billing_number }}</strong>. 
+                                            @if($invoice->billing->period_type === 'monthly')
+                                                Saldo saat ini: 
+                                                <span class="badge badge-{{ $invoice->billing->current_balance < 0 ? 'danger' : 'success' }} ml-1">
+                                                    Rp {{ number_format($invoice->billing->current_balance, 0, ',', '.') }}
+                                                </span>
+                                            @else
+                                                Total yang harus dibayar: 
+                                                <span class="badge badge-warning ml-1">
+                                                    Rp {{ number_format($invoice->billing->amount_to_pay, 0, ',', '.') }}
+                                                </span>
+                                            @endif
+                                            </p>
+                                        </div>
+                                        <div>
+                                            <a href="{{ route('billings.show', $invoice->billing) }}" class="btn btn-sm btn-info">
+                                                <i class="fas fa-external-link-alt mr-1"></i>Lihat Billing
+                                            </a>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        @endif
                     </div>
                 </div>
             </div>

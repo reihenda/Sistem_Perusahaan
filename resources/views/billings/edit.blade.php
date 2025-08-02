@@ -47,27 +47,19 @@
                     </div>
                 </div>
             </div>
-
-            <div class="row">
-                <div class="col-md-6">
-                    <div class="form-group">
-                        <label for="status">Status Pembayaran</label>
-                        <select class="form-control @error('status') is-invalid @enderror" id="status" name="status">
-                            <option value="unpaid" {{ old('status', $billing->status) == 'unpaid' ? 'selected' : '' }}>Belum Lunas</option>
-                            <option value="partial" {{ old('status', $billing->status) == 'partial' ? 'selected' : '' }}>Sebagian</option>
-                            <option value="paid" {{ old('status', $billing->status) == 'paid' ? 'selected' : '' }}>Lunas</option>
-                            <option value="cancelled" {{ old('status', $billing->status) == 'cancelled' ? 'selected' : '' }}>Dibatalkan</option>
-                        </select>
-                        @error('status')
-                            <div class="invalid-feedback">{{ $message }}</div>
-                        @enderror
-                    </div>
-                </div>
-            </div>
             
             <div class="alert alert-info">
-                <p class="mb-0">
+                <p class="mb-2">
                     <i class="fas fa-info-circle mr-1"></i> Periode pencatatan dan kalkulasi biaya tidak dapat diubah. Jika ingin mengubah periode, silakan buat billing baru.
+                </p>
+                <p class="mb-0">
+                    <i class="fas fa-sync mr-1"></i> <strong>Status pembayaran dikelola melalui Invoice terkait.</strong> 
+                    @if($billing->invoice)
+                        Status saat ini: 
+                        <span class="badge badge-{{ $billing->invoice->status == 'paid' ? 'success' : ($billing->invoice->status == 'partial' ? 'warning' : 'danger') }} ml-1">
+                            {{ ucfirst($billing->invoice->status) }}
+                        </span>
+                    @endif
                 </p>
             </div>
         </div>

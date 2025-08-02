@@ -16,6 +16,11 @@
                                 {{ $periode_bulan }}</p>
                         </div>
                         <div class="btn-group">
+                            @if($billing->invoice)
+                                <a href="{{ route('invoices.show', $billing->invoice) }}" class="btn btn-sm btn-success" title="Lihat Invoice Terkait">
+                                    <i class="fas fa-file-invoice mr-1"></i><span class="d-none d-sm-inline">Invoice</span>
+                                </a>
+                            @endif
                             <button onclick="window.print();" class="btn btn-sm btn-light">
                                 <i class="fas fa-print mr-1"></i><span class="d-none d-sm-inline">Cetak</span>
                             </button>
@@ -33,11 +38,22 @@
                     <div class="row mb-4">
                         <div class="col-12 col-md-6 text-center text-md-left mb-3 mb-md-0">
                             <h3 class="text-primary mb-1">{{ $customer->name }}</h3>
-                            <p class="mb-0 text-muted"><i
-                                    class="fas fa-map-marker-alt mr-1"></i>{{ $customer->address ?? 'Alamat tidak tersedia' }}
-                            </p>
-                            <p class="mb-0 text-muted"><i
-                                    class="fas fa-phone mr-1"></i>{{ $customer->phone ?? 'Telepon tidak tersedia' }}</p>
+                            @if($customer->alamat)
+                                <p class="mb-1 text-muted"><i
+                                        class="fas fa-map-marker-alt mr-1"></i>{{ $customer->alamat }}
+                                </p>
+                            @else
+                                <p class="mb-1 text-muted"><i
+                                        class="fas fa-map-marker-alt mr-1"></i>Alamat tidak tersedia
+                                </p>
+                            @endif
+                            @if($customer->nomor_tlpn)
+                                <p class="mb-0 text-muted"><i
+                                        class="fas fa-phone mr-1"></i>{{ $customer->nomor_tlpn }}</p>
+                            @else
+                                <p class="mb-0 text-muted"><i
+                                        class="fas fa-phone mr-1"></i>Telepon tidak tersedia</p>
+                            @endif
                         </div>
 
                     </div>
@@ -287,6 +303,35 @@
                                     </div>
                                 </div>
                             </div>
+
+                            <!-- Informasi Sinkronisasi -->
+                            @if($billing->invoice)
+                            <div class="row mt-3">
+                                <div class="col-12">
+                                    <div class="alert alert-success shadow-sm">
+                                        <div class="d-flex align-items-center">
+                                            <div class="mr-3">
+                                                <i class="fas fa-sync fa-2x"></i>
+                                            </div>
+                                            <div class="flex-grow-1">
+                                                <h6 class="alert-heading mb-1">Dokumen Tersinkronisasi</h6>
+                                                <p class="mb-0">Billing ini terhubung dengan <strong>Invoice {{ $billing->invoice->invoice_number }}</strong>. 
+                                                Status pembayaran: 
+                                                <span class="badge badge-{{ $billing->invoice->status == 'paid' ? 'success' : ($billing->invoice->status == 'partial' ? 'warning' : 'danger') }} ml-1">
+                                                    {{ ucfirst($billing->invoice->status) }}
+                                                </span>
+                                                </p>
+                                            </div>
+                                            <div>
+                                                <a href="{{ route('invoices.show', $billing->invoice) }}" class="btn btn-sm btn-success">
+                                                    <i class="fas fa-external-link-alt mr-1"></i>Lihat Invoice
+                                                </a>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            @endif
 
 
                         </div>

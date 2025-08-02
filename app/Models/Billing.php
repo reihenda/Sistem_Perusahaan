@@ -11,6 +11,7 @@ class Billing extends Model
 
     protected $fillable = [
         'customer_id',
+        'invoice_id',
         'billing_number',
         'billing_date',
         'total_volume',
@@ -24,7 +25,6 @@ class Billing extends Model
         'period_type',
         'custom_start_date',
         'custom_end_date',
-        'status',
     ];
 
     // Relasi dengan User (Customer)
@@ -33,7 +33,13 @@ class Billing extends Model
         return $this->belongsTo(User::class, 'customer_id');
     }
 
-    // Mendapatkan format nomor billing
+    // Relasi dengan Invoice
+    public function invoice()
+    {
+        return $this->belongsTo(Invoice::class, 'invoice_id');
+    }
+
+    // Mendapatkan format nomor billing (sama dengan invoice)
     public static function generateBillingNumber($customer, $date = null, $periodType = 'monthly', $customStartDate = null)
     {
         // Untuk periode custom, gunakan custom start date
@@ -43,14 +49,21 @@ class Billing extends Model
             $date = $date ? \Carbon\Carbon::parse($date) : now();
         }
         
-        // Format billing number serupa dengan invoice
+        // Format billing number sama dengan invoice (hanya prefix yang berbeda)
         $customerCode = substr(strtoupper($customer->name), 0, 4);
         
-        // Dapatkan nomor urut billing untuk customer ini
-        $count = self::where('customer_id', $customer->id)
-                    ->whereMonth('created_at', $date->month)
-                    ->whereYear('created_at', $date->year)
-                    ->count() + 1;
+        // Dapatkan nomor urut gabungan untuk customer ini (billing + invoice)
+        $billingCount = self::where('customer_id', $customer->id)
+                           ->whereMonth('created_at', $date->month)
+                           ->whereYear('created_at', $date->year)
+                           ->count();
+                           
+        $invoiceCount = \App\Models\Invoice::where('customer_id', $customer->id)
+                                           ->whereMonth('created_at', $date->month)
+                                           ->whereYear('created_at', $date->year)
+                                           ->count();
+        
+        $count = $billingCount + $invoiceCount + 1;
         
         $billingNumber = sprintf('%03d/MPS/BIL-%s/%s/%s', 
             $count,
@@ -60,5 +73,11 @@ class Billing extends Model
         );
         
         return $billingNumber;
+    }
+
+    // Generate nomor yang sama dengan pasangan invoice
+    public static function generateSyncedNumber($customer, $invoiceNumber)
+    {
+        return str_replace('/INV-', '/BIL-', $invoiceNumber);
     }
 }
