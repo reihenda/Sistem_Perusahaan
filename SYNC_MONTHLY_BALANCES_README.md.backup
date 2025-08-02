@@ -1,0 +1,164 @@
+# Sinkronisasi Monthly Balances ke Users Table
+
+## 📋 Overview
+
+Implementasi sistem sinkronisasi real-time antara `closing_balance` dari tabel `monthly_customer_balances` ke kolom `monthly_balances` di tabel `users`. Data disimpan dalam format array JSON untuk akses yang mudah.
+
+## 🔄 Cara Kerja Sistem
+
+### **Automatic Sync (Real-time)**
+- **Observer Pattern**: `MonthlyCustomerBalanceObserver` mendeteksi perubahan pada `monthly_customer_balances`
+- **Event Triggers**: created, updated, deleted
+- **Kondisi Update**: Hanya sync ketika `closing_balance` berubah
+
+### **Format Data di Users Table**
+```json
+{
+    "2024-08": 150000.50,
+    "2024-09": 175000.75,
+    "2024-10": 200000.25
+}
+```
+
+## 🛠️ Components yang Diimplementasikan
+
+### 1. **MonthlyCustomerBalanceObserver**
+- Path: `app/Observers/MonthlyCustomerBalanceObserver.php`
+- Handle events: created, updated, deleted
+- Auto-sync ke `users.monthly_balances`
+
+### 2. **Enhanced RealtimeBalanceService**
+- Path: `app/Services/RealtimeBalanceService.php`
+- Method baru: `syncToUserMonthlyBalances()`
+- Dipanggil setelah update monthly balances
+
+### 3. **User Model Enhancement**
+- Path: `app/Models/User.php`
+- Helper methods:
+  - `getClosingBalanceForPeriod($yearMonth)`
+  - `getFormattedMonthlyBalances()`
+  - `getLatestClosingBalance()`
+
+### 4. **Console Command**
+- Path: `app/Console/Commands/SyncMonthlyBalancesToUsers.php`
+- Command: `php artisan balance:sync-monthly-to-users`
+- Options: `--customer_id=123`, `--dry-run`
+
+## 🚀 Cara Menggunakan
+
+### **Setup Initial (Migrasi Data Existing)**
+```bash
+# Dry run untuk melihat data yang akan di-sync
+php artisan balance:sync-monthly-to-users --dry-run
+
+# Sync semua customer
+php artisan balance:sync-monthly-to-users
+
+# Sync customer tertentu
+php artisan balance:sync-monthly-to-users --customer_id=123
+```
+
+### **Penggunaan di Code**
+```php
+// Ambil closing balance untuk periode tertentu
+$balance = $user->getClosingBalanceForPeriod('2024-08');
+echo "Saldo Agustus 2024: Rp " . number_format($balance, 2);
+
+// Ambil semua monthly balances yang diformat
+$monthlyBalances = $user->getFormattedMonthlyBalances();
+foreach ($monthlyBalances as $balance) {
+    echo "{$balance['period_label']}: {$balance['closing_balance_formatted']}\n";
+}
+
+// Ambil saldo terbaru
+$latestBalance = $user->getLatestClosingBalance();
+echo "Saldo Terbaru: Rp " . number_format($latestBalance, 2);
+
+// Akses langsung array
+$monthlyBalances = $user->monthly_balances;
+echo "Saldo Juni 2024: Rp " . number_format($monthlyBalances['2024-06'] ?? 0, 2);
+```
+
+## 🔧 Troubleshooting
+
+### **Check Sinkronisasi**
+```bash
+# Lihat log sinkronisasi
+tail -f storage/logs/laravel.log | grep "monthly_balances synced"
+
+# Manual sync jika diperlukan
+php artisan balance:sync-monthly-to-users --customer_id=123
+```
+
+### **Debug di Tinker**
+```php
+php artisan tinker
+
+// Check data di monthly_customer_balances
+$balances = App\Models\MonthlyCustomerBalance::where('customer_id', 123)->get();
+$balances->pluck('closing_balance', 'year_month');
+
+// Check data di users.monthly_balances
+$user = App\Models\User::find(123);
+$user->monthly_balances;
+
+// Manual trigger sync
+$observer = new App\Observers\MonthlyCustomerBalanceObserver();
+$balance = App\Models\MonthlyCustomerBalance::find(1);
+$observer->updated($balance);
+```
+
+## 📊 Data Flow
+
+```
+Data Pencatatan Changed
+       ↓
+RealtimeBalanceService::updateCustomerBalance()
+       ↓
+MonthlyCustomerBalance::updateBalance()
+       ↓
+MonthlyCustomerBalanceObserver::updated()
+       ↓
+users.monthly_balances updated
+```
+
+## ⚡ Performance Notes
+
+1. **Observer hanya trigger saat `closing_balance` berubah**
+2. **Batch update untuk efisiensi**
+3. **Log setiap sinkronisasi untuk monitoring**
+4. **Fallback ke real-time calculation jika data kosong**
+
+## 🔐 Backward Compatibility
+
+- **Sistem lama tetap berfungsi** sebagai fallback
+- **Data existing dapat di-migrate** dengan command
+- **Tidak mengubah API existing** di User model
+- **Add-on enhancement** tanpa breaking changes
+
+## 📝 Logging
+
+Setiap sinkronisasi akan dicatat di log dengan format:
+```
+[INFO] Observer: User monthly_balances synced {
+    "customer_id": 123,
+    "year_month": "2024-08",
+    "closing_balance": 150000.50,
+    "total_periods": 12,
+    "event": "updated"
+}
+```
+
+---
+
+## ✅ Status Implementation
+
+- [x] Observer Pattern untuk auto-sync
+- [x] Helper methods di User model
+- [x] Console command untuk migrasi
+- [x] Enhanced RealtimeBalanceService
+- [x] Error handling dan logging
+- [x] Backward compatibility
+- [x] Documentation lengkap
+
+**🎯 Sistem siap digunakan dan akan otomatis sync setiap ada perubahan data!**

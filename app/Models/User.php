@@ -70,7 +70,9 @@ class User extends Authenticatable
         'total_purchases' => 'decimal:2',
         'deposit_history' => 'array',
         'monthly_balances' => 'array',
-        'pricing_history' => 'array'
+        'pricing_history' => 'array',
+        'balance_last_updated_at' => 'datetime',
+        'use_realtime_calculation' => 'boolean'
     ];
 
     /**
@@ -441,6 +443,22 @@ class User extends Authenticatable
     }
 
     /**
+     * Relationship with Monthly Customer Balances
+     */
+    public function monthlyBalances()
+    {
+        return $this->hasMany(MonthlyCustomerBalance::class, 'customer_id');
+    }
+
+    /**
+     * Relationship with Transaction Calculations
+     */
+    public function transactionCalculations()
+    {
+        return $this->hasMany(TransactionCalculation::class, 'customer_id');
+    }
+
+    /**
      * Add deposit with optional custom date
      *
      * @param float $amount Deposit amount
@@ -742,5 +760,50 @@ class User extends Authenticatable
     public function isFOB()
     {
         return $this->role === self::ROLE_FOB;
+    }
+
+    /**
+     * Get closing balance untuk periode tertentu dari monthly_balances
+     */
+    public function getClosingBalanceForPeriod($yearMonth)
+    {
+        $monthlyBalances = $this->ensureArray($this->monthly_balances);
+        return floatval($monthlyBalances[$yearMonth] ?? 0);
+    }
+
+    /**
+     * Get all monthly balances sebagai array yang diformat
+     */
+    public function getFormattedMonthlyBalances()
+    {
+        $monthlyBalances = $this->ensureArray($this->monthly_balances);
+        $formatted = [];
+        
+        foreach ($monthlyBalances as $yearMonth => $closingBalance) {
+            $formatted[] = [
+                'year_month' => $yearMonth,
+                'period_label' => Carbon::createFromFormat('Y-m', $yearMonth)->format('F Y'),
+                'closing_balance' => floatval($closingBalance),
+                'closing_balance_formatted' => 'Rp ' . number_format($closingBalance, 2, ',', '.')
+            ];
+        }
+        
+        return $formatted;
+    }
+
+    /**
+     * Get latest closing balance
+     */
+    public function getLatestClosingBalance()
+    {
+        $monthlyBalances = $this->ensureArray($this->monthly_balances);
+        
+        if (empty($monthlyBalances)) {
+            return 0;
+        }
+        
+        // Ambil periode terbaru
+        $latestPeriod = max(array_keys($monthlyBalances));
+        return floatval($monthlyBalances[$latestPeriod] ?? 0);
     }
 }

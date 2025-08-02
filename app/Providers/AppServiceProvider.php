@@ -4,6 +4,8 @@ namespace App\Providers;
 
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Pagination\Paginator;
+use App\Models\MonthlyCustomerBalance;
+use App\Observers\MonthlyCustomerBalanceObserver;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -22,5 +24,8 @@ class AppServiceProvider extends ServiceProvider
     {
         // Menggunakan Bootstrap untuk tampilan paginasi
         Paginator::useBootstrap();
+        
+        // Register Observer untuk sinkronisasi monthly_balances
+        MonthlyCustomerBalance::observe(MonthlyCustomerBalanceObserver::class);
     }
 }

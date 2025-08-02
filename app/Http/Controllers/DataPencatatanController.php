@@ -245,6 +245,53 @@ class DataPencatatanController extends Controller
     // Menampilkan detail pencatatan untuk customer tertentu
     public function customerDetail(User $customer, Request $request)
     {
+        // ===== AUTO-INITIALIZE REAL-TIME SYSTEM =====
+        try {
+            // Cek apakah customer sudah di-initialize untuk sistem real-time
+            $needsInitialization = !$customer->use_realtime_calculation ||
+                                 !$customer->balance_last_updated_at ||
+                                 $customer->monthlyBalances()->count() === 0;
+
+            if ($needsInitialization) {
+                \Log::info('Auto-initializing real-time system for customer', [
+                    'customer_id' => $customer->id,
+                    'customer_name' => $customer->name,
+                    'reason' => 'Page accessed without initialization'
+                ]);
+
+                // Initialize sistem real-time
+                $realtimeService = app(\App\Services\RealtimeBalanceService::class);
+                $initResult = $realtimeService->initializeCustomer($customer->id);
+
+                if ($initResult) {
+                    // Reload customer untuk mendapatkan data terbaru
+                    $customer = User::findOrFail($customer->id);
+                    
+                    // Set flash message untuk memberitahu user
+                    \Session::flash('info', '✅ Sistem real-time balance telah diaktifkan untuk customer ini.');
+                    
+                    \Log::info('Auto-initialization successful', [
+                        'customer_id' => $customer->id,
+                        'monthly_balances_count' => $customer->monthlyBalances()->count(),
+                        'transaction_calculations_count' => $customer->transactionCalculations()->count()
+                    ]);
+                } else {
+                    \Log::warning('Auto-initialization failed', [
+                        'customer_id' => $customer->id,
+                        'customer_name' => $customer->name
+                    ]);
+                }
+            }
+        } catch (\Exception $e) {
+            \Log::error('Error during auto-initialization', [
+                'customer_id' => $customer->id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            // Continue with normal flow even if initialization fails
+        }
+        // ===== END AUTO-INITIALIZE =====
+
         // Get filter parameters
         $bulan = $request->input('bulan');
         $tahun = $request->input('tahun');
