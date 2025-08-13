@@ -110,7 +110,7 @@
                                 <div class="mobile-summary-card">
                                     <strong><i class="fas fa-tachometer-alt mr-1"></i> Tekanan </strong>
                                     <p class="text-muted mb-0">
-                                        {{ number_format(Auth::user()->tekanan_keluar ?? 0, 2) }}
+                                        {{ number_format($pricingInfo['tekanan_keluar'] ?? (Auth::user()->tekanan_keluar ?? 0), 2) }}
                                         Bar
                                     </p>
                                 </div>
@@ -119,7 +119,7 @@
                                 <div class="mobile-summary-card">
                                     <strong><i class="fas fa-thermometer-half mr-1"></i> Suhu</strong>
                                     <p class="text-muted mb-0">
-                                        {{ number_format(Auth::user()->suhu ?? 0, 2) }} °C
+                                        {{ number_format($pricingInfo['suhu'] ?? (Auth::user()->suhu ?? 0), 2) }} °C
                                     </p>
                                 </div>
                             </div>
@@ -127,7 +127,7 @@
                                 <div class="mobile-summary-card">
                                     <strong><i class="fas fa-tachometer-alt mr-1"></i> Koreksi Meter</strong>
                                     <p class="text-muted mb-0">
-                                        {{ number_format(Auth::user()->koreksi_meter ?? 1, 4) }}
+                                        {{ number_format($pricingInfo['koreksi_meter'] ?? (Auth::user()->koreksi_meter ?? 1), 4) }}
                                     </p>
                                 </div>
                             </div>
@@ -136,13 +136,13 @@
                                     <strong><i class="fas fa-money-bill-wave mr-1"></i> Harga per Sm³</strong>
                                     <p class="text-muted mb-0">
                                         Rp
-                                        {{ number_format(Auth::user()->harga_per_meter_kubik ?? 0, 2) }}
+                                        {{ number_format($pricingInfo['harga_per_meter_kubik'] ?? (Auth::user()->harga_per_meter_kubik ?? 0), 2) }}
                                     </p>
                                 </div>
                             </div>
                         </div>
                         <div class="row mt-3">
-                            <div class="col-md-4 col-sm-6">
+                            <div class="col-md-3 col-sm-6">
                                 <div class="mobile-summary-card">
                                     <strong><i class="fas fa-gas-pump mr-1"></i> Volume Periode Ini</strong>
                                     <p class="text-muted mb-0">
@@ -150,12 +150,72 @@
                                     </p>
                                 </div>
                             </div>
-                            <div class="col-md-4 col-sm-6">
+                            <div class="col-md-3 col-sm-6">
                                 <div class="mobile-summary-card">
                                     <strong><i class="fas fa-money-bill-wave mr-1"></i> Pembelian Periode Ini</strong>
                                     <p class="text-muted mb-0">
-                                        Rp {{ number_format($filteredTotalPurchases ?? 0, 2) }}
+                                        Rp {{ number_format($filteredTotalPurchases ?? 0, 0) }}
                                     </p>
+                                </div>
+                            </div>
+                            <div class="col-md-3 col-sm-6">
+                                <div class="mobile-summary-card">
+                                    <strong><i class="fas fa-wallet mr-1"></i> Deposit Periode Ini</strong>
+                                    <p class="text-muted mb-0">
+                                        Rp {{ number_format($filteredTotalDeposits ?? 0, 0) }}
+                                    </p>
+                                </div>
+                            </div>
+                            <div class="col-md-3 col-sm-6">
+                                <div class="mobile-summary-card">
+                                    <strong><i class="fas fa-balance-scale mr-1"></i> Saldo Periode Bulan Ini</strong>
+                                    <p class="text-muted mb-0">
+                                        Rp
+                                        {{ number_format($realTimeCurrentMonthBalance ?? 0, 0) }}
+                                        <span class="badge badge-success"
+                                            title="Saldo real-time untuk periode bulan yang dipilih"><i
+                                                class="fas fa-sync-alt"></i> Real-time</span>
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="row mt-3">
+                            <div class="col-md-6 col-sm-12">
+                                <div class="info-box enhanced-info-box"
+                                    style="background-color: #f8fafc; border: 1px solid #e2e8f0;">
+                                    <span class="info-box-icon bg-info"><i class="fas fa-calculator"></i></span>
+                                    <div class="info-box-content">
+                                        <span class="info-box-text d-flex justify-content-between align-items-center">
+                                            <span>Informasi Saldo Bulan
+                                                {{ \Carbon\Carbon::createFromDate($selectedTahun, $selectedBulan, 1)->format('F Y') }}</span>
+                                        </span>
+                                        <div class="table-responsive mt-2">
+                                            <table class="table table-sm table-bordered">
+                                                <tr>
+                                                    <td width="60%">Saldo Bulan Sebelumnya</td>
+                                                    <td>Rp {{ number_format($realTimePrevMonthBalance ?? 0, 0) }}</td>
+                                                </tr>
+                                                <tr>
+                                                    <td>+ Deposit Bulan Ini</td>
+                                                    <td>Rp {{ number_format($filteredTotalDeposits ?? 0, 0) }}</td>
+                                                </tr>
+                                                <tr>
+                                                    <td>- Pembelian Bulan Ini</td>
+                                                    <td>Rp {{ number_format($filteredTotalPurchases ?? 0, 0) }}</td>
+                                                </tr>
+                                                <tr class="font-weight-bold">
+                                                    <td>= Sisa Saldo Periode Bulan Ini</td>
+                                                    <td>Rp {{ number_format($realTimeCurrentMonthBalance ?? 0, 0) }}</td>
+                                                </tr>
+                                                <tr>
+                                                    <td colspan="2" class="text-muted"><small>* Saldo ini hanya
+                                                            menunjukkan saldo untuk periode
+                                                            {{ \Carbon\Carbon::createFromDate($selectedTahun, $selectedBulan, 1)->format('F Y') }}
+                                                            saja (Perhitungan Real-time)</small></td>
+                                                </tr>
+                                            </table>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         </div>

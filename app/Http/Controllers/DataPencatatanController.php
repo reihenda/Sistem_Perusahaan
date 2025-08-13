@@ -757,25 +757,25 @@ class DataPencatatanController extends Controller
 
         $dataPencatatan->save();
 
-        // Rekalkulasi total pembelian customer setelah menambah data baru
-        app(UserController::class)->rekalkulasiTotalPembelian($customer);
-
-        // Ambil waktu pembacaan awal untuk menentukan bulan mulai update saldo
-        $waktuPencatatan = Carbon::parse($sanitizedDataInput['pembacaan_awal']['waktu']);
-        $startMonth = $waktuPencatatan->format('Y-m');
-
-        // Update saldo bulanan mulai dari bulan data baru
-        $customer->updateMonthlyBalances($startMonth);
+        // MANUAL TRIGGER: Update customer balance (since Model Events are disabled)
+        try {
+            $customer->refreshTotalBalances();
+            \Log::info('Balance updated after data created', [
+                'customer_id' => $customer->id,
+                'data_id' => $dataPencatatan->id
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Error updating balance after data created', [
+                'customer_id' => $customer->id,
+                'error' => $e->getMessage()
+            ]);
+        }
         
         // Logging untuk debug
         \Log::info('Data pencatatan berhasil disimpan', [
             'record_id' => $dataPencatatan->id,
             'customer_id' => $customer->id,
-            'date' => $waktuPencatatan->format('Y-m-d H:i:s'),
-            'harga_final' => $dataPencatatan->harga_final,
-            'customer_total_purchases' => $customer->total_purchases,
-            'customer_total_deposit' => $customer->total_deposit,
-            'customer_saldo' => $customer->total_deposit - $customer->total_purchases
+            'harga_final' => $dataPencatatan->harga_final
         ]);
 
         return redirect()->route('data-pencatatan.customer-detail', [
@@ -943,24 +943,34 @@ class DataPencatatanController extends Controller
             'harga_difference' => $dataPencatatan->harga_final - $oldHarga
         ]);
 
-        // Rekalkulasi total pembelian customer setelah update data
-        app(UserController::class)->rekalkulasiTotalPembelian($customer);
-
-        // Ambil waktu pembacaan awal baru untuk menentukan bulan mulai update saldo
-        $waktuPencatatan = Carbon::parse($sanitizedDataInput['pembacaan_awal']['waktu']);
-        $newMonth = $waktuPencatatan->format('Y-m');
-
-        // Tentukan bulan mulai untuk update saldo (pilih yang lebih awal)
-        $startMonth = $oldMonth && $oldMonth < $newMonth ? $oldMonth : $newMonth;
-
-        // Update saldo bulanan mulai dari bulan data
-        $customer->updateMonthlyBalances($startMonth);
+        // NOTE: Customer balance will be updated automatically via DataPencatatan Model Events
+        // No manual balance update needed here (Pure MVC approach)
+        
+        // MANUAL TRIGGER: Update customer balance (since Model Events are disabled)
+        try {
+            $customer->refreshTotalBalances();
+            \Log::info('Balance updated after data updated', [
+                'customer_id' => $customer->id,
+                'data_id' => $dataPencatatan->id
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Error updating balance after data updated', [
+                'customer_id' => $customer->id,
+                'error' => $e->getMessage()
+            ]);
+        }
+        
+        // Ambil waktu pencatatan dari data yang baru untuk logging
+        $waktuPencatatan = null;
+        if (!empty($sanitizedDataInput['pembacaan_awal']['waktu'])) {
+            $waktuPencatatan = Carbon::parse($sanitizedDataInput['pembacaan_awal']['waktu']);
+        }
         
         // Logging untuk debug
         \Log::info('Data pencatatan berhasil diupdate', [
             'record_id' => $dataPencatatan->id,
             'customer_id' => $customer->id,
-            'new_date' => $waktuPencatatan->format('Y-m-d H:i:s'),
+            'new_date' => $waktuPencatatan ? $waktuPencatatan->format('Y-m-d H:i:s') : 'N/A',
             'customer_total_purchases' => $customer->total_purchases,
             'customer_total_deposit' => $customer->total_deposit,
             'customer_saldo' => $customer->total_deposit - $customer->total_purchases
@@ -998,6 +1008,21 @@ class DataPencatatanController extends Controller
         $customer->suhu = floatval($validatedData['suhu']);
         $customer->koreksi_meter = floatval($validatedData['koreksi_meter']);
         $customer->save();
+
+        // MANUAL TRIGGER: Update balance after pricing changes (since Model Events are disabled)
+        try {
+            $customer->refreshTotalBalances();
+            \Log::info('Balance updated after pricing change', [
+                'customer_id' => $customer->id,
+                'new_price' => $validatedData['harga_per_meter_kubik']
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Error updating balance after pricing change', [
+                'customer_id' => $customer->id,
+                'error' => $e->getMessage()
+            ]);
+            // Continue execution even if balance update fails
+        }
 
         return back()->with('success', 'Harga dan koreksi meter berhasil diperbarui');
     }
@@ -1268,27 +1293,22 @@ class DataPencatatanController extends Controller
         // Hapus data pencatatan
         $dataPencatatan->delete();
 
-        // Rekalkulasi total pembelian customer setelah menghapus data
-        $newTotalPurchases = 0;
-        if ($customer->isFOB()) {
-            $newTotalPurchases = app(UserController::class)->rekalkulasiTotalPembelianFob($customer);
-        } else {
-            $newTotalPurchases = app(UserController::class)->rekalkulasiTotalPembelian($customer);
+        // MANUAL TRIGGER: Update customer balance (since Model Events are disabled)
+        try {
+            $customer->refreshTotalBalances();
+            \Log::info('Balance updated after data deleted', [
+                'customer_id' => $customer_id,
+                'data_id' => $dataPencatatan->id
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Error updating balance after data deleted', [
+                'customer_id' => $customer_id,
+                'error' => $e->getMessage()
+            ]);
         }
-        
-        // Logging perubahan total
-        \Log::info('Perubahan total setelah hapus data', [
-            'customer_id' => $customer_id,
-            'old_total_purchases' => $oldTotalPurchases,
-            'new_total_purchases' => $newTotalPurchases,
-            'difference' => $oldTotalPurchases - $newTotalPurchases,
-            'deleted_harga_final' => $dataPencatatan->harga_final
-        ]);
 
-        // Update saldo bulanan mulai dari bulan data yang dihapus
-        if ($startMonth) {
-            $customer->updateMonthlyBalances($startMonth);
-        }
+        // NOTE: Customer balance will be updated automatically via DataPencatatan Model Events
+        // No manual balance update needed here (Pure MVC approach)
 
         // Ambil bulan dan tahun dari request jika ada
         $bulan = $request->input('bulan', date('m'));

@@ -442,21 +442,9 @@ class User extends Authenticatable
         return $this->hasMany(DataPencatatan::class, 'customer_id');
     }
 
-    /**
-     * Relationship with Monthly Customer Balances
-     */
-    public function monthlyBalances()
-    {
-        return $this->hasMany(MonthlyCustomerBalance::class, 'customer_id');
-    }
-
-    /**
-     * Relationship with Transaction Calculations
-     */
-    public function transactionCalculations()
-    {
-        return $this->hasMany(TransactionCalculation::class, 'customer_id');
-    }
+    // REMOVED: Relationships with complex balance tables (Pure MVC approach)
+    // public function monthlyBalances() - Now using JSON field in users table
+    // public function transactionCalculations() - Now calculated on-the-fly
 
     /**
      * Add deposit with optional custom date
@@ -705,12 +693,338 @@ class User extends Authenticatable
     }
 
     /**
-     * Simplified monthly balance update - DISABLED for performance
+     * ==================================================
+     * PURE MVC BALANCE CALCULATION METHODS
+     * ==================================================
+     */
+
+    /**
+     * REAL-TIME BALANCE CALCULATION (Pure Model Method)
+     */
+    public function calculateRealTimeBalance($yearMonth = null)
+    {
+        $yearMonth = $yearMonth ?? now()->format('Y-m');
+        
+        // Calculate total deposits up to period
+        $totalDeposits = $this->calculateTotalDepositsUntil($yearMonth);
+        
+        // Calculate total purchases up to period  
+        $totalPurchases = $this->calculateTotalPurchasesUntil($yearMonth);
+        
+        return $totalDeposits - $totalPurchases;
+    }
+
+    /**
+     * AUTO-UPDATE BALANCE WHEN DATA CHANGES (Model Events)
+     * TEMPORARILY DISABLED - Causing infinite loop
+     */
+    /*
+    protected static function boot()
+    {
+        parent::boot();
+        
+        static::updated(function ($user) {
+            // Prevent infinite loop by checking if we're already in a balance update
+            if ($user->isDirty(['deposit_history', 'pricing_history', 'total_deposit']) && 
+                !$user->getAttribute('_updating_balance')) {
+                $user->refreshTotalBalancesQuietly();
+            }
+        });
+    }
+    */
+
+    /**
+     * REFRESH ALL BALANCE CALCULATIONS (Core Balance Logic)
+     * FIXED: Use updateQuietly to prevent infinite loop
+     */
+    public function refreshTotalBalances()
+    {
+        return $this->refreshTotalBalancesQuietly();
+    }
+
+    /**
+     * REFRESH BALANCE WITHOUT TRIGGERING MODEL EVENTS
+     */
+    private function refreshTotalBalancesQuietly()
+    {
+        try {
+            DB::beginTransaction();
+            
+            // Set flag to prevent infinite loop
+            $this->setAttribute('_updating_balance', true);
+            
+            // Recalculate total_deposits from deposit_history
+            $depositHistory = $this->ensureArray($this->deposit_history);
+            $calculatedTotalDeposit = 0;
+            
+            foreach ($depositHistory as $deposit) {
+                $amount = floatval($deposit['amount'] ?? 0);
+                $keterangan = $deposit['keterangan'] ?? 'penambahan';
+                
+                if ($keterangan === 'pengurangan') {
+                    $calculatedTotalDeposit -= abs($amount);
+                } else {
+                    $calculatedTotalDeposit += $amount;
+                }
+            }
+            
+            // Recalculate total_purchases from data_pencatatan
+            $calculatedTotalPurchases = $this->dataPencatatan()
+                ->get()
+                ->sum(function ($item) {
+                    return $this->calculateItemPrice($item);
+                });
+            
+            // Update monthly_balances JSON field
+            $monthlyBalances = $this->generateMonthlyBalances();
+            
+            // Use updateQuietly to prevent triggering Model Events
+            $this->updateQuietly([
+                'total_deposit' => $calculatedTotalDeposit,
+                'total_purchases' => $calculatedTotalPurchases,
+                'monthly_balances' => $monthlyBalances,
+                'balance_last_updated_at' => now()
+            ]);
+            
+            // Remove flag
+            $this->setAttribute('_updating_balance', false);
+            
+            DB::commit();
+            
+            \Log::info('Balance refreshed successfully', [
+                'user_id' => $this->id,
+                'total_deposit' => $calculatedTotalDeposit,
+                'total_purchases' => $calculatedTotalPurchases
+            ]);
+            
+            return true;
+            
+        } catch (\Exception $e) {
+            DB::rollBack();
+            \Log::error('Error refreshing balance', [
+                'user_id' => $this->id,
+                'error' => $e->getMessage()
+            ]);
+            return false;
+        }
+    }
+
+    /**
+     * GENERATE MONTHLY BALANCES (Pure calculation)
+     */
+    private function generateMonthlyBalances()
+    {
+        $balances = [];
+        $runningBalance = 0;
+        
+        // Get all months with activity
+        $months = $this->getMonthsWithActivity();
+        
+        foreach ($months as $yearMonth) {
+            $monthDeposits = $this->getDepositsForMonth($yearMonth);
+            $monthPurchases = $this->getPurchasesForMonth($yearMonth);
+            
+            $runningBalance = $runningBalance + $monthDeposits - $monthPurchases;
+            $balances[$yearMonth] = round($runningBalance, 2);
+        }
+        
+        return $balances;
+    }
+
+    /**
+     * CALCULATE ITEM PRICE (with period-specific pricing)
+     */
+    private function calculateItemPrice($item)
+    {
+        if ($item->harga_final > 0) {
+            return floatval($item->harga_final);
+        }
+        
+        $dataInput = $this->ensureArray($item->data_input);
+        
+        // For regular customers
+        if (!$this->isFOB() && !empty($dataInput['pembacaan_awal']['waktu'])) {
+            $volumeFlowMeter = floatval($dataInput['volume_flow_meter'] ?? 0);
+            $waktuAwal = Carbon::parse($dataInput['pembacaan_awal']['waktu']);
+            $yearMonth = $waktuAwal->format('Y-m');
+            
+            $pricingInfo = $this->getPricingForYearMonth($yearMonth, $waktuAwal);
+            $koreksiMeter = floatval($pricingInfo['koreksi_meter'] ?? $this->koreksi_meter);
+            $hargaPerM3 = floatval($pricingInfo['harga_per_meter_kubik'] ?? $this->harga_per_meter_kubik);
+            
+            $volumeSm3 = $volumeFlowMeter * $koreksiMeter;
+            return $volumeSm3 * $hargaPerM3;
+        }
+        
+        // For FOB customers
+        if ($this->isFOB() && !empty($dataInput['waktu'])) {
+            $volumeSm3 = floatval($dataInput['volume_sm3'] ?? 0);
+            $waktu = Carbon::parse($dataInput['waktu']);
+            $yearMonth = $waktu->format('Y-m');
+            
+            $pricingInfo = $this->getPricingForYearMonth($yearMonth, $waktu);
+            $hargaPerM3 = floatval($pricingInfo['harga_per_meter_kubik'] ?? $this->harga_per_meter_kubik);
+            
+            return $volumeSm3 * $hargaPerM3;
+        }
+        
+        return 0;
+    }
+
+    /**
+     * GET MONTHS WITH ACTIVITY
+     */
+    private function getMonthsWithActivity()
+    {
+        $months = [];
+        
+        // Get months from deposit history
+        $depositHistory = $this->ensureArray($this->deposit_history);
+        foreach ($depositHistory as $deposit) {
+            if (!empty($deposit['date'])) {
+                $months[] = Carbon::parse($deposit['date'])->format('Y-m');
+            }
+        }
+        
+        // Get months from data pencatatan
+        $dataPencatatan = $this->dataPencatatan()->get();
+        foreach ($dataPencatatan as $item) {
+            $dataInput = $this->ensureArray($item->data_input);
+            
+            if (!empty($dataInput['pembacaan_awal']['waktu'])) {
+                $months[] = Carbon::parse($dataInput['pembacaan_awal']['waktu'])->format('Y-m');
+            } elseif (!empty($dataInput['waktu'])) {
+                $months[] = Carbon::parse($dataInput['waktu'])->format('Y-m');
+            } elseif ($item->created_at) {
+                $months[] = $item->created_at->format('Y-m');
+            }
+        }
+        
+        // Remove duplicates and sort
+        $months = array_unique($months);
+        sort($months);
+        
+        return $months;
+    }
+
+    /**
+     * GET DEPOSITS FOR SPECIFIC MONTH
+     */
+    private function getDepositsForMonth($yearMonth)
+    {
+        $depositHistory = $this->ensureArray($this->deposit_history);
+        $totalDeposits = 0;
+        
+        foreach ($depositHistory as $deposit) {
+            if (!empty($deposit['date'])) {
+                $depositDate = Carbon::parse($deposit['date']);
+                if ($depositDate->format('Y-m') === $yearMonth) {
+                    $amount = floatval($deposit['amount'] ?? 0);
+                    $keterangan = $deposit['keterangan'] ?? 'penambahan';
+                    
+                    if ($keterangan === 'pengurangan') {
+                        $totalDeposits -= abs($amount);
+                    } else {
+                        $totalDeposits += $amount;
+                    }
+                }
+            }
+        }
+        
+        return $totalDeposits;
+    }
+
+    /**
+     * GET PURCHASES FOR SPECIFIC MONTH
+     */
+    private function getPurchasesForMonth($yearMonth)
+    {
+        $dataPencatatan = $this->dataPencatatan()->get();
+        $totalPurchases = 0;
+        
+        foreach ($dataPencatatan as $item) {
+            $dataInput = $this->ensureArray($item->data_input);
+            $itemDate = null;
+            
+            // Determine item date
+            if (!empty($dataInput['pembacaan_awal']['waktu'])) {
+                $itemDate = Carbon::parse($dataInput['pembacaan_awal']['waktu']);
+            } elseif (!empty($dataInput['waktu'])) {
+                $itemDate = Carbon::parse($dataInput['waktu']);
+            } elseif ($item->created_at) {
+                $itemDate = $item->created_at;
+            }
+            
+            if ($itemDate && $itemDate->format('Y-m') === $yearMonth) {
+                $totalPurchases += $this->calculateItemPrice($item);
+            }
+        }
+        
+        return $totalPurchases;
+    }
+
+    /**
+     * CALCULATE TOTAL DEPOSITS UNTIL SPECIFIC PERIOD
+     */
+    private function calculateTotalDepositsUntil($yearMonth)
+    {
+        $depositHistory = $this->ensureArray($this->deposit_history);
+        $totalDeposits = 0;
+        
+        foreach ($depositHistory as $deposit) {
+            if (!empty($deposit['date'])) {
+                $depositDate = Carbon::parse($deposit['date']);
+                if ($depositDate->format('Y-m') <= $yearMonth) {
+                    $amount = floatval($deposit['amount'] ?? 0);
+                    $keterangan = $deposit['keterangan'] ?? 'penambahan';
+                    
+                    if ($keterangan === 'pengurangan') {
+                        $totalDeposits -= abs($amount);
+                    } else {
+                        $totalDeposits += $amount;
+                    }
+                }
+            }
+        }
+        
+        return $totalDeposits;
+    }
+
+    /**
+     * CALCULATE TOTAL PURCHASES UNTIL SPECIFIC PERIOD
+     */
+    private function calculateTotalPurchasesUntil($yearMonth)
+    {
+        $dataPencatatan = $this->dataPencatatan()->get();
+        $totalPurchases = 0;
+        
+        foreach ($dataPencatatan as $item) {
+            $dataInput = $this->ensureArray($item->data_input);
+            $itemDate = null;
+            
+            // Determine item date
+            if (!empty($dataInput['pembacaan_awal']['waktu'])) {
+                $itemDate = Carbon::parse($dataInput['pembacaan_awal']['waktu']);
+            } elseif (!empty($dataInput['waktu'])) {
+                $itemDate = Carbon::parse($dataInput['waktu']);
+            } elseif ($item->created_at) {
+                $itemDate = $item->created_at;
+            }
+            
+            if ($itemDate && $itemDate->format('Y-m') <= $yearMonth) {
+                $totalPurchases += $this->calculateItemPrice($item);
+            }
+        }
+        
+        return $totalPurchases;
+    }
+
+    /**
+     * FORCE UPDATE MONTHLY BALANCES (Re-enabled for pure MVC)
      */
     public function updateMonthlyBalances($startMonth = null)
     {
-        // DISABLED to prevent performance issues
-        return true;
+        return $this->refreshTotalBalances();
     }
 
     /**

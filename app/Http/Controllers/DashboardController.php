@@ -462,7 +462,7 @@ class DashboardController extends Controller
         // Format filter untuk query
         $yearMonth = $selectedTahun . '-' . str_pad($selectedBulan, 2, '0', STR_PAD_LEFT);
 
-        // Helper function to ensure data is array
+        // Helper function to ensure data is array (same as DataPencatatanController)
         $ensureArray = function ($data) {
             if (is_string($data)) {
                 return json_decode($data, true) ?? [];
@@ -499,6 +499,9 @@ class DashboardController extends Controller
                 Carbon::parse($dataInput['pembacaan_awal']['waktu'])->timestamp : 0;
         });
 
+        // Get pricing info for selected month (dynamic pricing)
+        $pricingInfo = $user->getPricingForYearMonth($yearMonth);
+
         // Calculate total volume SM3 for all time
         $totalVolumeSm3 = $user->getTotalVolumeSm3();
 
@@ -506,18 +509,118 @@ class DashboardController extends Controller
         $filteredVolumeSm3 = 0;
         foreach ($dataPencatatan as $item) {
             $dataInput = $ensureArray($item->data_input);
+
+            // Ambil waktu untuk mendapatkan pricing yang tepat
+            $waktuAwalYearMonth = Carbon::parse($dataInput['pembacaan_awal']['waktu'])->format('Y-m');
+            $waktuAwal = Carbon::parse($dataInput['pembacaan_awal']['waktu']);
+            $itemPricingInfo = $user->getPricingForYearMonth($waktuAwalYearMonth, $waktuAwal);
+
             $volumeFlowMeter = floatval($dataInput['volume_flow_meter'] ?? 0);
-            $volumeSm3 = $volumeFlowMeter * floatval($user->koreksi_meter);
+            $volumeSm3 = $volumeFlowMeter * floatval($itemPricingInfo['koreksi_meter'] ?? $user->koreksi_meter);
             $filteredVolumeSm3 += $volumeSm3;
         }
 
         // Calculate total purchases for the filtered period
-        $filteredTotalPurchases = $dataPencatatan->sum(function ($item) use ($user, $ensureArray) {
+        $filteredTotalPurchases = 0;
+        foreach ($dataPencatatan as $item) {
             $dataInput = $ensureArray($item->data_input);
+
+            // Ambil waktu untuk mendapatkan pricing yang tepat
+            $waktuAwalYearMonth = Carbon::parse($dataInput['pembacaan_awal']['waktu'])->format('Y-m');
+            $waktuAwal = Carbon::parse($dataInput['pembacaan_awal']['waktu']);
+            $itemPricingInfo = $user->getPricingForYearMonth($waktuAwalYearMonth, $waktuAwal);
+
             $volumeFlowMeter = floatval($dataInput['volume_flow_meter'] ?? 0);
-            $volumeSm3 = $volumeFlowMeter * floatval($user->koreksi_meter);
-            return $volumeSm3 * floatval($user->harga_per_meter_kubik);
-        });
+            $volumeSm3 = $volumeFlowMeter * floatval($itemPricingInfo['koreksi_meter'] ?? $user->koreksi_meter);
+            $filteredTotalPurchases += $volumeSm3 * floatval($itemPricingInfo['harga_per_meter_kubik'] ?? $user->harga_per_meter_kubik);
+        }
+
+        // Calculate total deposits for the filtered period (current month only)
+        $filteredTotalDeposits = 0;
+        $depositHistory = $ensureArray($user->deposit_history);
+
+        // Format bulan saat ini untuk perbandingan konsisten
+        $currentYearMonth = $selectedTahun . '-' . str_pad($selectedBulan, 2, '0', STR_PAD_LEFT);
+
+        foreach ($depositHistory as $deposit) {
+            if (isset($deposit['date'])) {
+                $depositDate = Carbon::parse($deposit['date']);
+                // Pastikan hanya deposit pada bulan dan tahun yang dipilih menggunakan format yang konsisten
+                if ($depositDate->format('Y-m') === $currentYearMonth) {
+                    $amount = floatval($deposit['amount'] ?? 0);
+                    $keterangan = $deposit['keterangan'] ?? 'penambahan';
+                    
+                    // Handle deposit dan pengurangan dengan benar
+                    if ($keterangan === 'pengurangan') {
+                        // Jika keterangan pengurangan, kurangi dari total deposit
+                        $filteredTotalDeposits -= abs($amount);
+                    } else {
+                        // Jika keterangan penambahan, tambahkan
+                        $filteredTotalDeposits += $amount;
+                    }
+                }
+            }
+        }
+
+        // Mendapatkan bulan sebelumnya
+        $prevDate = Carbon::createFromDate($selectedTahun, $selectedBulan, 1)->subMonth();
+        $prevYearMonth = $prevDate->format('Y-m');
+
+        // Hitung saldo bulan sebelumnya secara real-time
+        $realTimePrevMonthBalance = 0;
+        
+        // 1. Hitung semua deposit dan pengurangan sampai akhir bulan sebelumnya
+        $deposits = $ensureArray($user->deposit_history);
+        foreach ($deposits as $deposit) {
+            if (isset($deposit['date'])) {
+                $depositDate = Carbon::parse($deposit['date']);
+                // Ambil deposit sampai akhir bulan sebelumnya
+                if ($depositDate->format('Y-m') <= $prevYearMonth) {
+                    $amount = floatval($deposit['amount'] ?? 0);
+                    $keterangan = $deposit['keterangan'] ?? 'penambahan';
+                    
+                    // Handle deposit dan pengurangan dengan benar
+                    if ($keterangan === 'pengurangan') {
+                        // Jika keterangan pengurangan, pastikan amount negatif
+                        $realTimePrevMonthBalance -= abs($amount);
+                    } else {
+                        // Jika keterangan penambahan, tambahkan (bisa positif atau negatif)
+                        $realTimePrevMonthBalance += $amount;
+                    }
+                }
+            }
+        }
+        
+        // 2. Kurangi semua pembelian sampai akhir bulan sebelumnya
+        $allDataPencatatan = $user->dataPencatatan()->get();
+        foreach ($allDataPencatatan as $purchaseItem) {
+            $itemDataInput = $ensureArray($purchaseItem->data_input);
+            if (empty($itemDataInput) || empty($itemDataInput['pembacaan_awal']['waktu'])) {
+                continue;
+            }
+
+            $itemWaktuAwal = Carbon::parse($itemDataInput['pembacaan_awal']['waktu']);
+            
+            // Ambil pembelian sampai akhir bulan sebelumnya
+            if ($itemWaktuAwal->format('Y-m') <= $prevYearMonth) {
+                $volumeFlowMeter = floatval($itemDataInput['volume_flow_meter'] ?? 0);
+
+                // Ambil pricing yang sesuai (bulanan atau periode khusus)
+                $itemYearMonth = $itemWaktuAwal->format('Y-m');
+                $itemPricingInfo = $user->getPricingForYearMonth($itemYearMonth, $itemWaktuAwal);
+
+                // Hitung volume dan harga
+                $itemKoreksiMeter = floatval($itemPricingInfo['koreksi_meter'] ?? $user->koreksi_meter);
+                $itemHargaPerM3 = floatval($itemPricingInfo['harga_per_meter_kubik'] ?? $user->harga_per_meter_kubik);
+                $itemVolumeSm3 = $volumeFlowMeter * $itemKoreksiMeter;
+                $itemHarga = $itemVolumeSm3 * $itemHargaPerM3;
+
+                $realTimePrevMonthBalance -= $itemHarga;
+            }
+        }
+
+        // Hitung saldo bulan ini menggunakan saldo bulan sebelumnya yang real-time
+        $realTimeCurrentMonthBalance = $realTimePrevMonthBalance + $filteredTotalDeposits - $filteredTotalPurchases;
 
         $totalTagihan = $allData->sum('harga_final');
         $belumLunas = $allData->where('status_pembayaran', 'belum_lunas')->count();
@@ -530,7 +633,11 @@ class DashboardController extends Controller
             'selectedTahun',
             'totalVolumeSm3',
             'filteredVolumeSm3',
-            'filteredTotalPurchases'
+            'filteredTotalPurchases',
+            'filteredTotalDeposits',
+            'pricingInfo',
+            'realTimePrevMonthBalance',
+            'realTimeCurrentMonthBalance'
         ));
     }
     // Menghitung data untuk grafik tahunan (data per bulan)

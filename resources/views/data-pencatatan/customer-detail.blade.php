@@ -350,7 +350,11 @@
                                                     )->format('Y-m');
 
                                                     // PERBAIKAN: Hitung saldo bulan sebelumnya secara real-time
-                                                    $prevDate = \Carbon\Carbon::createFromDate($selectedTahun, $selectedBulan, 1)->subMonth();
+                                                    $prevDate = \Carbon\Carbon::createFromDate(
+                                                        $selectedTahun,
+                                                        $selectedBulan,
+                                                        1,
+                                                    )->subMonth();
                                                     $prevYearMonth = $prevDate->format('Y-m');
 
                                                     // Hitung total deposit dan pembelian sampai akhir bulan sebelumnya
@@ -366,7 +370,9 @@
                                                                 $depositDate = \Carbon\Carbon::parse($deposit['date']);
                                                                 // Ambil deposit sampai akhir bulan sebelumnya
                                                                 if ($depositDate->format('Y-m') <= $prevYearMonth) {
-                                                                    $realTimePrevMonthBalance += floatval($deposit['amount'] ?? 0);
+                                                                    $realTimePrevMonthBalance += floatval(
+                                                                        $deposit['amount'] ?? 0,
+                                                                    );
                                                                 }
                                                             }
                                                         }
@@ -484,15 +490,28 @@
                                                         $realTimeFilteredTotalPurchases;
 
                                                     // Log untuk debugging (hanya untuk admin)
-                                                    if ((Auth::user()->isAdmin() || Auth::user()->isSuperAdmin()) && abs($realTimePrevMonthBalance - $prevMonthBalance) > 0.01) {
+                                                    if (
+                                                        (Auth::user()->isAdmin() || Auth::user()->isSuperAdmin()) &&
+                                                        abs($realTimePrevMonthBalance - $prevMonthBalance) > 0.01
+                                                    ) {
                                                         \Log::info('Perbedaan saldo bulan sebelumnya ditemukan', [
                                                             'customer_id' => $customer->id,
                                                             'customer_name' => $customer->name,
-                                                            'period' => $selectedTahun . '-' . str_pad($selectedBulan, 2, '0', STR_PAD_LEFT),
-                                                            'prev_month' => \Carbon\Carbon::createFromDate($selectedTahun, $selectedBulan, 1)->subMonth()->format('Y-m'),
+                                                            'period' =>
+                                                                $selectedTahun .
+                                                                '-' .
+                                                                str_pad($selectedBulan, 2, '0', STR_PAD_LEFT),
+                                                            'prev_month' => \Carbon\Carbon::createFromDate(
+                                                                $selectedTahun,
+                                                                $selectedBulan,
+                                                                1,
+                                                            )
+                                                                ->subMonth()
+                                                                ->format('Y-m'),
                                                             'real_time_prev_balance' => $realTimePrevMonthBalance,
                                                             'database_prev_balance' => $prevMonthBalance,
-                                                            'difference' => $realTimePrevMonthBalance - $prevMonthBalance
+                                                            'difference' =>
+                                                                $realTimePrevMonthBalance - $prevMonthBalance,
                                                         ]);
                                                     }
                                                 @endphp
@@ -506,7 +525,7 @@
                                                             {{ \Carbon\Carbon::createFromDate($selectedTahun, $selectedBulan, 1)->format('F Y') }}
                                                             saja (Perhitungan Real-time)</small></td>
                                                 </tr>
-                                                {{-- @if(Auth::user()->isAdmin() || Auth::user()->isSuperAdmin())
+                                                {{-- @if (Auth::user()->isAdmin() || Auth::user()->isSuperAdmin())
                                                 <tr class="text-info" style="font-size: 0.8em;">
                                                     <td colspan="2">
                                                         <strong>Debug Info (Real-time vs Database):</strong><br>
@@ -572,14 +591,20 @@
                     @endif
                 </div>
                 <div class="card-body table-responsive p-0">
+                    <style>
+                        /* Menjadikan semua teks di dalam sel tabel (<th> dan <td>) menjadi rata tengah */
+                        table th,
+                        table td {
+                            text-align: center;
+                        }
+                    </style>
                     <table class="table table-bordered table-striped table-hover" id="dataPencatatanTable">
                         <thead>
                             <tr>
                                 <th>No</th>
                                 <th colspan="2">Pembacaan Awal</th>
                                 <th colspan="2">Pembacaan Akhir</th>
-                                <th>Volume</th>
-                                <th>Sm³</th>
+                                <th colspan="2">Volume</th>
                                 <th>Rupiah</th>
                                 <th>Aksi</th>
                             </tr>
@@ -589,8 +614,8 @@
                                 <th>Meter</th>
                                 <th>Tanggal</th>
                                 <th>Meter</th>
-                                <th></th>
-                                <th></th>
+                                <th>flowmeter</th>
+                                <th>Sm³</th>
                                 <th></th>
                                 <th></th>
                             </tr>
@@ -808,7 +833,7 @@
                                                 $volumeFlowMeter = $dataInput['volume_flow_meter'] ?? 0;
                                                 $volumeSm3 = $volumeFlowMeter * $koreksiMeter;
                                             @endphp
-                                            {{ number_format($volumeSm3, 2) }}
+                                            {{ number_format($volumeSm3, 2) }} sm³
                                         @else
                                             -
                                         @endif

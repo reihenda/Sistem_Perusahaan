@@ -18,8 +18,66 @@ class DataPencatatan extends Model
         'data_input',
         'harga_final',
         'status_pembayaran'
-
     ];
+
+    /**
+     * ==================================================
+     * PURE MVC MODEL EVENTS (Replacing Observers)
+     * TEMPORARILY DISABLED - Causing performance issues
+     * ==================================================
+     */
+    /*
+    protected static function boot()
+    {
+        parent::boot();
+        
+        // Auto-update customer balance when data is created
+        static::created(function ($dataPencatatan) {
+            if ($dataPencatatan->customer) {
+                // Use dispatch to queue the balance update (prevents timeout)
+                \Log::info('DataPencatatan created - queuing balance update', [
+                    'data_id' => $dataPencatatan->id,
+                    'customer_id' => $dataPencatatan->customer_id
+                ]);
+                
+                // Update balance in background to prevent timeout
+                dispatch(function() use ($dataPencatatan) {
+                    $dataPencatatan->customer->refreshTotalBalances();
+                })->afterResponse();
+            }
+        });
+        
+        // Auto-update customer balance when data is updated
+        static::updated(function ($dataPencatatan) {
+            if ($dataPencatatan->customer && $dataPencatatan->wasChanged('harga_final')) {
+                \Log::info('DataPencatatan updated - queuing balance update', [
+                    'data_id' => $dataPencatatan->id,
+                    'customer_id' => $dataPencatatan->customer_id
+                ]);
+                
+                // Update balance in background to prevent timeout
+                dispatch(function() use ($dataPencatatan) {
+                    $dataPencatatan->customer->refreshTotalBalances();
+                })->afterResponse();
+            }
+        });
+        
+        // Auto-update customer balance when data is deleted
+        static::deleted(function ($dataPencatatan) {
+            if ($dataPencatatan->customer) {
+                \Log::info('DataPencatatan deleted - queuing balance update', [
+                    'data_id' => $dataPencatatan->id,
+                    'customer_id' => $dataPencatatan->customer_id
+                ]);
+                
+                // Update balance in background to prevent timeout
+                dispatch(function() use ($dataPencatatan) {
+                    $dataPencatatan->customer->refreshTotalBalances();
+                })->afterResponse();
+            }
+        });
+    }
+    */
     /**
      * Helper function to ensure data is always an array
      */
@@ -99,12 +157,8 @@ class DataPencatatan extends Model
         $this->harga_final = round($harga, 2);
         $this->save();
 
-        // Record purchase to customer
-        $customer->recordPurchase($harga);
-        
-        // Update monthly balances immediately
-        $startMonth = $waktuPencatatanAwal->format('Y-m');
-        $customer->updateMonthlyBalances($startMonth);
+        // NOTE: Customer balance will be updated automatically via Model Events
+        // No need to manually trigger balance updates here
 
         return $harga;
     }

@@ -25,7 +25,7 @@ class AppServiceProvider extends ServiceProvider
         // Menggunakan Bootstrap untuk tampilan paginasi
         Paginator::useBootstrap();
         
-        // Register Observer untuk sinkronisasi monthly_balances
-        MonthlyCustomerBalance::observe(MonthlyCustomerBalanceObserver::class);
+        // REMOVED: Observer registration (Pure MVC approach)
+        // MonthlyCustomerBalance::observe(MonthlyCustomerBalanceObserver::class);
     }
 }
