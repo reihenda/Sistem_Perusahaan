@@ -835,7 +835,6 @@
                                             @endphp
                                             {{ number_format($volumeSm3, 2) }} sm³
                                         @else
-                                            -
                                         @endif
                                     </td>
                                     <td>

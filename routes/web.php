@@ -19,6 +19,7 @@ use App\Http\Controllers\TransactionDescriptionController;
 use App\Http\Controllers\ExcelImportController;
 use App\Http\Controllers\Debug\DataSyncDebugController;
 use App\Http\Controllers\ProformaInvoiceController;
+use App\Http\Controllers\Rekap\RekapPembelianController;
 
 
 // Rute Autentikasi
@@ -119,6 +120,22 @@ Route::middleware(['auth', 'role:admin,superadmin'])->group(function () {
         ->name('rekap.penjualan.index');
     Route::get('/rekap-penjualan/cetak', [App\Http\Controllers\Rekap\RekapPenjualanController::class, 'cetakRekapPenjualan'])
         ->name('rekap.penjualan.cetak');
+
+    // Rute untuk Rekap Pembelian
+    Route::get('/rekap-pembelian', [App\Http\Controllers\Rekap\RekapPembelianController::class, 'index'])
+        ->name('rekap.pembelian.index');
+    Route::get('/rekap-pembelian/cetak', [App\Http\Controllers\Rekap\RekapPembelianController::class, 'cetakRekapPembelian'])
+        ->name('rekap.pembelian.cetak');
+    Route::get('/rekap-pembelian/kelola-harga-gagas', [App\Http\Controllers\Rekap\RekapPembelianController::class, 'kelolaHargaGagas'])
+        ->name('rekap.pembelian.kelola-harga-gagas');
+    Route::post('/rekap-pembelian/update-harga-gagas', [App\Http\Controllers\Rekap\RekapPembelianController::class, 'updateHargaGagas'])
+        ->name('rekap.pembelian.update-harga-gagas');
+    Route::get('/rekap-pembelian/get-current-rate', [App\Http\Controllers\Rekap\RekapPembelianController::class, 'getCurrentRate'])
+        ->name('rekap.pembelian.get-current-rate');
+    Route::delete('/rekap-pembelian/delete-harga-gagas/{id}', [App\Http\Controllers\Rekap\RekapPembelianController::class, 'deleteHargaGagas'])
+        ->name('rekap.pembelian.delete-harga-gagas');
+    Route::post('/rekap-pembelian/copy-from-previous', [App\Http\Controllers\Rekap\RekapPembelianController::class, 'copyFromPreviousPeriod'])
+        ->name('rekap.pembelian.copy-from-previous');
 
     // Rute untuk data pencatatan
     Route::get('/data-pencatatan', [DataPencatatanController::class, 'index'])

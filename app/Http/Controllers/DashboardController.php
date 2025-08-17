@@ -6,6 +6,7 @@ use Illuminate\Support\Facades\Auth;
 use App\Models\DataPencatatan;
 use App\Models\User;
 use App\Models\RekapPengambilan;
+use App\Models\HargaGagas;
 use Illuminate\Http\Request;
 use Carbon\Carbon;
 
@@ -128,6 +129,20 @@ class DashboardController extends Controller
             }
         }
 
+        // 3. Data Summary - Menghitung Profit
+        $summaryData = $this->calculateSummaryData($customers, $selectedTahun, $selectedBulan);
+        
+        // 4. Data untuk grafik profit tahunan
+        $profitChartData = $this->getProfitChartData($customers, $selectedTahun);
+        
+        // 5. Data Rekap Pembelian (dari RekapPembelianController logic)
+        $rekapPembelianData = $this->getRekapPembelianData($selectedTahun, $selectedBulan);
+        $customerRekapPembelianData = $this->getCustomerRekapPembelianData($selectedTahun, $selectedBulan);
+        
+        // 6. Data chart untuk rekap pembelian
+        $rekapPembelianYearlyChartData = $this->getRekapPembelianYearlyChartData($selectedTahun);
+        $rekapPembelianMonthlyChartData = $this->getRekapPembelianMonthlyChartData($selectedTahun, $selectedBulan);
+
         return view('dashboard.admin', compact(
             'penjualanTahunanData',
             'penjualanBulananData',
@@ -141,7 +156,13 @@ class DashboardController extends Controller
             'tanggal',
             'availableYears',
             'yearlyChartData',
-            'monthlyChartData'
+            'monthlyChartData',
+            'summaryData',
+            'profitChartData',
+            'rekapPembelianData',
+            'customerRekapPembelianData',
+            'rekapPembelianYearlyChartData',
+            'rekapPembelianMonthlyChartData'
         ));
     }
 
@@ -823,6 +844,297 @@ class DashboardController extends Controller
             'penjualan' => array_map(function ($val) {
                 return round($val, 2);
             }, $dailyData['penjualan'])
+        ];
+    }
+
+    // Menghitung data summary untuk profit
+    private function calculateSummaryData($customers, $tahun, $bulan)
+    {
+        $yearMonth = $tahun . '-' . str_pad($bulan, 2, '0', STR_PAD_LEFT);
+        
+        // 1. Hitung total penjualan bulanan (revenue dari customer)
+        $penjualanBulanan = $this->calculateMonthlyData($customers, $yearMonth);
+        $totalPenjualan = $penjualanBulanan['total_pembelian'];  // Ini adalah revenue dari customer
+        $totalVolumePenjualan = $penjualanBulanan['total_pemakaian'];
+        
+        // 2. Hitung total pembelian gas dari supplier (cost berdasarkan HargaGagas)
+        $pembelianData = $this->getRekapPembelianData($tahun, $bulan);
+        $totalVolumePengambilan = $pembelianData['total_pengambilan'];
+        $totalPembelianGas = $pembelianData['total_pembelian'];
+        
+        // 3. Hitung profit (Revenue - Cost)
+        $totalProfit = $totalPenjualan - $totalPembelianGas;
+        
+        // 4. Hitung selisih volume
+        $selisihVolume = $totalVolumePenjualan - $totalVolumePengambilan;
+        
+        // 5. Hitung profit margin
+        $profitMargin = $totalPenjualan > 0 ? (($totalProfit / $totalPenjualan) * 100) : 0;
+        
+        // 6. Hitung efisiensi volume  
+        $efisiensiVolume = $totalVolumePengambilan > 0 ? (($totalVolumePenjualan / $totalVolumePengambilan) * 100) : 0;
+        
+        // 7. Hitung harga rata-rata
+        $hargaRataPenjualan = $totalVolumePenjualan > 0 ? ($totalPenjualan / $totalVolumePenjualan) : 0;
+        $hargaRataPembelian = $totalVolumePengambilan > 0 ? ($totalPembelianGas / $totalVolumePengambilan) : 0;
+        
+        // 8. Validasi data dan fallback
+        if ($totalVolumePenjualan == 0 && $totalVolumePengambilan == 0) {
+            \Log::warning('No sales or procurement data found', ['year_month' => $yearMonth]);
+        }
+        
+        return [
+            'total_penjualan' => round($totalPenjualan, 0),
+            'total_volume_penjualan' => round($totalVolumePenjualan, 2),
+            'total_pembelian_pengambilan' => round($totalPembelianGas, 0),
+            'total_volume_pengambilan' => round($totalVolumePengambilan, 2),
+            'total_profit' => round($totalProfit, 0),
+            'selisih_volume' => round($selisihVolume, 2),
+            'harga_rata_penjualan' => round($hargaRataPenjualan, 0),
+            'harga_rata_pengambilan' => round($hargaRataPembelian, 0),
+            'profit_margin' => round($profitMargin, 2),
+            'efisiensi_volume' => round($efisiensiVolume, 2),
+            'method' => 'Berdasarkan HargaGagas' // Identifier untuk UI
+        ];
+    }
+    
+    // Menghitung data untuk grafik profit tahunan (per bulan)
+    private function getProfitChartData($customers, $tahun)
+    {
+        $profitData = array_fill(0, 12, 0);
+        
+        for ($bulan = 1; $bulan <= 12; $bulan++) {
+            $yearMonth = $tahun . '-' . str_pad($bulan, 2, '0', STR_PAD_LEFT);
+            
+            // Hitung penjualan bulanan (revenue)
+            $penjualanBulanan = $this->calculateMonthlyData($customers, $yearMonth);
+            $totalPenjualan = $penjualanBulanan['total_pembelian'];
+            
+            // Hitung pembelian gas berdasarkan HargaGagas (cost)
+            $totalPembelianGas = $this->calculateTotalPembelianFromHargaGagas($tahun, $bulan);
+            
+            // Hitung profit dan convert ke jutaan untuk display
+            $profit = $totalPenjualan - $totalPembelianGas;
+            $profitData[$bulan - 1] = round($profit / 1000000, 2); // Convert to millions
+        }
+        
+        return [
+            'profit' => $profitData
+        ];
+    }
+    
+    // Method untuk mendapatkan data rekap pembelian (dari RekapPembelianController logic)
+    private function getRekapPembelianData($tahun, $bulan)
+    {
+        // Total pengambilan bulanan
+        $totalPengambilan = RekapPengambilan::whereYear('tanggal', $tahun)
+            ->whereMonth('tanggal', $bulan)
+            ->sum('volume');
+        
+        // Total pembelian berdasarkan harga gagas untuk bulan tersebut
+        $totalPembelian = $this->calculateTotalPembelianFromHargaGagas($tahun, $bulan);
+        
+        return [
+            'total_pengambilan' => $totalPengambilan,
+            'total_pembelian' => $totalPembelian
+        ];
+    }
+    
+    // Menghitung total pembelian berdasarkan harga gagas
+    private function calculateTotalPembelianFromHargaGagas($tahun, $bulan = null)
+    {
+        if ($bulan) {
+            // Untuk bulan tertentu, gunakan fallback logic
+            $hargaGagas = $this->getHargaGagasWithFallback($tahun, $bulan);
+        } else {
+            // Untuk tahunan, hitung semua bulan
+            $totalPembelianTahun = 0;
+            for ($m = 1; $m <= 12; $m++) {
+                $totalPembelianTahun += $this->calculateTotalPembelianFromHargaGagas($tahun, $m);
+            }
+            return $totalPembelianTahun;
+        }
+        
+        if (!$hargaGagas) {
+            return 0;
+        }
+        
+        // Ambil total volume pengambilan
+        $totalVolume = RekapPengambilan::whereYear('tanggal', $tahun)
+            ->whereMonth('tanggal', $bulan)
+            ->sum('volume');
+        
+        // Hitung MMBTU (Total Volume SM3 / Kalori)
+        $totalMMBTU = $hargaGagas->kalori > 0 ? $totalVolume / $hargaGagas->kalori : 0;
+        
+        // Hitung total pembelian (MMBTU * Harga USD dalam IDR)
+        $hargaIDR = $hargaGagas->harga_usd * $hargaGagas->rate_konversi_idr;
+        $totalPembelian = $totalMMBTU * $hargaIDR;
+        
+        return $totalPembelian;
+    }
+    
+    // Mendapatkan harga gagas dengan fallback ke periode sebelumnya
+    private function getHargaGagasWithFallback($tahun, $bulan)
+    {
+        // Coba ambil harga gagas untuk periode yang diminta
+        $hargaGagas = HargaGagas::where('periode_tahun', $tahun)
+            ->where('periode_bulan', $bulan)
+            ->latest()
+            ->first();
+        
+        if ($hargaGagas) {
+            return $hargaGagas;
+        }
+        
+        // Jika tidak ada, cari periode sebelumnya (maksimal 12 bulan ke belakang)
+        $currentDate = Carbon::create($tahun, $bulan, 1);
+        
+        for ($i = 1; $i <= 12; $i++) {
+            $fallbackDate = $currentDate->copy()->subMonths($i);
+            $fallbackHarga = HargaGagas::where('periode_tahun', $fallbackDate->year)
+                ->where('periode_bulan', $fallbackDate->month)
+                ->latest()
+                ->first();
+            
+            if ($fallbackHarga) {
+                \Log::info("Harga Gagas Fallback: Periode {$tahun}-{$bulan} menggunakan data dari {$fallbackDate->year}-{$fallbackDate->month}");
+                return $fallbackHarga;
+            }
+        }
+        
+        // Jika tidak ada data sama sekali
+        return null;
+    }
+    
+    // Mendapatkan data customer rekap pembelian 
+    private function getCustomerRekapPembelianData($tahun, $bulan)
+    {
+        // Ambil semua customer yang memiliki data pengambilan
+        $customers = User::whereIn('role', ['customer', 'fob'])
+            ->whereHas('rekapPengambilan', function($query) use ($tahun) {
+                $query->whereYear('tanggal', $tahun);
+            })
+            ->get();
+        
+        $data = [];
+        
+        foreach ($customers as $customer) {
+            // Pengambilan tahunan
+            $pengambilanTahun = RekapPengambilan::where('customer_id', $customer->id)
+                ->whereYear('tanggal', $tahun)
+                ->sum('volume');
+            
+            // Pengambilan bulanan
+            $pengambilanBulan = RekapPengambilan::where('customer_id', $customer->id)
+                ->whereYear('tanggal', $tahun)
+                ->whereMonth('tanggal', $bulan)
+                ->sum('volume');
+            
+            // Pembelian berdasarkan harga gagas dengan fallback
+            $hargaGagas = $this->getHargaGagasWithFallback($tahun, $bulan);
+            
+            if ($hargaGagas && $hargaGagas->kalori > 0) {
+                $hargaIDR = $hargaGagas->harga_usd * $hargaGagas->rate_konversi_idr;
+                
+                // Untuk pembelian tahunan, hitung per bulan
+                $pembelianTahun = 0;
+                for ($m = 1; $m <= 12; $m++) {
+                    $pengambilanCustomerBulan = RekapPengambilan::where('customer_id', $customer->id)
+                        ->whereYear('tanggal', $tahun)
+                        ->whereMonth('tanggal', $m)
+                        ->sum('volume');
+                    
+                    $hargaInfoBulan = $this->getHargaGagasWithFallback($tahun, $m);
+                    if ($hargaInfoBulan && $hargaInfoBulan->kalori > 0) {
+                        $hargaIDRBulan = $hargaInfoBulan->harga_usd * $hargaInfoBulan->rate_konversi_idr;
+                        $pembelianTahun += ($pengambilanCustomerBulan / $hargaInfoBulan->kalori) * $hargaIDRBulan;
+                    }
+                }
+                
+                $pembelianBulan = ($pengambilanBulan / $hargaGagas->kalori) * $hargaIDR;
+            } else {
+                $pembelianTahun = 0;
+                $pembelianBulan = 0;
+            }
+            
+            if ($pengambilanTahun > 0 || $pengambilanBulan > 0) {
+                $data[] = [
+                    'nama' => $customer->name,
+                    'role' => $customer->role,
+                    'pengambilan_tahun' => round($pengambilanTahun, 2),
+                    'pengambilan_bulan' => round($pengambilanBulan, 2),
+                    'pembelian_tahun' => round($pembelianTahun, 0),
+                    'pembelian_bulan' => round($pembelianBulan, 0),
+                ];
+            }
+        }
+        
+        return $data;
+    }
+    
+    // Mendapatkan data chart tahunan untuk rekap pembelian
+    private function getRekapPembelianYearlyChartData($tahun)
+    {
+        $pengambilan = [];
+        $pembelian = [];
+        $totalPengambilanTahun = 0;
+        $totalPembelianTahun = 0;
+        
+        for ($bulan = 1; $bulan <= 12; $bulan++) {
+            // Pengambilan bulanan
+            $pengambilanBulan = RekapPengambilan::whereYear('tanggal', $tahun)
+                ->whereMonth('tanggal', $bulan)
+                ->sum('volume');
+            $pengambilan[] = $pengambilanBulan;
+            $totalPengambilanTahun += $pengambilanBulan;
+            
+            // Pembelian bulanan dengan fallback logic
+            $pembelianBulan = $this->calculateTotalPembelianFromHargaGagas($tahun, $bulan);
+            $pembelian[] = $pembelianBulan / 1000000; // Convert ke juta rupiah
+            $totalPembelianTahun += $pembelianBulan;
+        }
+        
+        return [
+            'pengambilan' => $pengambilan,
+            'pembelian' => $pembelian,
+            'total_pengambilan_tahun' => $totalPengambilanTahun,
+            'total_pembelian_tahun' => $totalPembelianTahun
+        ];
+    }
+    
+    // Mendapatkan data chart bulanan untuk rekap pembelian  
+    private function getRekapPembelianMonthlyChartData($tahun, $bulan)
+    {
+        $daysInMonth = Carbon::create($tahun, $bulan)->daysInMonth;
+        $pengambilan = [];
+        $pembelian = [];
+        
+        // Ambil harga gagas dengan fallback untuk bulan ini
+        $hargaGagas = $this->getHargaGagasWithFallback($tahun, $bulan);
+        
+        for ($hari = 1; $hari <= $daysInMonth; $hari++) {
+            $tanggal = Carbon::create($tahun, $bulan, $hari)->format('Y-m-d');
+            
+            // Pengambilan harian
+            $pengambilanHari = RekapPengambilan::whereDate('tanggal', $tanggal)
+                ->sum('volume');
+            $pengambilan[] = $pengambilanHari;
+            
+            // Pembelian harian (proporsional)
+            if ($hargaGagas && $hargaGagas->kalori > 0) {
+                $mmbtuHari = $pengambilanHari / $hargaGagas->kalori;
+                $hargaIDR = $hargaGagas->harga_usd * $hargaGagas->rate_konversi_idr;
+                $pembelianHari = $mmbtuHari * $hargaIDR;
+                $pembelian[] = $pembelianHari / 1000000; // Convert ke juta rupiah
+            } else {
+                $pembelian[] = 0;
+            }
+        }
+        
+        return [
+            'pengambilan' => $pengambilan,
+            'pembelian' => $pembelian
         ];
     }
 }

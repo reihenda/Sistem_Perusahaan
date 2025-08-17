@@ -187,6 +187,12 @@
                                 </a>
                             </li>
                             <li class="nav-item">
+                                <a href="{{ route('rekap.pembelian.index') }}" class="nav-link">
+                                    <i class="nav-icon fas fa-shopping-cart"></i>
+                                    <p>Rekap Pembelian</p>
+                                </a>
+                            </li>
+                            <li class="nav-item">
                                 <a href="{{ route('operator-gtm.index') }}" class="nav-link">
                                     <i class="nav-icon fas fa-user-clock"></i>
                                     <p>Lembur Operator GTM</p>
