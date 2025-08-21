@@ -15,7 +15,11 @@ class OperatorGtmController extends Controller
      */
     public function index()
     {
-        $operators = OperatorGtm::paginate(10);
+        // Ambil data operator dengan informasi update terakhir berdasarkan tanggal lembur
+        $operators = OperatorGtm::with(['lemburRecords' => function($query) {
+            $query->orderBy('tanggal', 'desc')->orderBy('created_at', 'desc')->limit(1);
+        }])->paginate(10);
+        
         return view('operator-gtm.index', compact('operators'));
     }
 

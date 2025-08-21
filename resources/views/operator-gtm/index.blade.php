@@ -4,6 +4,36 @@
 
 @section('page-title', 'Daftar Operator GTM')
 
+@section('css')
+<style>
+    /* Style untuk kolom update terakhir */
+    .table td {
+        vertical-align: middle;
+    }
+    
+    .table .text-success {
+        font-weight: 600;
+    }
+    
+    .table small {
+        font-size: 0.75rem;
+        line-height: 1.2;
+    }
+    
+    /* Responsive untuk mobile */
+    @media (max-width: 768px) {
+        .table-responsive {
+            font-size: 0.85rem;
+        }
+        
+        .btn-sm {
+            padding: 0.2rem 0.4rem;
+            font-size: 0.75rem;
+        }
+    }
+</style>
+@endsection
+
 @section('content')
     <div class="row">
         <div class="col-12">
@@ -34,6 +64,7 @@
                                 <th>Nama</th>
                                 <th>Lokasi Kerja</th>
                                 <th>Jam Kerja</th>
+                                <th>Update Terakhir</th>
                                 <th class="text-right">Aksi</th>
                             </tr>
                         </thead>
@@ -47,6 +78,26 @@
                                         <span class="badge badge-{{ $operator->jam_kerja == 8 ? 'primary' : 'info' }}">
                                             {{ $operator->jam_kerja ?? 8 }} Jam
                                         </span>
+                                    </td>
+                                    <td>
+                                        @php
+                                            $lastUpdate = $operator->lemburRecords->first();
+                                        @endphp
+                                        @if($lastUpdate)
+                                            <span class="text-success">
+                                                <i class="fas fa-calendar-check mr-1"></i>
+                                                {{ \Carbon\Carbon::parse($lastUpdate->tanggal)->format('d M Y') }}
+                                            </span>
+                                            <br>
+                                            <small class="text-muted">
+                                                Input: {{ \Carbon\Carbon::parse($lastUpdate->created_at)->diffForHumans() }}
+                                            </small>
+                                        @else
+                                            <span class="text-muted">
+                                                <i class="fas fa-minus-circle mr-1"></i>
+                                                Belum ada data
+                                            </span>
+                                        @endif
                                     </td>
                                     <td class="text-right">
                                         <a href="{{ route('operator-gtm.show', $operator->id) }}"
@@ -70,7 +121,7 @@
                                 </tr>
                             @empty
                                 <tr>
-                                    <td colspan="5" class="text-center">Tidak ada data operator GTM.</td>
+                                    <td colspan="6" class="text-center">Tidak ada data operator GTM.</td>
                                 </tr>
                             @endforelse
                         </tbody>
