@@ -58,6 +58,66 @@ class OperatorGtmController extends Controller
         $selectedMonth = $request->input('month', date('m'));
         $selectedYear = $request->input('year', date('Y'));
         
+        // Hitung periode tanggal
+        $displayMonth = $selectedMonth;
+        $displayYear = $selectedYear;
+        
+        // Tanggal 26 bulan sebelumnya
+        $prevMonth = $displayMonth == '01' ? '12' : str_pad((int)$displayMonth - 1, 2, '0', STR_PAD_LEFT);
+        $prevYear = $displayMonth == '01' ? $displayYear - 1 : $displayYear;
+        $startDate = Carbon::createFromFormat('Y-m-d', $prevYear . '-' . $prevMonth . '-26');
+        
+        // Tanggal 25 bulan yang dipilih (untuk tampilan periode data lembur)
+        $endDate = Carbon::createFromFormat('Y-m-d', $displayYear . '-' . $displayMonth . '-25');
+        
+        // Tanggal akhir bulan yang dipilih (untuk perhitungan hari kerja gaji)
+        $endOfMonth = Carbon::createFromFormat('Y-m-d', $displayYear . '-' . $displayMonth . '-01')->endOfMonth();
+        
+        // Log untuk debugging
+        \Log::info('Periode data lembur: ' . $startDate->format('Y-m-d') . ' s/d ' . $endDate->format('Y-m-d'));
+        \Log::info('Periode gaji: ' . $startDate->format('Y-m-d') . ' s/d ' . $endOfMonth->format('Y-m-d'));
+        
+        // Buat array tanggal untuk periode penuh dan tandai tanggal yang memiliki data
+        $allDatesInPeriod = [];
+        $currentDate = clone $startDate;
+        while ($currentDate->lte($endDate)) {
+            $dateKey = $currentDate->format('Y-m-d');
+            $allDatesInPeriod[$dateKey] = null;
+            $currentDate->addDay();
+        }
+        
+        // Masukkan data lembur yang ada ke array berdasarkan tanggal
+        foreach ($lemburRecords as $record) {
+            $recordDateStr = date('Y-m-d', strtotime($record->tanggal));
+            
+            if (array_key_exists($recordDateStr, $allDatesInPeriod)) {
+                $allDatesInPeriod[$recordDateStr] = $record;
+            } else {
+                // Cek jika tanggalnya close match (mungkin ada masalah timezone atau format)
+                foreach (array_keys($allDatesInPeriod) as $periodDate) {
+                    $diff = abs(strtotime($recordDateStr) - strtotime($periodDate));
+                    if ($diff < 86400) { // selisih kurang dari 1 hari (dalam detik)
+                        $allDatesInPeriod[$periodDate] = $record;
+                        break;
+                    }
+                }
+            }
+        }
+        
+        // Cek apakah ada data untuk sesi 4 atau 5
+        $hasSesi4 = false;
+        $hasSesi5 = false;
+        foreach ($allDatesInPeriod as $date => $record) {
+            if ($record) {
+                if ($record->jam_masuk_sesi_4 || $record->jam_keluar_sesi_4) {
+                    $hasSesi4 = true;
+                }
+                if ($record->jam_masuk_sesi_5 || $record->jam_keluar_sesi_5) {
+                    $hasSesi5 = true;
+                }
+            }
+        }
+        
         // Log untuk debugging
         \Log::info('Total data lembur operator: ' . count($lemburRecords));
         foreach ($lemburRecords as $record) {
@@ -68,7 +128,18 @@ class OperatorGtmController extends Controller
         // Log untuk debugging periode yang dipilih
         \Log::info('Filter periode - bulan: ' . $selectedMonth . ', tahun: ' . $selectedYear);
             
-        return view('operator-gtm.show', compact('operatorGtm', 'lemburRecords', 'selectedMonth', 'selectedYear'));
+        return view('operator-gtm.show', compact(
+            'operatorGtm', 
+            'lemburRecords', 
+            'selectedMonth', 
+            'selectedYear',
+            'allDatesInPeriod',
+            'hasSesi4',
+            'hasSesi5',
+            'startDate',
+            'endDate',
+            'endOfMonth'
+        ));
     }
 
     /**
@@ -133,81 +204,17 @@ class OperatorGtmController extends Controller
             'jam_keluar_sesi_2' => 'nullable|date_format:H:i',
             'jam_masuk_sesi_3' => 'nullable|date_format:H:i',
             'jam_keluar_sesi_3' => 'nullable|date_format:H:i',
+            'jam_masuk_sesi_4' => 'nullable|date_format:H:i',
+            'jam_keluar_sesi_4' => 'nullable|date_format:H:i',
+            'jam_masuk_sesi_5' => 'nullable|date_format:H:i',
+            'jam_keluar_sesi_5' => 'nullable|date_format:H:i',
         ]);
 
-        // Logging untuk debugging
-        \Log::info('Jam masuk sesi 1: ' . $request->jam_masuk_sesi_1);
-        \Log::info('Jam keluar sesi 1: ' . $request->jam_keluar_sesi_1);
-        \Log::info('Jam masuk sesi 2: ' . $request->jam_masuk_sesi_2);
-        \Log::info('Jam keluar sesi 2: ' . $request->jam_keluar_sesi_2);
-        \Log::info('Jam masuk sesi 3: ' . $request->jam_masuk_sesi_3);
-        \Log::info('Jam keluar sesi 3: ' . $request->jam_keluar_sesi_3);
-
-        // Hitung total jam kerja
-        $totalJamKerja = 0;
+        // Filter data untuk menghapus sesi yang kosong
+        $filteredData = $this->filterEmptySessions($validatedData);
         
-        // Hitung durasi sesi 1
-        if ($request->filled('jam_masuk_sesi_1') && $request->filled('jam_keluar_sesi_1')) {
-            // Menggunakan tanggal hari ini sebagai basis
-            $today = Carbon::today();
-            
-            // Parse input time dengan tanggal hari ini
-            $masukSesi1 = Carbon::parse($today->format('Y-m-d') . ' ' . $request->jam_masuk_sesi_1);
-            $keluarSesi1 = Carbon::parse($today->format('Y-m-d') . ' ' . $request->jam_keluar_sesi_1);
-            
-            // Jika keluar sesi 1 lebih kecil dari masuk sesi 1, artinya melewati tengah malam
-            if ($keluarSesi1->lt($masukSesi1)) {
-                $keluarSesi1->addDay();
-            }
-            
-            // Perhitungan durasi: jam keluar - jam masuk
-            $durasiSesi1 = $masukSesi1->diffInMinutes($keluarSesi1);
-            $totalJamKerja += $durasiSesi1;
-            
-            \Log::info('Durasi sesi 1: ' . $durasiSesi1 . ' menit');
-        }
-        
-        // Hitung durasi sesi 2
-        if ($request->filled('jam_masuk_sesi_2') && $request->filled('jam_keluar_sesi_2')) {
-            // Menggunakan tanggal hari ini sebagai basis
-            $today = Carbon::today();
-            
-            // Parse input time dengan tanggal hari ini
-            $masukSesi2 = Carbon::parse($today->format('Y-m-d') . ' ' . $request->jam_masuk_sesi_2);
-            $keluarSesi2 = Carbon::parse($today->format('Y-m-d') . ' ' . $request->jam_keluar_sesi_2);
-            
-            // Jika keluar sesi 2 lebih kecil dari masuk sesi 2, artinya melewati tengah malam
-            if ($keluarSesi2->lt($masukSesi2)) {
-                $keluarSesi2->addDay();
-            }
-            
-            // Perhitungan durasi: jam keluar - jam masuk
-            $durasiSesi2 = $masukSesi2->diffInMinutes($keluarSesi2);
-            $totalJamKerja += $durasiSesi2;
-            
-            \Log::info('Durasi sesi 2: ' . $durasiSesi2 . ' menit');
-        }
-
-        // Hitung durasi sesi 3
-        if ($request->filled('jam_masuk_sesi_3') && $request->filled('jam_keluar_sesi_3')) {
-            // Menggunakan tanggal hari ini sebagai basis
-            $today = Carbon::today();
-            
-            // Parse input time dengan tanggal hari ini
-            $masukSesi3 = Carbon::parse($today->format('Y-m-d') . ' ' . $request->jam_masuk_sesi_3);
-            $keluarSesi3 = Carbon::parse($today->format('Y-m-d') . ' ' . $request->jam_keluar_sesi_3);
-            
-            // Jika keluar sesi 3 lebih kecil dari masuk sesi 3, artinya melewati tengah malam
-            if ($keluarSesi3->lt($masukSesi3)) {
-                $keluarSesi3->addDay();
-            }
-            
-            // Perhitungan durasi: jam keluar - jam masuk
-            $durasiSesi3 = $masukSesi3->diffInMinutes($keluarSesi3);
-            $totalJamKerja += $durasiSesi3;
-            
-            \Log::info('Durasi sesi 3: ' . $durasiSesi3 . ' menit');
-        }
+        // Hitung total jam kerja untuk semua sesi
+        $totalJamKerja = $this->calculateTotalWorkingHours($request);
         
         \Log::info('Total jam kerja: ' . $totalJamKerja . ' menit');
         
@@ -222,12 +229,12 @@ class OperatorGtmController extends Controller
         $upahLembur = ($jamLembur / 60) * $upahPerJam;
         
         // Tambahkan data perhitungan ke validated data
-        $validatedData['total_jam_kerja'] = $totalJamKerja;
-        $validatedData['total_jam_lembur'] = $jamLembur;
-        $validatedData['upah_lembur'] = $upahLembur;
-        $validatedData['operator_gtm_id'] = $operatorGtm->id;
+        $filteredData['total_jam_kerja'] = $totalJamKerja;
+        $filteredData['total_jam_lembur'] = $jamLembur;
+        $filteredData['upah_lembur'] = $upahLembur;
+        $filteredData['operator_gtm_id'] = $operatorGtm->id;
 
-        OperatorGtmLembur::create($validatedData);
+        OperatorGtmLembur::create($filteredData);
 
         return redirect()->route('operator-gtm.show', $operatorGtm->id)
             ->with('success', 'Data lembur berhasil ditambahkan');
@@ -255,81 +262,17 @@ class OperatorGtmController extends Controller
             'jam_keluar_sesi_2' => 'nullable|date_format:H:i',
             'jam_masuk_sesi_3' => 'nullable|date_format:H:i',
             'jam_keluar_sesi_3' => 'nullable|date_format:H:i',
+            'jam_masuk_sesi_4' => 'nullable|date_format:H:i',
+            'jam_keluar_sesi_4' => 'nullable|date_format:H:i',
+            'jam_masuk_sesi_5' => 'nullable|date_format:H:i',
+            'jam_keluar_sesi_5' => 'nullable|date_format:H:i',
         ]);
 
-        // Logging untuk debugging
-        \Log::info('Jam masuk sesi 1: ' . $request->jam_masuk_sesi_1);
-        \Log::info('Jam keluar sesi 1: ' . $request->jam_keluar_sesi_1);
-        \Log::info('Jam masuk sesi 2: ' . $request->jam_masuk_sesi_2);
-        \Log::info('Jam keluar sesi 2: ' . $request->jam_keluar_sesi_2);
-        \Log::info('Jam masuk sesi 3: ' . $request->jam_masuk_sesi_3);
-        \Log::info('Jam keluar sesi 3: ' . $request->jam_keluar_sesi_3);
-
-        // Hitung total jam kerja
-        $totalJamKerja = 0;
+        // Filter data untuk menghapus sesi yang kosong
+        $filteredData = $this->filterEmptySessions($validatedData);
         
-        // Hitung durasi sesi 1
-        if ($request->filled('jam_masuk_sesi_1') && $request->filled('jam_keluar_sesi_1')) {
-            // Menggunakan tanggal hari ini sebagai basis
-            $today = Carbon::today();
-            
-            // Parse input time dengan tanggal hari ini
-            $masukSesi1 = Carbon::parse($today->format('Y-m-d') . ' ' . $request->jam_masuk_sesi_1);
-            $keluarSesi1 = Carbon::parse($today->format('Y-m-d') . ' ' . $request->jam_keluar_sesi_1);
-            
-            // Jika keluar sesi 1 lebih kecil dari masuk sesi 1, artinya melewati tengah malam
-            if ($keluarSesi1->lt($masukSesi1)) {
-                $keluarSesi1->addDay();
-            }
-            
-            // Perhitungan durasi: jam keluar - jam masuk
-            $durasiSesi1 = $masukSesi1->diffInMinutes($keluarSesi1);
-            $totalJamKerja += $durasiSesi1;
-            
-            \Log::info('Durasi sesi 1: ' . $durasiSesi1 . ' menit');
-        }
-        
-        // Hitung durasi sesi 2
-        if ($request->filled('jam_masuk_sesi_2') && $request->filled('jam_keluar_sesi_2')) {
-            // Menggunakan tanggal hari ini sebagai basis
-            $today = Carbon::today();
-            
-            // Parse input time dengan tanggal hari ini
-            $masukSesi2 = Carbon::parse($today->format('Y-m-d') . ' ' . $request->jam_masuk_sesi_2);
-            $keluarSesi2 = Carbon::parse($today->format('Y-m-d') . ' ' . $request->jam_keluar_sesi_2);
-            
-            // Jika keluar sesi 2 lebih kecil dari masuk sesi 2, artinya melewati tengah malam
-            if ($keluarSesi2->lt($masukSesi2)) {
-                $keluarSesi2->addDay();
-            }
-            
-            // Perhitungan durasi: jam keluar - jam masuk
-            $durasiSesi2 = $masukSesi2->diffInMinutes($keluarSesi2);
-            $totalJamKerja += $durasiSesi2;
-            
-            \Log::info('Durasi sesi 2: ' . $durasiSesi2 . ' menit');
-        }
-
-        // Hitung durasi sesi 3
-        if ($request->filled('jam_masuk_sesi_3') && $request->filled('jam_keluar_sesi_3')) {
-            // Menggunakan tanggal hari ini sebagai basis
-            $today = Carbon::today();
-            
-            // Parse input time dengan tanggal hari ini
-            $masukSesi3 = Carbon::parse($today->format('Y-m-d') . ' ' . $request->jam_masuk_sesi_3);
-            $keluarSesi3 = Carbon::parse($today->format('Y-m-d') . ' ' . $request->jam_keluar_sesi_3);
-            
-            // Jika keluar sesi 3 lebih kecil dari masuk sesi 3, artinya melewati tengah malam
-            if ($keluarSesi3->lt($masukSesi3)) {
-                $keluarSesi3->addDay();
-            }
-            
-            // Perhitungan durasi: jam keluar - jam masuk
-            $durasiSesi3 = $masukSesi3->diffInMinutes($keluarSesi3);
-            $totalJamKerja += $durasiSesi3;
-            
-            \Log::info('Durasi sesi 3: ' . $durasiSesi3 . ' menit');
-        }
+        // Hitung total jam kerja untuk semua sesi
+        $totalJamKerja = $this->calculateTotalWorkingHours($request);
         
         \Log::info('Total jam kerja: ' . $totalJamKerja . ' menit');
         
@@ -344,11 +287,11 @@ class OperatorGtmController extends Controller
         $upahLembur = ($jamLembur / 60) * $upahPerJam;
         
         // Tambahkan data perhitungan ke validated data
-        $validatedData['total_jam_kerja'] = $totalJamKerja;
-        $validatedData['total_jam_lembur'] = $jamLembur;
-        $validatedData['upah_lembur'] = $upahLembur;
+        $filteredData['total_jam_kerja'] = $totalJamKerja;
+        $filteredData['total_jam_lembur'] = $jamLembur;
+        $filteredData['upah_lembur'] = $upahLembur;
 
-        $lembur->update($validatedData);
+        $lembur->update($filteredData);
 
         return redirect()->route('operator-gtm.show', $lembur->operator_gtm_id)
             ->with('success', 'Data lembur berhasil diperbarui');
@@ -364,5 +307,77 @@ class OperatorGtmController extends Controller
 
         return redirect()->route('operator-gtm.show', $operatorId)
             ->with('success', 'Data lembur berhasil dihapus');
+    }
+
+    /**
+     * Helper method untuk menghitung total jam kerja dari semua sesi
+     */
+    private function calculateTotalWorkingHours(Request $request)
+    {
+        $totalJamKerja = 0;
+        
+        // Loop untuk semua sesi (1-5)
+        for ($sesi = 1; $sesi <= 5; $sesi++) {
+            $jamMasuk = $request->input("jam_masuk_sesi_{$sesi}");
+            $jamKeluar = $request->input("jam_keluar_sesi_{$sesi}");
+            
+            if ($jamMasuk && $jamKeluar) {
+                $durasi = $this->calculateSessionDuration($jamMasuk, $jamKeluar);
+                $totalJamKerja += $durasi;
+                \Log::info("Durasi sesi {$sesi}: {$durasi} menit");
+            }
+        }
+        
+        return $totalJamKerja;
+    }
+
+    /**
+     * Helper method untuk menghitung durasi satu sesi
+     */
+    private function calculateSessionDuration($jamMasuk, $jamKeluar)
+    {
+        // Menggunakan tanggal hari ini sebagai basis
+        $today = Carbon::today();
+        
+        // Parse input time dengan tanggal hari ini
+        $masuk = Carbon::parse($today->format('Y-m-d') . ' ' . $jamMasuk);
+        $keluar = Carbon::parse($today->format('Y-m-d') . ' ' . $jamKeluar);
+        
+        // Jika keluar lebih kecil dari masuk, artinya melewati tengah malam
+        if ($keluar->lt($masuk)) {
+            $keluar->addDay();
+        }
+        
+        // Perhitungan durasi: jam keluar - jam masuk
+        return $masuk->diffInMinutes($keluar);
+    }
+
+    /**
+     * Helper method untuk memfilter sesi yang kosong (tidak disimpan ke database)
+     */
+    private function filterEmptySessions($data)
+    {
+        $filteredData = [];
+        
+        // Copy data non-sesi
+        foreach ($data as $key => $value) {
+            if (!str_contains($key, 'jam_masuk_sesi_') && !str_contains($key, 'jam_keluar_sesi_')) {
+                $filteredData[$key] = $value;
+            }
+        }
+        
+        // Filter sesi yang memiliki kedua jam masuk dan keluar
+        for ($sesi = 1; $sesi <= 5; $sesi++) {
+            $jamMasuk = $data["jam_masuk_sesi_{$sesi}"] ?? null;
+            $jamKeluar = $data["jam_keluar_sesi_{$sesi}"] ?? null;
+            
+            // Hanya simpan jika kedua jam terisi
+            if ($jamMasuk && $jamKeluar) {
+                $filteredData["jam_masuk_sesi_{$sesi}"] = $jamMasuk;
+                $filteredData["jam_keluar_sesi_{$sesi}"] = $jamKeluar;
+            }
+        }
+        
+        return $filteredData;
     }
 }

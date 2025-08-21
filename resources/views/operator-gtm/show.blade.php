@@ -201,17 +201,7 @@
                             <i class="fas fa-chart-line mr-2"></i>
                             Ringkasan Lembur
                             @php
-                                // Set default jika tidak ada nilai dari controller
-                                $displayMonth = $selectedMonth ?? date('m');
-                                $displayYear = $selectedYear ?? date('Y');
-                                
-                                // Tanggal 26 bulan sebelumnya
-                                $prevMonth = $displayMonth == '01' ? '12' : str_pad((int)$displayMonth - 1, 2, '0', STR_PAD_LEFT);
-                                $prevYear = $displayMonth == '01' ? $displayYear - 1 : $displayYear;
-                                $startDate = Carbon\Carbon::createFromFormat('Y-m-d', $prevYear . '-' . $prevMonth . '-26');
-                                
-                                // Tanggal 25 bulan yang dipilih
-                                $endDate = Carbon\Carbon::createFromFormat('Y-m-d', $displayYear . '-' . $displayMonth . '-25');
+                                // Variabel startDate dan endDate sudah disediakan dari controller
                             @endphp
                             - {{ $startDate->format('d M Y') }} s/d {{ $endDate->format('d M Y') }}
                         </h3>
@@ -225,38 +215,13 @@
                                         <span class="info-box-text">Total Jam Lembur</span>
                                         <span class="info-box-number">
                                             @php
-                                                // Debug filtering process
-                                                echo "<!-- DEBUG Filtering Process -->";
-                                                
-                                                // Buat string tanggal yang pasti untuk perbandingan
-                                                $startDateStr = $startDate->format('Y-m-d');  
-                                                $endDateStr = $endDate->format('Y-m-d');
-                                                echo "<!-- START: $startDateStr, END: $endDateStr -->";
-                                                
-                                                // Gunakan metode yang sama dengan logika yang digunakan untuk tabel
-                                                $filteredRecords = collect([]);
-                                                foreach ($lemburRecords as $record) {
-                                                    $recordDateStr = date('Y-m-d', strtotime($record->tanggal));
-                                                    // Pembandingan langsung dengan string tanggal
-                                                    if ($recordDateStr >= $startDateStr && $recordDateStr <= $endDateStr) {
-                                                        $filteredRecords->push($record);
-                                                        echo "<!-- Including Record ID: " . $record->id . " | Date: " . $recordDateStr . " -->";
-                                                    } else {
-                                                        echo "<!-- Excluding Record ID: " . $record->id . " | Date: " . $recordDateStr . " -->";
-                                                        // Cek if dates are close (within 1 day)
-                                                        $startDiff = abs(strtotime($recordDateStr) - strtotime($startDateStr));
-                                                        $endDiff = abs(strtotime($recordDateStr) - strtotime($endDateStr));
-                                                        if ($startDiff < 86400 || $endDiff < 86400) {
-                                                            echo "<!-- But it's a close match, including anyway -->";
-                                                            $filteredRecords->push($record);
-                                                        }
-                                                    }
-                                                }
-                                                
-                                                echo "<!-- FILTERED RECORDS COUNT: " . count($filteredRecords) . " -->";
-                                                
-                                                $totalJamLembur = $filteredRecords->sum('total_jam_lembur');
-                                                echo floor($totalJamLembur / 60) . ' jam ' . ($totalJamLembur % 60) . ' menit';
+                                            // Hitung total jam lembur dari allDatesInPeriod yang sudah disiapkan controller
+                                            $filteredRecords = collect($allDatesInPeriod)->filter(function($record) {
+                                                return $record !== null;
+                                            });
+                                            
+                                            $totalJamLembur = $filteredRecords->sum('total_jam_lembur');
+                                            echo floor($totalJamLembur / 60) . ' jam ' . ($totalJamLembur % 60) . ' menit';
                                             @endphp
                                         </span>
                                     </div>
@@ -269,6 +234,7 @@
                                         <span class="info-box-text">Total Upah Lembur</span>
                                         <span class="info-box-number">
                                             @php
+                                                // Gunakan data yang sama dari perhitungan sebelumnya
                                                 $totalUpahLembur = $filteredRecords->sum('upah_lembur');
                                             @endphp
                                             Rp {{ number_format($totalUpahLembur, 0, ',', '.') }}
@@ -281,7 +247,7 @@
                                     <span class="info-box-icon bg-primary"><i class="fas fa-calculator"></i></span>
                                     <div class="info-box-content">
                                         <span class="info-box-text">Total yang Harus Dibayarkan 
-                                            <a href="#" class="text-primary ml-1" data-toggle="tooltip" data-html="true" title="<b>Algoritma perhitungan:</b><br>1. Jika tanggal bergabung sebelum tanggal 26 bulan sebelumnya, maka gaji pokok penuh.<br>2. Jika tanggal bergabung di antara periode (26 bulan sebelumnya sampai 25 bulan ini), maka gaji pokok dihitung proporsional dari tanggal bergabung sampai tanggal 25 bulan ini.<br>3. Total Pembayaran = Gaji Pokok (disesuaikan) + Total Upah Lembur"><i class="fas fa-question-circle"></i></a>
+                                            <a href="#" class="text-primary ml-1" data-toggle="tooltip" data-html="true" title="<b>Algoritma perhitungan:</b><br>1. Jika tanggal bergabung sebelum tanggal 26 bulan sebelumnya, maka gaji pokok penuh.<br>2. Jika tanggal bergabung di antara periode (26 bulan sebelumnya sampai akhir bulan yang dipilih), maka gaji pokok dihitung proporsional berdasarkan <b>30 hari standar</b> dari tanggal bergabung sampai akhir bulan.<br>3. Total Pembayaran = Gaji Pokok (disesuaikan) + Total Upah Lembur"><i class="fas fa-question-circle"></i></a>
                                         </span>
                                         <span class="info-box-number">
                                             @php
@@ -293,26 +259,72 @@
                                                     ? \Carbon\Carbon::parse($operatorGtm->tanggal_bergabung)
                                                     : \Carbon\Carbon::parse($operatorGtm->created_at);
                                                 
+                                                // Hitung hari kerja dalam periode - RESET ke nilai default
+                                                $hariKerja = 30; // Default 30 hari
+                                                $statusKerja = '30 hari (periode penuh)'; // Default status
+                                                
+                                                // Debug info
+                                                echo "<!-- DEBUG: Tanggal bergabung: " . $tanggalBergabung->format('Y-m-d') . " -->";
+                                                echo "<!-- DEBUG: Start date: " . $startDate->format('Y-m-d') . " -->";
+                                                echo "<!-- DEBUG: End date (data lembur): " . $endDate->format('Y-m-d') . " -->";
+                                                echo "<!-- DEBUG: End of month (gaji): " . $endOfMonth->format('Y-m-d') . " -->";
+                                                
                                                 // Jika tanggal bergabung ada di antara periode yang dipilih
-                                                if ($tanggalBergabung->gt($startDate) && $tanggalBergabung->lte($endDate)) {
+                                                if ($tanggalBergabung->gt($startDate) && $tanggalBergabung->lte($endOfMonth)) {
+                                                    echo "<!-- DEBUG: Masuk kondisi bergabung di tengah periode -->";
+                                                    
                                                     // Hitung proporsi gaji berdasarkan jumlah hari aktif
-                                                    $totalHariPeriode = $startDate->diffInDays($endDate) + 1;
-                                                    $hariAktif = $tanggalBergabung->diffInDays($endDate) + 1;
+                                                    // FIXED: Total hari periode selalu 30 hari
+                                                    $totalHariPeriode = 30;
+                                                    
+                                                    // Gunakan tanggal bergabung sampai akhir bulan (bukan tanggal 25)
+                                                    $startKerja = \Carbon\Carbon::parse($tanggalBergabung->format('Y-m-d'));
+                                                    $endKerja = \Carbon\Carbon::parse($endOfMonth->format('Y-m-d'));
+                                                    
+                                                    // Hitung hari kerja: dari tanggal bergabung sampai akhir bulan
+                                                    $hariKerjaHitung = $startKerja->diffInDays($endKerja) + 1;
+                                                    
+                                                    echo "<!-- DEBUG: Hari kerja dihitung: " . $hariKerjaHitung . " -->";
+                                                    
+                                                    // Pastikan hasil adalah integer
+                                                    $hariKerja = (int) $hariKerjaHitung;
                                                     
                                                     // Proporsi gaji pokok berdasarkan jumlah hari aktif
-                                                    $gajiPokok = ($operatorGtm->gaji_pokok / $totalHariPeriode) * $hariAktif;
+                                                    $gajiPokok = ($operatorGtm->gaji_pokok / $totalHariPeriode) * $hariKerja;
+                                                    $statusKerja = $hariKerja . ' hari';
+                                                    
+                                                    echo "<!-- DEBUG: Final hari kerja: " . $hariKerja . " -->";
+                                                    echo "<!-- DEBUG: Final status kerja: " . $statusKerja . " -->";
                                                 }
-                                                // Jika tanggal bergabung setelah periode, gaji pokok = 0
-                                                else if ($tanggalBergabung->gt($endDate)) {
+                                                // Jika tanggal bergabung setelah akhir bulan, gaji pokok = 0
+                                                else if ($tanggalBergabung->gt($endOfMonth)) {
+                                                    echo "<!-- DEBUG: Masuk kondisi belum bergabung -->";
                                                     $gajiPokok = 0;
+                                                    $hariKerja = 0;
+                                                    $statusKerja = '0 hari (belum bergabung)';
                                                 }
-                                                // Jika tanggal bergabung sebelum periode, gaji pokok penuh (sudah di-set di awal)
+                                                // Jika tanggal bergabung sebelum periode, full period
+                                                else {
+                                                    echo "<!-- DEBUG: Masuk kondisi periode penuh -->";
+                                                    $hariKerja = 30; // Menggunakan standar 30 hari
+                                                    $statusKerja = '30 hari (periode penuh)';
+                                                }
                                                 
                                                 $totalPembayaran = $gajiPokok + $totalUpahLembur;
+                                                
+                                                echo "<!-- DEBUG: Total pembayaran: " . $totalPembayaran . " -->";
                                             @endphp
                                             Rp {{ number_format($totalPembayaran, 0, ',', '.') }}
                                         </span>
                                         <span class="text-sm text-muted">Gaji Pokok + Upah Lembur</span>
+                                        <div class="text-xs mt-1">
+                                            <i class="fas fa-calendar-check text-info"></i> 
+                                            <strong>Hari Kerja:</strong> 
+                                            @php
+                                                // Debug: pastikan $statusKerja adalah string yang benar
+                                                echo is_numeric($statusKerja) ? number_format($statusKerja, 0) . ' hari' : $statusKerja;
+                                            @endphp
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -329,17 +341,7 @@
                             <i class="fas fa-list-alt mr-2"></i>
                             Data Lembur
                             @php
-                                // Set default jika tidak ada nilai dari controller
-                                $displayMonth = $selectedMonth ?? date('m');
-                                $displayYear = $selectedYear ?? date('Y');
-                                
-                                // Tanggal 26 bulan sebelumnya
-                                $prevMonth = $displayMonth == '01' ? '12' : str_pad((int)$displayMonth - 1, 2, '0', STR_PAD_LEFT);
-                                $prevYear = $displayMonth == '01' ? $displayYear - 1 : $displayYear;
-                                $startDate = Carbon\Carbon::createFromFormat('Y-m-d', $prevYear . '-' . $prevMonth . '-26');
-                                
-                                // Tanggal 25 bulan yang dipilih
-                                $endDate = Carbon\Carbon::createFromFormat('Y-m-d', $displayYear . '-' . $displayMonth . '-25');
+                                // Variabel startDate dan endDate sudah disediakan dari controller
                             @endphp
                             - {{ $startDate->format('d M Y') }} s/d {{ $endDate->format('d M Y') }}
                         </h3>
@@ -358,6 +360,16 @@
                                     <th>Sesi 1</th>
                                     <th>Sesi 2</th>
                                     <th>Sesi 3</th>
+                                    @php
+                                        // Variabel sudah disediakan dari controller
+                                        // $hasSesi4, $hasSesi5, $allDatesInPeriod
+                                    @endphp
+                                    @if($hasSesi4)
+                                        <th>Sesi 4</th>
+                                    @endif
+                                    @if($hasSesi5)
+                                        <th>Sesi 5</th>
+                                    @endif
                                     <th>Total Jam Kerja</th>
                                     <th>Jam Lembur</th>
                                     <th>Upah Lembur</th>
@@ -367,63 +379,7 @@
                             <tbody>
                                 @php 
                                     $no = 1;
-                                    
-                                    // Debug Info
-                                    echo "<!-- DEBUG: StartDate: " . $startDate->format('Y-m-d') . " -->";
-                                    echo "<!-- DEBUG: EndDate: " . $endDate->format('Y-m-d') . " -->";
-                                    echo "<!-- DEBUG: Total Records: " . count($lemburRecords) . " -->";
-                                    
-                                    // Logging semua data lembur untuk debugging
-                                    echo "<!-- BEGIN DATA DUMP -->";
-                                    foreach ($lemburRecords as $record) {
-                                        echo "<!-- DUMP RECORD: ID=" . $record->id . 
-                                             " | Tanggal=" . $record->tanggal . 
-                                             " | Format=" . date('Y-m-d', strtotime($record->tanggal)) . 
-                                             " | Total Lembur=" . $record->total_jam_lembur . 
-                                             " | Upah=" . $record->upah_lembur . " -->";
-                                    }
-                                    echo "<!-- END DATA DUMP -->";
-                                    
-                                    // Buat array tanggal untuk periode penuh dan tandai tanggal yang memiliki data
-                                    $allDatesInPeriod = [];
-                                    $currentDate = clone $startDate;
-                                    while ($currentDate->lte($endDate)) {
-                                        $dateKey = $currentDate->format('Y-m-d');
-                                        $allDatesInPeriod[$dateKey] = null;
-                                        $currentDate->addDay();
-                                    }
-                                    
-                                    // Debug array tanggal
-                                    echo "<!-- DEBUG: Total dates in period: " . count($allDatesInPeriod) . " -->";
-                                    echo "<!-- DEBUG: Period date keys: " . implode(',', array_keys($allDatesInPeriod)) . " -->";
-                                    
-                                    // Masukkan data lembur yang ada ke array berdasarkan tanggal
-                                    $recordsFound = 0;
-                                    foreach ($lemburRecords as $record) {
-                                        // Standarisasi format tanggal dengan strtotime
-                                        $recordDateStr = date('Y-m-d', strtotime($record->tanggal));
-                                        
-                                        echo "<!-- DEBUG: Record #" . $record->id . " date: " . $recordDateStr . " -->";
-                                        
-                                        if (array_key_exists($recordDateStr, $allDatesInPeriod)) {
-                                            echo "<!-- DEBUG: MATCH found for date: " . $recordDateStr . " -->";
-                                            $allDatesInPeriod[$recordDateStr] = $record;
-                                            $recordsFound++;
-                                        } else {
-                                            echo "<!-- DEBUG: NO MATCH for date: " . $recordDateStr . " (not in period keys) -->";
-                                            // Cek jika tanggalnya close match (mungkin ada masalah timezone atau format)
-                                            foreach (array_keys($allDatesInPeriod) as $periodDate) {
-                                                $diff = abs(strtotime($recordDateStr) - strtotime($periodDate));
-                                                if ($diff < 86400) { // selisih kurang dari 1 hari (dalam detik)
-                                                    echo "<!-- DEBUG: CLOSE MATCH found: record=" . $recordDateStr . ", period=" . $periodDate . " -->";
-                                                    $allDatesInPeriod[$periodDate] = $record; // gunakan key dari period
-                                                    $recordsFound++;
-                                                    break;
-                                                }
-                                            }
-                                        }
-                                    }
-                                    echo "<!-- DEBUG: Records found in period: " . $recordsFound . " -->";
+                                    // Data allDatesInPeriod sudah disiapkan dari controller
                                 @endphp
                                 
                                 @forelse($allDatesInPeriod as $date => $record)
@@ -445,12 +401,30 @@
                                             @endif
                                         </td>
                                         <td>
-                                            @if($record && $record->jam_masuk_sesi_3 && $record->jam_keluar_sesi_3)
-                                                {{ substr($record->jam_masuk_sesi_3, 0, 5) }} - {{ substr($record->jam_keluar_sesi_3, 0, 5) }}
-                                            @else
-                                                -
-                                            @endif
+                                        @if($record && $record->jam_masuk_sesi_3 && $record->jam_keluar_sesi_3)
+                                        {{ substr($record->jam_masuk_sesi_3, 0, 5) }} - {{ substr($record->jam_keluar_sesi_3, 0, 5) }}
+                                        @else
+                                        -
+                                        @endif
                                         </td>
+                        @if($hasSesi4)
+                            <td>
+                                @if($record && $record->jam_masuk_sesi_4 && $record->jam_keluar_sesi_4)
+                                    {{ substr($record->jam_masuk_sesi_4, 0, 5) }} - {{ substr($record->jam_keluar_sesi_4, 0, 5) }}
+                                @else
+                                    -
+                                @endif
+                            </td>
+                        @endif
+                        @if($hasSesi5)
+                            <td>
+                                @if($record && $record->jam_masuk_sesi_5 && $record->jam_keluar_sesi_5)
+                                    {{ substr($record->jam_masuk_sesi_5, 0, 5) }} - {{ substr($record->jam_keluar_sesi_5, 0, 5) }}
+                                @else
+                                    -
+                                @endif
+                            </td>
+                        @endif
                                         <td>
                                             @if($record)
                                                 {{ floor($record->total_jam_kerja / 60) }} jam {{ $record->total_jam_kerja % 60 }} menit
@@ -503,7 +477,12 @@
                             </tbody>
                             <tfoot>
                                 <tr>
-                                    <th colspan="6" class="text-right">Total:</th>
+                                    @php
+                                        $totalColumns = 6; // Default: No, Tanggal, Sesi 1, 2, 3, Total Jam Kerja
+                                        if ($hasSesi4) $totalColumns++;
+                                        if ($hasSesi5) $totalColumns++;
+                                    @endphp
+                                    <th colspan="{{ $totalColumns }}" class="text-right">Total:</th>
                                     <th>
                                         @php
                                             $totalJamLembur = 0;
@@ -647,6 +626,22 @@
     
     tr.has-data:hover {
         background-color: rgba(40, 167, 69, 0.1) !important;
+    }
+    
+    /* Style untuk keterangan hari kerja */
+    .info-box-content .text-xs {
+        color: #6c757d;
+        line-height: 1.2;
+        margin-top: 4px;
+    }
+    
+    .info-box-content .text-xs strong {
+        color: #495057;
+        font-weight: 600;
+    }
+    
+    .info-box-content .text-xs .fas {
+        margin-right: 4px;
     }
 </style>
 @endsection
