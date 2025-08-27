@@ -16,6 +16,7 @@ class User extends Authenticatable
     // Konstanta untuk role
     const ROLE_ADMIN = 'admin';
     const ROLE_SUPER_ADMIN = 'superadmin';
+    const ROLE_KEUANGAN = 'keuangan';
     const ROLE_CUSTOMER = 'customer';
     const ROLE_FOB = 'fob';
     const ROLE_DEMO = 'demo';
@@ -1082,6 +1083,14 @@ class User extends Authenticatable
     public function isFOB()
     {
         return $this->role === self::ROLE_FOB;
+    }
+
+    /**
+     * Check if user is keuangan
+     */
+    public function isKeuangan()
+    {
+        return $this->role === self::ROLE_KEUANGAN;
     }
 
     /**

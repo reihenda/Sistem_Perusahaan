@@ -1,30 +1,26 @@
-@echo off
-echo Clearing Laravel caches...
+#!/bin/bash
 
-echo.
-echo 1. Clearing application cache...
+# Script untuk membersihkan cache Laravel
+echo "Membersihkan cache Laravel..."
+
+cd "E:\Reihan File\IT project\Laravel Project\sistem-informasi-perusahaan"
+
+# Clear application cache
 php artisan cache:clear
 
-echo.
-echo 2. Clearing config cache...
+# Clear config cache
 php artisan config:clear
 
-echo.
-echo 3. Clearing route cache...
+# Clear route cache  
 php artisan route:clear
 
-echo.
-echo 4. Clearing view cache...
+# Clear view cache
 php artisan view:clear
 
-echo.
-echo 5. Regenerating autoload files...
+# Clear compiled classes
+php artisan clear-compiled
+
+# Optimize autoloader
 composer dump-autoload --optimize
 
-echo.
-echo 6. Optimizing for production...
-php artisan optimize
-
-echo.
-echo Cache clearing completed!
-pause
+echo "Cache berhasil dibersihkan!"

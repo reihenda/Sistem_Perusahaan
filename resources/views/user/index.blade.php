@@ -118,6 +118,7 @@
                                 name="role" required>
                                 <option value="">-- Pilih Role --</option>
                                 <option value="admin" {{ old('role') == 'admin' ? 'selected' : '' }}>Admin</option>
+                                <option value="keuangan" {{ old('role') == 'keuangan' ? 'selected' : '' }}>Keuangan</option>
                                 <option value="customer" {{ old('role') == 'customer' ? 'selected' : '' }}>Customer</option>
                                 <option value="fob" {{ old('role') == 'fob' ? 'selected' : '' }}>FOB</option>
                                 <option value="demo" {{ old('role') == 'demo' ? 'selected' : '' }}>Demo</option>
@@ -209,6 +210,7 @@
                             <label for="edit_role">Role <span class="text-danger">*</span></label>
                             <select class="form-control" id="edit_role" name="role" required>
                                 <option value="admin">Admin</option>
+                                <option value="keuangan">Keuangan</option>
                                 <option value="customer">Customer</option>
                                 <option value="fob">FOB</option>
                                 <option value="demo">Demo</option>

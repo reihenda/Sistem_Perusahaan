@@ -31,6 +31,8 @@ class AuthController extends Controller
                 return redirect()->route('superadmin.dashboard');
             } elseif ($user->isAdmin()) {
                 return redirect()->route('admin.dashboard');
+            } elseif ($user->isKeuangan()) {
+                return redirect()->route('keuangan.index');
             } elseif ($user->isDemo()) {
                 return redirect()->route('demo.admin'); // Redirect to demo admin dashboard
             } else {
@@ -59,7 +61,7 @@ class AuthController extends Controller
             'name' => 'required|string|max:255|unique:users',
             'email' => 'required|string|email|max:255|unique:users',
             'password' => 'required|string|min:3',
-            'role' => 'required|string|in:admin,customer,fob,demo',
+            'role' => 'required|string|in:admin,keuangan,customer,fob,demo',
             'no_kontrak' => 'nullable|string|max:255',
             'alamat' => 'nullable|string',
             'nomor_tlpn' => 'nullable|string|max:20',

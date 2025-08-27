@@ -19,9 +19,9 @@ class UserController extends Controller
      */
     public function index(Request $request)
     {
-        // Query untuk Admin (admin, superadmin)
+        // Query untuk Admin (admin, superadmin, keuangan)
         $adminQuery = User::query()
-            ->whereIn('role', ['admin', 'superadmin'])
+            ->whereIn('role', ['admin', 'superadmin', 'keuangan'])
             ->orderBy('role');
 
         // Query untuk Customer/FOB (customer, fob, demo)
@@ -1017,7 +1017,7 @@ class UserController extends Controller
         $validator = Validator::make($request->all(), [
             'name' => 'required|string|max:255',
             'email' => 'required|string|email|max:255|unique:users,email,' . $user->id,
-            'role' => 'required|in:admin,customer,fob,demo',
+            'role' => 'required|in:admin,keuangan,customer,fob,demo',
             'password' => 'nullable|string|min:3',
             'no_kontrak' => 'nullable|string|max:255',
             'alamat' => 'nullable|string',

@@ -27,6 +27,9 @@ class CheckRole
                 case 'superadmin':
                     if ($user->isSuperAdmin()) return $next($request);
                     break;
+                case 'keuangan':
+                    if ($user->isKeuangan()) return $next($request);
+                    break;
                 case 'customer':
                     if ($user->isCustomer()) return $next($request);
                     break;

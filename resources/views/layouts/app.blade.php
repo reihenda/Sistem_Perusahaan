@@ -289,6 +289,115 @@
                             </li>
                         @endif
 
+                        @if (Auth::user()->isKeuangan())
+                            <li class="nav-item">
+                                <a href="{{ route('keuangan.index') }}" class="nav-link">
+                                    <i class="nav-icon fas fa-tachometer-alt"></i>
+                                    <p>Dashboard</p>
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a href="{{ route('data-pencatatan.index') }}" class="nav-link">
+                                    <i class="nav-icon fas fa-clipboard-list"></i>
+                                    <p>Pencatatan Data Customer</p>
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a href="{{ route('operator-gtm.index') }}" class="nav-link">
+                                    <i class="nav-icon fas fa-user-clock"></i>
+                                    <p>Lembur Operator GTM</p>
+                                </a>
+                            </li>
+                            <li class="nav-item has-treeview">
+                                <a href="#" class="nav-link">
+                                    <i class="nav-icon fas fa-money-bill-wave"></i>
+                                    <p>
+                                        Keuangan
+                                        <i class="fas fa-angle-left right"></i>
+                                    </p>
+                                </a>
+                                <ul class="nav nav-treeview">
+                                    <li class="nav-item">
+                                        <a href="{{ route('keuangan.index') }}" class="nav-link">
+                                            <i class="fas fa-chart-line nav-icon"></i>
+                                            <p>Dashboard Keuangan</p>
+                                        </a>
+                                    </li>
+                                    <li class="nav-item">
+                                        <a href="{{ route('keuangan.kas.index') }}" class="nav-link">
+                                            <i class="fas fa-wallet nav-icon"></i>
+                                            <p>Kas</p>
+                                        </a>
+                                    </li>
+                                    <li class="nav-item">
+                                        <a href="{{ route('keuangan.bank.index') }}" class="nav-link">
+                                            <i class="fas fa-university nav-icon"></i>
+                                            <p>Bank</p>
+                                        </a>
+                                    </li>
+                                    <li class="nav-item">
+                                        <a href="{{ route('keuangan.accounts.index') }}" class="nav-link">
+                                            <i class="fas fa-list-alt nav-icon"></i>
+                                            <p>Kelola Akun</p>
+                                        </a>
+                                    </li>
+                                    <li class="nav-item">
+                                        <a href="{{ route('keuangan.descriptions.index') }}" class="nav-link">
+                                            <i class="fas fa-tags nav-icon"></i>
+                                            <p>Kelola Deskripsi</p>
+                                        </a>
+                                    </li>
+                                </ul>
+                            </li>
+                            <li class="nav-item has-treeview">
+                                <a href="#" class="nav-link">
+                                    <i class="nav-icon fas fa-file-invoice-dollar"></i>
+                                    <p>
+                                        Invoice & Billing
+                                        <i class="fas fa-angle-left right"></i>
+                                    </p>
+                                </a>
+                                <ul class="nav nav-treeview">
+                                    <li class="nav-item">
+                                        <a href="{{ route('invoices.index') }}" class="nav-link">
+                                            <i class="far fa-file-alt nav-icon"></i>
+                                            <p>Daftar Invoice</p>
+                                        </a>
+                                    </li>
+                                    <li class="nav-item">
+                                        <a href="{{ route('billings.index') }}" class="nav-link">
+                                            <i class="far fa-money-bill-alt nav-icon"></i>
+                                            <p>Daftar Billing</p>
+                                        </a>
+                                    </li>
+                                    <li class="nav-item">
+                                        <a href="{{ route('proforma-invoices.index') }}" class="nav-link">
+                                            <i class="far fa-file-powerpoint nav-icon"></i>
+                                            <p>Proforma Invoice</p>
+                                        </a>
+                                    </li>
+                                    <li class="nav-item">
+                                        <a href="{{ route('invoices.select-customer') }}" class="nav-link">
+                                            <i class="fas fa-file-invoice nav-icon"></i>
+                                            <p>Tambah Invoice</p>
+                                        </a>
+                                    </li>
+                                    <li class="nav-item">
+                                        <a href="{{ route('billings.select-customer') }}" class="nav-link">
+                                            <i class="fas fa-plus-circle nav-icon"></i>
+                                            <p>Tambah Billing</p>
+                                        </a>
+                                    </li>
+                                    <li class="nav-item">
+                                        <a href="{{ route('proforma-invoices.select-customer') }}" class="nav-link">
+                                            <i class="fas fa-file-contract nav-icon"></i>
+                                            <p>Tambah Proforma</p>
+                                        </a>
+                                    </li>
+                                </ul>
+                            </li>
+                        @endif
+
                         @if (Auth::user()->isCustomer())
                             <li class="nav-item">
                                 <a href="{{ route('customer.dashboard') }}" class="nav-link">
@@ -391,6 +500,8 @@
                                 <select class="form-control @error('role') is-invalid @enderror" id="role"
                                     name="role" required>
                                     <option value="admin" {{ old('role') == 'admin' ? 'selected' : '' }}>Admin
+                                    </option>
+                                    <option value="keuangan" {{ old('role') == 'keuangan' ? 'selected' : '' }}>Keuangan
                                     </option>
                                     <option value="customer" {{ old('role') == 'customer' ? 'selected' : '' }}>
                                         Customer</option>

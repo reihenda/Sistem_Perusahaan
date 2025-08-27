@@ -23,6 +23,8 @@
                                 <i class="fas fa-crown text-danger mr-2"></i> Superadmin
                             @elseif($user->role == 'admin')
                                 <i class="fas fa-user-shield text-primary mr-2"></i> Admin
+                            @elseif($user->role == 'keuangan')
+                                <i class="fas fa-calculator text-success mr-2"></i> Keuangan
                             @endif
                         </td>
                     </tr>
@@ -34,6 +36,7 @@
                         <span class="badge 
                             @if($user->role == 'superadmin') badge-danger
                             @elseif($user->role == 'admin') badge-primary
+                            @elseif($user->role == 'keuangan') badge-success
                             @endif">
                             {{ ucfirst($user->role) }}
                         </span>
