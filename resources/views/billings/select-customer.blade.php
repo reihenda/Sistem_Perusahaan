@@ -17,6 +17,7 @@
                         <th style="width: 10px">No</th>
                         <th>Nama</th>
                         <th>Email</th>
+                        <th style="width: 80px">Jenis</th>
                         <th style="width: 100px">Aksi</th>
                     </tr>
                 </thead>
@@ -27,6 +28,13 @@
                             <td>{{ $customer->name }}</td>
                             <td>{{ $customer->email }}</td>
                             <td>
+                                @if($customer->role === 'customer')
+                                    <span class="badge badge-primary">Customer</span>
+                                @elseif($customer->role === 'fob')
+                                    <span class="badge badge-success">FOB</span>
+                                @endif
+                            </td>
+                            <td>
                                 <a href="{{ route('billings.create', $customer) }}" class="btn btn-sm btn-primary">
                                     <i class="fas fa-file-invoice-dollar mr-1"></i>Buat Billing
                                 </a>
@@ -34,7 +42,7 @@
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="4" class="text-center">Tidak ada customer yang tersedia</td>
+                            <td colspan="5" class="text-center">Tidak ada customer yang tersedia</td>
                         </tr>
                     @endforelse
                 </tbody>

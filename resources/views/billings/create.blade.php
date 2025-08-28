@@ -38,12 +38,19 @@
 
 @section('title', 'Buat Billing Baru')
 
-@section('page-title', 'Buat Billing Baru untuk ' . $customer->name)
+@section('page-title', 'Buat Billing Baru untuk ' . $customer->name . ' (' . ucfirst($customer->role) . ')')
 
 @section('content')
 <div class="card">
     <div class="card-header">
         <h3 class="card-title">Form Billing Baru</h3>
+        <div class="card-tools">
+            @if($customer->role === 'customer')
+                <span class="badge badge-primary">Customer</span>
+            @elseif($customer->role === 'fob')
+                <span class="badge badge-success">FOB</span>
+            @endif
+        </div>
     </div>
     <form action="{{ route('billings.store', $customer) }}" method="POST">
         @csrf

@@ -43,9 +43,18 @@ class BillingController extends Controller
      */
     public function selectCustomer()
     {
-        $customers = User::where('role', 'customer')
+        // Ambil customer reguler terlebih dahulu
+        $regularCustomers = User::where('role', 'customer')
             ->orderBy('name')
             ->get();
+            
+        // Ambil customer FOB
+        $fobCustomers = User::where('role', 'fob')
+            ->orderBy('name')
+            ->get();
+            
+        // Gabungkan dengan urutan customer reguler terlebih dahulu
+        $customers = $regularCustomers->concat($fobCustomers);
         
         return view('billings.select-customer', compact('customers'));
     }
