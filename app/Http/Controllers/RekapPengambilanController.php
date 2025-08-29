@@ -26,17 +26,34 @@ class RekapPengambilanController extends Controller
         $bulan = $selectedDate->month;
         $tahun = $selectedDate->year;
 
-        // Get data berdasarkan filter dengan paginasi
-        $rekapPengambilan = RekapPengambilan::filterByMonthYear($bulan, $tahun)
-            ->with('customer')
-            ->get()
-            ->sortBy('customer.name'); // Sort by customer name ascending
+        // Start with base query
+        $query = RekapPengambilan::filterByMonthYear($bulan, $tahun)
+            ->with('customer');
 
-        // Hitung total volume bulanan
+        // Filter berdasarkan pencarian customer jika ada
+        if ($request->has('search_customer') && !empty($request->search_customer)) {
+            $searchTerm = $request->search_customer;
+            $query->whereHas('customer', function ($q) use ($searchTerm) {
+                $q->where('name', 'like', '%' . $searchTerm . '%');
+            });
+        }
+
+        // Get data dengan filter
+        $rekapPengambilan = $query->get()->sortBy('customer.name');
+
+        // Hitung total volume bulanan (tanpa filter search untuk konsistensi)
         $totalVolumeBulanan = RekapPengambilan::getTotalVolumeMonthly($bulan, $tahun);
 
-        // Hitung total volume harian berdasarkan tanggal yang dipilih
+        // Hitung total volume harian berdasarkan tanggal yang dipilih (tanpa filter search)
         $totalVolumeHarian = RekapPengambilan::getTotalVolumeDaily($tanggal);
+
+        // Deteksi jika request adalah AJAX untuk pencarian real-time
+        if ($request->ajax() && $request->has('search_customer')) {
+            $html = view('rekap-pengambilan.partials.table', ['rekapPengambilan' => $rekapPengambilan])->render();
+            return response()->json([
+                'html' => $html
+            ]);
+        }
 
         // Get list customer untuk dropdown
         $customers = User::where('role', 'customer')->orWhere('role', 'fob')->get();

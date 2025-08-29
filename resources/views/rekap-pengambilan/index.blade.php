@@ -92,65 +92,24 @@
             <div class="col-md-12">
                 <div class="card">
                     <div class="card-header">
-                        <h3 class="card-title">
-                            <i class="fas fa-list-alt mr-1"></i>
-                            Data Rekap Pengambilan - {{ date('F Y', mktime(0, 0, 0, $bulan, 1, $tahun)) }}
-                        </h3>
+                        <div class="d-flex justify-content-between align-items-center">
+                            <h3 class="card-title">
+                                <i class="fas fa-list-alt mr-1"></i>
+                                Data Rekap Pengambilan - {{ date('F Y', mktime(0, 0, 0, $bulan, 1, $tahun)) }}
+                            </h3>
+                        </div>
+                        <div class="mt-3">
+                            <div class="input-group">
+                                <div class="input-group-prepend">
+                                    <span class="input-group-text"><i class="fas fa-search"></i></span>
+                                </div>
+                                <input type="text" id="searchCustomer" class="form-control" 
+                                       placeholder="Cari customer..." value="{{ request('search_customer') }}">
+                            </div>
+                        </div>
                     </div>
-                    <div class="card-body table-responsive p-0">
-                        <table class="table table-hover text-nowrap custom-datatable" id="rekapPengambilanTable">
-                            <thead>
-                                <tr>
-                                    <th>No</th>
-                                    <th>Customer</th>
-                                    <th>Tanggal</th>
-                                    <th>NOPOL</th>
-                                    <th>Volume (SM³)</th>
-                                    <th>Alamat Pengambilan</th>
-                                    <th>Aksi</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                @if (count($rekapPengambilan) > 0)
-                                    @php $no = 1; @endphp
-                                    @foreach ($rekapPengambilan as $rekap)
-                                        <tr>
-                                            <td>{{ $no++ }}</td>
-                                            <td>{{ $rekap->customer->name }}</td>
-                                            <td>{{ $rekap->tanggal->format('d M Y H:i') }}</td>
-                                            <td>{{ $rekap->nopol }}</td>
-                                            <td>{{ number_format($rekap->volume, 2) }}</td>
-                                            <td>{{ $rekap->alamat_pengambilan ?: '-' }}</td>
-                                            <td>
-                                                <div class="btn-group">
-                                                    <a href="{{ route('rekap-pengambilan.show', $rekap->id) }}"
-                                                        class="btn btn-info btn-sm">
-                                                        <i class="fas fa-eye"></i>
-                                                    </a>
-                                                    <a href="{{ route('rekap-pengambilan.edit', $rekap->id) }}"
-                                                        class="btn btn-warning btn-sm">
-                                                        <i class="fas fa-edit"></i>
-                                                    </a>
-                                                    <form action="{{ route('rekap-pengambilan.destroy', $rekap->id) }}"
-                                                        method="POST"
-                                                        onsubmit="return confirm('Apakah Anda yakin ingin menghapus data ini?');">
-                                                        @csrf
-                                                        @method('DELETE')
-                                                        <button type="submit" class="btn btn-danger btn-sm">
-                                                            <i class="fas fa-trash"></i>
-                                                        </button>
-                                                    </form>
-                                                </div>
-                                            </td>
-                                        </tr>
-                                    @endforeach
-                                @else
-                                    <tr>
-                                        <td colspan="7" class="text-center">Tidak ada data untuk ditampilkan</td>
-                                    </tr>
-                                @endif
-                            </tbody>
-                        </table>
+                    <div class="card-body" id="rekap-table-container">
+                        @include('rekap-pengambilan.partials.table', ['rekapPengambilan' => $rekapPengambilan])
                     </div>
                     <div class="card-footer clearfix">
                     </div>
@@ -162,37 +121,47 @@
 
 @section('js')
     <script>
-        $(function() {
-            // DataTables initialization
-            $("#rekapPengambilanTable").DataTable({
-                "responsive": true,
-                "lengthChange": false,
-                "autoWidth": false,
-                "ordering": false, // Disable client-side ordering since we're doing server-side sorting
-                "language": {
-                    "emptyTable": "Tidak ada data rekap pengambilan tersedia",
-                    "zeroRecords": "Tidak ada data yang cocok ditemukan",
-                    "info": "Menampilkan _START_ hingga _END_ dari _TOTAL_ entri",
-                    "infoEmpty": "Menampilkan 0 hingga 0 dari 0 entri",
-                    "infoFiltered": "(disaring dari _MAX_ total entri)",
-                    "search": "Cari:",
-                    "paginate": {
-                        "first": "Pertama",
-                        "last": "Terakhir",
-                        "next": "Selanjutnya",
-                        "previous": "Sebelumnya"
-                    }
-                },
-                "paging": true,
-                "info": true,
-                "searching": true,
-                "initComplete": function(settings, json) {
-                    console.log("DataTable initialized with ordering by customer name (ascending)");
-                }
+        $(document).ready(function() {
+            // Timer untuk debounce pencarian
+            let searchTimer;
+
+            // Event listener untuk pencarian customer real-time
+            $('#searchCustomer').on('input', function() {
+                const searchTerm = $(this).val();
+                const tanggal = $('#tanggal').val();
+                
+                clearTimeout(searchTimer);
+
+                searchTimer = setTimeout(function() {
+                    $('#rekap-table-container').html(
+                        '<div class="text-center py-4"><i class="fas fa-spinner fa-spin fa-2x"></i></div>'
+                    );
+
+                    $.ajax({
+                        url: '{{ route('rekap-pengambilan.index') }}',
+                        type: 'GET',
+                        data: { 
+                            search_customer: searchTerm,
+                            tanggal: tanggal
+                        },
+                        dataType: 'json',
+                        success: function(response) {
+                            $('#rekap-table-container').html(response.html);
+                        },
+                        error: function() {
+                            $('#rekap-table-container').html(
+                                '<div class="alert alert-danger">Terjadi kesalahan saat mengambil data</div>'
+                            );
+                        }
+                    });
+                }, 300);
             });
             
-            // Auto submit form when date changes
+            // Auto submit form when date changes dan reset search
             $('#tanggal').on('change', function() {
+                // Reset search input
+                $('#searchCustomer').val('');
+                // Submit form untuk filter tanggal
                 $(this).closest('form').submit();
             });
         });
