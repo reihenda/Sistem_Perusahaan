@@ -56,7 +56,6 @@ Route::middleware(['auth', 'role:admin,superadmin,keuangan'])->group(function ()
 
     // Operator GTM - View Only untuk Keuangan
     Route::get('/operator-gtm', [App\Http\Controllers\OperatorGtmController::class, 'index'])->name('operator-gtm.index');
-    Route::get('/operator-gtm/{operatorGtm}', [App\Http\Controllers\OperatorGtmController::class, 'show'])->name('operator-gtm.show');
 
     // Keuangan Routes - Full Access untuk Keuangan
     Route::get('/keuangan/accounts', [FinancialAccountController::class, 'index'])->name('keuangan.accounts.index');
@@ -193,7 +192,9 @@ Route::middleware(['auth', 'role:admin,superadmin'])->group(function () {
         ->name('sync.balance');
 
     // Operator GTM - CREATE/UPDATE/DELETE (HANYA Admin)
+    // PENTING: Route statis harus diletakkan SEBELUM route dengan parameter dinamis
     Route::get('/operator-gtm/create', [App\Http\Controllers\OperatorGtmController::class, 'create'])->name('operator-gtm.create');
+    Route::get('/operator-gtm/{operatorGtm}', [App\Http\Controllers\OperatorGtmController::class, 'show'])->name('operator-gtm.show');
     Route::post('/operator-gtm', [App\Http\Controllers\OperatorGtmController::class, 'store'])->name('operator-gtm.store');
     Route::get('/operator-gtm/{operatorGtm}/edit', [App\Http\Controllers\OperatorGtmController::class, 'edit'])->name('operator-gtm.edit');
     Route::put('/operator-gtm/{operatorGtm}', [App\Http\Controllers\OperatorGtmController::class, 'update'])->name('operator-gtm.update');
