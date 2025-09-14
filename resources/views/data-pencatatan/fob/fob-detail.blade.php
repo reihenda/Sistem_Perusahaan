@@ -70,6 +70,11 @@
                                     class="btn btn-info btn-sm">
                                     <i class="fas fa-plus mr-1"></i> Tambah Data
                                 </a>
+                                <a href="{{ route('data-pencatatan.fob.sync-data', $customer->id) }}"
+                                    class="btn btn-warning btn-sm"
+                                    onclick="return confirm('Sinkronisasi akan memastikan semua data di rekap-pengambilan juga ada di data-pencatatan. Lanjutkan?')">
+                                    <i class="fas fa-sync-alt mr-1"></i> Sinkronkan Data
+                                </a>
                             @endif
                         </div>
                     </div>
@@ -486,34 +491,18 @@
                             </thead>
                             <tbody>
                                 @php $no = 1; @endphp
-                                @foreach ($dataPencatatan->sortBy(function ($item) {
-            $dataInput = is_string($item->data_input) ? json_decode($item->data_input, true) : (is_array($item->data_input) ? $item->data_input : []);
-            $waktuTimestamp = strtotime($dataInput['waktu'] ?? '');
-            return $waktuTimestamp ? $waktuTimestamp : 0;
-        }) as $item)
+                                @foreach ($dataPencatatan as $item)
                                     @php
-                                        $dataInput = is_string($item->data_input)
-                                            ? json_decode($item->data_input, true)
-                                            : (is_array($item->data_input)
-                                                ? $item->data_input
-                                                : []);
-
-                                        $volumeSm3 = $dataInput['volume_sm3'] ?? 0;
-
-                                        // Get the timestamp for data-filter attribute
-                                        $waktuTimestamp = strtotime($dataInput['waktu'] ?? '');
-                                        $tanggalFilter = $waktuTimestamp ? date('Y-m-d', $waktuTimestamp) : '';
-
-                                        // Ambil waktu untuk mendapatkan pricing yang tepat
-                                        $waktuDateTime = $waktuTimestamp
-                                            ? \Carbon\Carbon::createFromTimestamp($waktuTimestamp)
-                                            : null;
-                                        $waktuYearMonth = $waktuTimestamp ? date('Y-m', $waktuTimestamp) : date('Y-m');
+                                        // PERBAIKAN: Gunakan data dari RekapPengambilan langsung
+                                        $volumeSm3 = floatval($item->volume);
+                                        $tanggalItem = \Carbon\Carbon::parse($item->tanggal);
+                                        $tanggalFilter = $tanggalItem->format('Y-m-d');
+                                        $waktuYearMonth = $tanggalItem->format('Y-m');
 
                                         // Ambil pricing info berdasarkan tanggal spesifik
                                         $itemPricingInfo = $customer->getPricingForYearMonth(
                                             $waktuYearMonth,
-                                            $waktuDateTime,
+                                            $tanggalItem,
                                         );
 
                                         // Hitung Pembelian dengan harga sesuai periode
@@ -522,75 +511,32 @@
                                                 $customer->harga_per_meter_kubik,
                                         );
                                         $pembelian = $volumeSm3 * $hargaPerM3;
-
-                                        // Ambil data nopol dari rekap_pengambilan berdasarkan tanggal yang sama
-                                        $nopolData = '-';
-                                        if ($waktuTimestamp) {
-                                            $tanggalCari = date('Y-m-d', $waktuTimestamp);
-                                            $rekapPengambilan = \App\Models\RekapPengambilan::where(
-                                                'customer_id',
-                                                $customer->id,
-                                            )
-                                                ->whereDate('tanggal', $tanggalCari)
-                                                ->first();
-                                            if ($rekapPengambilan && $rekapPengambilan->nopol) {
-                                                $nopolData = $rekapPengambilan->nopol;
-                                            }
-                                        }
                                     @endphp
                                     <tr data-tanggal="{{ $tanggalFilter }}">
                                         <td>{{ $no++ }}</td>
-                                        <td>{{ isset($dataInput['waktu']) ? \Carbon\Carbon::parse($dataInput['waktu'])->format('d M Y H:i') : '-' }}
-                                        </td>
-                                        <td>{{ $nopolData }}</td>
+                                        <td>{{ $tanggalItem->format('d M Y H:i') }}</td>
+                                        <td>{{ $item->nopol ?? '-' }}</td>
                                         <td>{{ number_format($volumeSm3, 2) }}</td>
-                                        <td>{{ $dataInput['alamat_pengambilan'] ?? '-' }}</td>
+                                        <td>{{ $item->alamat_pengambilan ?? '-' }}</td>
                                         <td>Rp {{ number_format($pembelian, 2) }}</td>
                                         <td>
                                             <div class="btn-group">
-                                                @php
-                                                    // Extract date from data_input for finding corresponding rekap pengambilan
-                                                    $waktuData = $dataInput['waktu'] ?? null;
-                                                    $tanggalData = $waktuData
-                                                        ? \Carbon\Carbon::parse($waktuData)->format('Y-m-d')
-                                                        : null;
-                                                @endphp
-
-                                                @if ($tanggalData)
-                                                    <a href="{{ route('rekap-pengambilan.find-by-date', [$customer->id, $tanggalData]) }}"
-                                                        class="btn btn-info btn-sm" title="Lihat/Edit Rekap Pengambilan">
-                                                        <i class="fas fa-eye"></i>
-                                                    </a>
-                                                @else
-                                                    <a href="{{ route('data-pencatatan.show', $item->id) }}"
-                                                        class="btn btn-info btn-sm">
-                                                        <i class="fas fa-eye"></i>
-                                                    </a>
-                                                @endif
+                                                <a href="{{ route('rekap-pengambilan.find-by-date', [$customer->id, $tanggalFilter]) }}"
+                                                    class="btn btn-info btn-sm" title="Lihat/Edit Rekap Pengambilan">
+                                                    <i class="fas fa-eye"></i>
+                                                </a>
 
                                                 @if (Auth::user()->isAdmin() || Auth::user()->isSuperAdmin())
-                                                    @if ($tanggalData)
-                                                        <a href="{{ route('rekap-pengambilan.find-by-date', [$customer->id, $tanggalData]) }}"
-                                                            class="btn btn-warning btn-sm" title="Edit Rekap Pengambilan">
-                                                            <i class="fas fa-edit"></i>
-                                                        </a>
-                                                    @else
-                                                        <a href="{{ route('data-pencatatan.edit', $item->id) }}"
-                                                            class="btn btn-warning btn-sm">
-                                                            <i class="fas fa-edit"></i>
-                                                        </a>
-                                                    @endif
+                                                    <a href="{{ route('rekap-pengambilan.find-by-date', [$customer->id, $tanggalFilter]) }}"
+                                                        class="btn btn-warning btn-sm" title="Edit Rekap Pengambilan">
+                                                        <i class="fas fa-edit"></i>
+                                                    </a>
 
-                                                    <form action="{{ route('data-pencatatan.destroy', $item->id) }}"
+                                                    <form action="{{ route('rekap-pengambilan.destroy', $item->id) }}"
                                                         method="POST" class="d-inline"
                                                         onsubmit="return confirm('Apakah Anda yakin ingin menghapus data ini?');">
                                                         @csrf
                                                         @method('DELETE')
-                                                        <input type="hidden" name="bulan"
-                                                            value="{{ $selectedBulan }}">
-                                                        <input type="hidden" name="tahun"
-                                                            value="{{ $selectedTahun }}">
-                                                        <input type="hidden" name="fob" value="1">
                                                         <button type="submit" class="btn btn-danger btn-sm">
                                                             <i class="fas fa-trash"></i>
                                                         </button>
@@ -605,27 +551,8 @@
                     </div>
                     <div class="card-footer">
                         @php
-                            // Hitung total volume Sm3 untuk data yang ditampilkan (sesuai filter)
-                            $totalVolumeFiltered = 0;
-                            foreach (
-                                $dataPencatatan->sortBy(function ($item) {
-                                    $dataInput = is_string($item->data_input)
-                                        ? json_decode($item->data_input, true)
-                                        : (is_array($item->data_input)
-                                            ? $item->data_input
-                                            : []);
-                                    $waktuTimestamp = strtotime($dataInput['waktu'] ?? '');
-                                    return $waktuTimestamp ? $waktuTimestamp : 0;
-                                })
-                                as $item
-                            ) {
-                                $dataInput = is_string($item->data_input)
-                                    ? json_decode($item->data_input, true)
-                                    : (is_array($item->data_input)
-                                        ? $item->data_input
-                                        : []);
-                                $totalVolumeFiltered += floatval($dataInput['volume_sm3'] ?? 0);
-                            }
+                            // PERBAIKAN: Hitung total volume dari RekapPengambilan yang difilter
+                            $totalVolumeFiltered = $dataPencatatan->sum('volume');
                         @endphp
                         <div class="row">
                             <div class="col-md-6">

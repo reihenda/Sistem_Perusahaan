@@ -525,32 +525,17 @@
                     </thead>
                     <tbody>
                         @php $no = 1; @endphp
-                        @foreach ($dataPencatatan->sortBy(function ($item) {
-                            $dataInput = is_string($item->data_input) ? json_decode($item->data_input, true) : (is_array($item->data_input) ? $item->data_input : []);
-                            $waktuTimestamp = strtotime($dataInput['waktu'] ?? '');
-                            return $waktuTimestamp ? $waktuTimestamp : 0;
-                        }) as $item)
+                        @foreach ($dataPencatatan as $item)
                             @php
-                                $dataInput = is_string($item->data_input)
-                                    ? json_decode($item->data_input, true)
-                                    : (is_array($item->data_input) ? $item->data_input : []);
-
-                                $volumeSm3 = $dataInput['volume_sm3'] ?? 0;
-
-                                // Get the timestamp for data-filter attribute
-                                $waktuTimestamp = strtotime($dataInput['waktu'] ?? '');
-                                $tanggalFilter = $waktuTimestamp ? date('Y-m-d', $waktuTimestamp) : '';
-
-                                // Ambil waktu untuk mendapatkan pricing yang tepat
-                                $waktuDateTime = $waktuTimestamp
-                                    ? \Carbon\Carbon::createFromTimestamp($waktuTimestamp)
-                                    : null;
-                                $waktuYearMonth = $waktuTimestamp ? date('Y-m', $waktuTimestamp) : date('Y-m');
+                                // PERBAIKAN: Gunakan data dari RekapPengambilan langsung
+                                $volumeSm3 = floatval($item->volume);
+                                $tanggalItem = \Carbon\Carbon::parse($item->tanggal);
+                                $waktuYearMonth = $tanggalItem->format('Y-m');
 
                                 // Ambil pricing info berdasarkan tanggal spesifik
                                 $itemPricingInfo = $customer->getPricingForYearMonth(
                                     $waktuYearMonth,
-                                    $waktuDateTime,
+                                    $tanggalItem,
                                 );
 
                                 // Hitung Pembelian dengan harga sesuai periode
@@ -559,25 +544,13 @@
                                         $customer->harga_per_meter_kubik,
                                 );
                                 $pembelian = $volumeSm3 * $hargaPerM3;
-                                
-                                // Ambil data nopol dari rekap_pengambilan berdasarkan tanggal yang sama
-                                $nopolData = '-';
-                                if ($waktuTimestamp) {
-                                    $tanggalCari = date('Y-m-d', $waktuTimestamp);
-                                    $rekapPengambilan = \App\Models\RekapPengambilan::where('customer_id', $customer->id)
-                                        ->whereDate('tanggal', $tanggalCari)
-                                        ->first();
-                                    if ($rekapPengambilan && $rekapPengambilan->nopol) {
-                                        $nopolData = $rekapPengambilan->nopol;
-                                    }
-                                }
                             @endphp
                             <tr>
                                 <td>{{ $no++ }}</td>
-                                <td>{{ isset($dataInput['waktu']) ? \Carbon\Carbon::parse($dataInput['waktu'])->format('d M Y H:i') : '-' }}</td>
-                                <td>{{ $nopolData }}</td>
+                                <td>{{ $tanggalItem->format('d M Y H:i') }}</td>
+                                <td>{{ $item->nopol ?? '-' }}</td>
                                 <td>{{ number_format($volumeSm3, 2) }}</td>
-                                <td>{{ $dataInput['alamat_pengambilan'] ?? '-' }}</td>
+                                <td>{{ $item->alamat_pengambilan ?? '-' }}</td>
                                 <td>Rp {{ number_format($pembelian, 0) }}</td>
                             </tr>
                         @endforeach
