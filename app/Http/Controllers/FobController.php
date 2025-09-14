@@ -1478,6 +1478,91 @@ class FobController extends Controller
             return redirect()->back()->with('error', 'Error: ' . $e->getMessage());
         }
     }
+    /**
+     * Halaman print terpisah untuk FOB
+     */
+    public function printPage(User $customer, Request $request)
+    {
+        // Verifikasi bahwa customer adalah FOB
+        if (!$customer->isFOB()) {
+            abort(404, 'Customer tidak ditemukan');
+        }
+
+        // Get filter parameters
+        $bulan = $request->input('bulan', date('m'));
+        $tahun = $request->input('tahun', date('Y'));
+
+        // Definisi periode filter
+        $yearMonth = $tahun . '-' . str_pad($bulan, 2, '0', STR_PAD_LEFT);
+        $startDate = Carbon::createFromDate($tahun, $bulan, 1)->startOfDay();
+        $endDate = Carbon::createFromDate($tahun, $bulan, 1)->endOfMonth()->endOfDay();
+
+        // Ambil semua data pencatatan
+        $allDataPencatatan = $customer->dataPencatatan()->get();
+
+        // Filter data berdasarkan periode
+        $dataPencatatan = $allDataPencatatan->filter(function ($item) use ($startDate, $endDate) {
+            $dataInput = $this->ensureArray($item->data_input);
+            
+            if (empty($dataInput)) {
+                return false;
+            }
+
+            $dataDate = null;
+            
+            // Cek berbagai format tanggal
+            if (!empty($dataInput['waktu'])) {
+                try {
+                    $dataDate = Carbon::parse($dataInput['waktu']);
+                } catch (\Exception $e) {
+                    // Skip jika error parsing
+                }
+            }
+            
+            if (!$dataDate && !empty($dataInput['tanggal'])) {
+                try {
+                    $dataDate = Carbon::parse($dataInput['tanggal']);
+                } catch (\Exception $e) {
+                    // Skip jika error parsing
+                }
+            }
+            
+            if (!$dataDate && !empty($dataInput['pembacaan_awal']['waktu'])) {
+                try {
+                    $dataDate = Carbon::parse($dataInput['pembacaan_awal']['waktu']);
+                } catch (\Exception $e) {
+                    // Skip jika error parsing
+                }
+            }
+            
+            if (!$dataDate && $item->created_at) {
+                $dataDate = $item->created_at;
+            }
+
+            return $dataDate ? $dataDate->between($startDate, $endDate) : false;
+        });
+
+        // Hitung total volume untuk print
+        $totalVolume = 0;
+        foreach ($dataPencatatan as $item) {
+            $dataInput = $this->ensureArray($item->data_input);
+            $totalVolume += floatval($dataInput['volume_sm3'] ?? 0);
+        }
+
+        $printData = [
+            'customer' => $customer,
+            'dataPencatatan' => $dataPencatatan,
+            'selectedBulan' => $bulan,
+            'selectedTahun' => $tahun,
+            'totalVolume' => $totalVolume,
+            'jumlahData' => $dataPencatatan->count(),
+            'tanggalCetak' => now()->format('d F Y H:i'),
+            'periode' => Carbon::createFromDate($tahun, $bulan, 1)->format('F Y')
+        ];
+
+        return view('data-pencatatan.fob.print-page', $printData);
+    }
+
     private function performAutomaticDataValidation(User $customer)
     {
         try {

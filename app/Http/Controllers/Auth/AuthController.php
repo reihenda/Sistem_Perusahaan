@@ -35,6 +35,8 @@ class AuthController extends Controller
                 return redirect()->route('keuangan.index');
             } elseif ($user->isDemo()) {
                 return redirect()->route('demo.admin'); // Redirect to demo admin dashboard
+            } elseif ($user->isFob()) {
+                return redirect()->route('fob.dashboard');
             } else {
                 return redirect()->route('customer.dashboard');
             }

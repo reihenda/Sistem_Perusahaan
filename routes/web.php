@@ -33,13 +33,13 @@ Route::middleware(['auth', 'role:superadmin'])->group(function () {
 });
 
 // ============================================================================
-// Rute untuk Admin, SuperAdmin, dan Keuangan (READ ACCESS) 
+// Rute untuk Admin, SuperAdmin, dan Keuangan (READ ACCESS)
 // ============================================================================
 Route::middleware(['auth', 'role:admin,superadmin,keuangan'])->group(function () {
-    
+
     // Dashboard untuk Keuangan
     Route::get('/keuangan', [KeuanganController::class, 'index'])->name('keuangan.index');
-    
+
     // Data Pencatatan - View Only untuk Keuangan
     Route::get('/data-pencatatan', [DataPencatatanController::class, 'index'])
         ->name('data-pencatatan.index');
@@ -135,7 +135,7 @@ Route::middleware(['auth', 'role:admin,superadmin,keuangan'])->group(function ()
 // Keuangan TIDAK bisa akses routes di bawah ini
 // ============================================================================
 Route::middleware(['auth', 'role:admin,superadmin'])->group(function () {
-    
+
     // Admin Dashboard
     Route::get('/admin/dashboard', [DashboardController::class, 'adminDashboard'])
         ->name('admin.dashboard');
@@ -252,6 +252,8 @@ Route::middleware(['auth', 'role:admin,superadmin'])->group(function () {
         ->name('data-pencatatan.fob.create-with-fob');
     Route::get('/data-pencatatan/fob/{customer}', [FobController::class, 'fobDetail'])
         ->name('data-pencatatan.fob-detail');
+    Route::get('/data-pencatatan/fob/{customer}/print', [FobController::class, 'printPage'])
+        ->name('data-pencatatan.fob.print');
     Route::post('/data-pencatatan/fob', [FobController::class, 'store'])
         ->name('data-pencatatan.fob.store');
     Route::post('/data-pencatatan/fob/{customer}/filter-month-year', [FobController::class, 'filterByMonthYear'])
@@ -305,6 +307,21 @@ Route::middleware(['auth', 'role:customer'])->group(function () {
     Route::get('/customer/invoices', [InvoiceController::class, 'customerInvoices'])->name('customer.invoices');
     Route::get('/customer/billings', [BillingController::class, 'customerBillings'])->name('customer.billings');
 });
+Route::middleware(['auth', 'role:fob'])->group(function () {
+    Route::get('/fob/dashboard', [DashboardController::class, 'fobDashboard'])
+        ->name('fob.dashboard');
+    Route::get('/fob/filter', [DashboardController::class, 'fobDashboard'])
+        ->name('fob.filter');
+    Route::get('/data-saya', [DataPencatatanController::class, 'indexCustomer'])
+        ->name('customer.data');
+    Route::post('/proses-pembayaran/{dataPencatatan}', [DataPencatatanController::class, 'prosesPembayaran'])
+        ->name('customer.proses-pembayaran');
+    Route::get('/customer/invoices', [InvoiceController::class, 'customerInvoices'])->name('customer.invoices');
+    Route::get('/customer/billings', [BillingController::class, 'customerBillings'])->name('customer.billings');
+});
+
+
+
 
 // ============================================================================
 // Rute untuk Demo

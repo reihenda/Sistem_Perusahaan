@@ -275,7 +275,9 @@
                                     <strong><i class="fas fa-money-bill-wave mr-1"></i> Pembelian Periode Ini</strong>
                                     <p class="text-muted mb-0">
                                         Rp {{ number_format($filteredTotalPurchases, 0) }}
-                                        <span class="badge badge-success" title="Perhitungan real-time menggunakan pricing sesuai periode"><i class="fas fa-sync-alt"></i> Real-time</span>
+                                        <span class="badge badge-success"
+                                            title="Perhitungan real-time menggunakan pricing sesuai periode"><i
+                                                class="fas fa-sync-alt"></i> Real-time</span>
                                     </p>
                                 </div>
                             </div>
@@ -306,7 +308,11 @@
                                                 )->format('Y-m');
 
                                                 // PERBAIKAN: Hitung saldo bulan sebelumnya secara real-time
-                                                $prevDate = \Carbon\Carbon::createFromDate($selectedTahun, $selectedBulan, 1)->subMonth();
+                                                $prevDate = \Carbon\Carbon::createFromDate(
+                                                    $selectedTahun,
+                                                    $selectedBulan,
+                                                    1,
+                                                )->subMonth();
                                                 $prevYearMonth = $prevDate->format('Y-m');
 
                                                 // Hitung total deposit dan pembelian sampai akhir bulan sebelumnya
@@ -324,7 +330,7 @@
                                                             if ($depositDate->format('Y-m') <= $prevYearMonth) {
                                                                 $amount = floatval($deposit['amount'] ?? 0);
                                                                 $keterangan = $deposit['keterangan'] ?? 'penambahan';
-                                                                
+
                                                                 // Handle deposit dan pengurangan dengan benar
                                                                 if ($keterangan === 'pengurangan') {
                                                                     $realTimePrevMonthBalance -= abs($amount);
@@ -344,17 +350,19 @@
                                                         : (is_array($purchaseItem->data_input)
                                                             ? $purchaseItem->data_input
                                                             : []);
-                                                    
+
                                                     // Untuk FOB, cek format waktu yang berbeda
                                                     $itemDate = null;
                                                     if (!empty($itemDataInput['waktu'])) {
                                                         $itemDate = \Carbon\Carbon::parse($itemDataInput['waktu']);
                                                     } elseif (!empty($itemDataInput['pembacaan_awal']['waktu'])) {
-                                                        $itemDate = \Carbon\Carbon::parse($itemDataInput['pembacaan_awal']['waktu']);
+                                                        $itemDate = \Carbon\Carbon::parse(
+                                                            $itemDataInput['pembacaan_awal']['waktu'],
+                                                        );
                                                     } elseif ($purchaseItem->created_at) {
                                                         $itemDate = $purchaseItem->created_at;
                                                     }
-                                                    
+
                                                     if (!$itemDate) {
                                                         continue;
                                                     }
@@ -366,18 +374,18 @@
                                                             $realTimePrevMonthBalance -= $purchaseItem->harga_final;
                                                         } else {
                                                             $volumeSm3 = floatval($itemDataInput['volume_sm3'] ?? 0);
-                                                            
+
                                                             // Ambil pricing yang sesuai (untuk FOB)
                                                             $itemYearMonth = $itemDate->format('Y-m');
                                                             $itemPricingInfo = $customer->getPricingForYearMonth(
                                                                 $itemYearMonth,
-                                                                $itemDate
+                                                                $itemDate,
                                                             );
 
                                                             // Hitung volume dan harga (FOB tidak menggunakan koreksi meter)
                                                             $itemHargaPerM3 = floatval(
                                                                 $itemPricingInfo['harga_per_meter_kubik'] ??
-                                                                    $customer->harga_per_meter_kubik
+                                                                    $customer->harga_per_meter_kubik,
                                                             );
                                                             $itemHarga = $volumeSm3 * $itemHargaPerM3;
 
@@ -397,11 +405,18 @@
                                                     $realTimeFilteredTotalPurchases;
 
                                                 // Log untuk debugging (disederhanakan untuk production)
-                                                if ((Auth::user()->isAdmin() || Auth::user()->isSuperAdmin()) && abs($realTimePrevMonthBalance - ($prevMonthBalance ?? 0)) > 100) {
+                                                if (
+                                                    (Auth::user()->isAdmin() || Auth::user()->isSuperAdmin()) &&
+                                                    abs($realTimePrevMonthBalance - ($prevMonthBalance ?? 0)) > 100
+                                                ) {
                                                     \Log::info('FOB real-time calculation difference detected', [
                                                         'customer_id' => $customer->id,
-                                                        'period' => $selectedTahun . '-' . str_pad($selectedBulan, 2, '0', STR_PAD_LEFT),
-                                                        'difference' => $realTimePrevMonthBalance - ($prevMonthBalance ?? 0)
+                                                        'period' =>
+                                                            $selectedTahun .
+                                                            '-' .
+                                                            str_pad($selectedBulan, 2, '0', STR_PAD_LEFT),
+                                                        'difference' =>
+                                                            $realTimePrevMonthBalance - ($prevMonthBalance ?? 0),
                                                     ]);
                                                 }
                                             @endphp
@@ -440,12 +455,21 @@
 
             {{-- Data Pencatatan Table for FOB (simplified) --}}
             <div class="col-md-12">
-                <div class="card">
+                <div class="card print-table-card">
+
+
+                    {{-- Print Info - Only visible when printing --}}
+
                     <div class="card-header">
                         <h3 class="card-title">
                             <i class="fas fa-list-alt mr-2"></i>
                             Riwayat Pencatatan
                         </h3>
+                        <div class="card-tools">
+                            <button onclick="openPrintPage()" class="btn btn-info btn-sm" title="Cetak Tabel">
+                                <i class="fas fa-print mr-1"></i> Print Tabel
+                            </button>
+                        </div>
                     </div>
                     <div class="card-body table-responsive p-0">
                         <table class="table table-bordered table-striped custom-datatable" id="dataPencatatanTable">
@@ -453,6 +477,7 @@
                                 <tr>
                                     <th>No</th>
                                     <th>Tanggal</th>
+                                    <th>No Pol</th>
                                     <th>Volume Sm³</th>
                                     <th>Alamat Pengambilan</th>
                                     <th>Rupiah</th>
@@ -497,11 +522,27 @@
                                                 $customer->harga_per_meter_kubik,
                                         );
                                         $pembelian = $volumeSm3 * $hargaPerM3;
+
+                                        // Ambil data nopol dari rekap_pengambilan berdasarkan tanggal yang sama
+                                        $nopolData = '-';
+                                        if ($waktuTimestamp) {
+                                            $tanggalCari = date('Y-m-d', $waktuTimestamp);
+                                            $rekapPengambilan = \App\Models\RekapPengambilan::where(
+                                                'customer_id',
+                                                $customer->id,
+                                            )
+                                                ->whereDate('tanggal', $tanggalCari)
+                                                ->first();
+                                            if ($rekapPengambilan && $rekapPengambilan->nopol) {
+                                                $nopolData = $rekapPengambilan->nopol;
+                                            }
+                                        }
                                     @endphp
                                     <tr data-tanggal="{{ $tanggalFilter }}">
                                         <td>{{ $no++ }}</td>
                                         <td>{{ isset($dataInput['waktu']) ? \Carbon\Carbon::parse($dataInput['waktu'])->format('d M Y H:i') : '-' }}
                                         </td>
+                                        <td>{{ $nopolData }}</td>
                                         <td>{{ number_format($volumeSm3, 2) }}</td>
                                         <td>{{ $dataInput['alamat_pengambilan'] ?? '-' }}</td>
                                         <td>Rp {{ number_format($pembelian, 2) }}</td>
@@ -510,10 +551,12 @@
                                                 @php
                                                     // Extract date from data_input for finding corresponding rekap pengambilan
                                                     $waktuData = $dataInput['waktu'] ?? null;
-                                                    $tanggalData = $waktuData ? \Carbon\Carbon::parse($waktuData)->format('Y-m-d') : null;
+                                                    $tanggalData = $waktuData
+                                                        ? \Carbon\Carbon::parse($waktuData)->format('Y-m-d')
+                                                        : null;
                                                 @endphp
-                                                
-                                                @if($tanggalData)
+
+                                                @if ($tanggalData)
                                                     <a href="{{ route('rekap-pengambilan.find-by-date', [$customer->id, $tanggalData]) }}"
                                                         class="btn btn-info btn-sm" title="Lihat/Edit Rekap Pengambilan">
                                                         <i class="fas fa-eye"></i>
@@ -524,9 +567,9 @@
                                                         <i class="fas fa-eye"></i>
                                                     </a>
                                                 @endif
-                                                
+
                                                 @if (Auth::user()->isAdmin() || Auth::user()->isSuperAdmin())
-                                                    @if($tanggalData)
+                                                    @if ($tanggalData)
                                                         <a href="{{ route('rekap-pengambilan.find-by-date', [$customer->id, $tanggalData]) }}"
                                                             class="btn btn-warning btn-sm" title="Edit Rekap Pengambilan">
                                                             <i class="fas fa-edit"></i>
@@ -537,7 +580,7 @@
                                                             <i class="fas fa-edit"></i>
                                                         </a>
                                                     @endif
-                                                    
+
                                                     <form action="{{ route('data-pencatatan.destroy', $item->id) }}"
                                                         method="POST" class="d-inline"
                                                         onsubmit="return confirm('Apakah Anda yakin ingin menghapus data ini?');">
@@ -559,6 +602,54 @@
                                 @endforeach
                             </tbody>
                         </table>
+                    </div>
+                    <div class="card-footer">
+                        @php
+                            // Hitung total volume Sm3 untuk data yang ditampilkan (sesuai filter)
+                            $totalVolumeFiltered = 0;
+                            foreach (
+                                $dataPencatatan->sortBy(function ($item) {
+                                    $dataInput = is_string($item->data_input)
+                                        ? json_decode($item->data_input, true)
+                                        : (is_array($item->data_input)
+                                            ? $item->data_input
+                                            : []);
+                                    $waktuTimestamp = strtotime($dataInput['waktu'] ?? '');
+                                    return $waktuTimestamp ? $waktuTimestamp : 0;
+                                })
+                                as $item
+                            ) {
+                                $dataInput = is_string($item->data_input)
+                                    ? json_decode($item->data_input, true)
+                                    : (is_array($item->data_input)
+                                        ? $item->data_input
+                                        : []);
+                                $totalVolumeFiltered += floatval($dataInput['volume_sm3'] ?? 0);
+                            }
+                        @endphp
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="d-flex align-items-center">
+                                    <i class="fas fa-chart-bar text-info mr-2" style="font-size: 1.2em;"></i>
+                                    <div>
+                                        <strong>Total Volume Periode Ini:</strong>
+                                        <span class="text-primary ml-2" style="font-size: 1.1em; font-weight: bold;">
+                                            {{ number_format($totalVolumeFiltered, 2) }} Sm³
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-6 text-right">
+                                <small class="text-muted">
+                                    <i class="fas fa-info-circle mr-1"></i>
+                                    Total dari {{ $dataPencatatan->count() }} data pencatatan
+                                    @if ($selectedBulan && $selectedTahun)
+                                        untuk periode
+                                        {{ \Carbon\Carbon::createFromDate($selectedTahun, $selectedBulan, 1)->format('F Y') }}
+                                    @endif
+                                </small>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -987,6 +1078,281 @@ usort($pricingHistory, function ($a, $b) {
                 line-height: 60px;
             }
         }
+
+        /* FORCE CACHE BUST - Print-specific styles v2.0 */
+        @media print {
+
+            /* NUCLEAR OPTION - Hide absolutely everything first */
+            html,
+            body,
+            * {
+                visibility: hidden !important;
+                display: none !important;
+            }
+
+            /* Force show ONLY print content */
+            .print-table-card {
+                display: block !important;
+                visibility: visible !important;
+                position: fixed !important;
+                top: 0 !important;
+                left: 0 !important;
+                right: 0 !important;
+                bottom: 0 !important;
+                width: 100vw !important;
+                height: 100vh !important;
+                z-index: 9999 !important;
+                background: white !important;
+                padding: 30px !important;
+                margin: 0 !important;
+                box-sizing: border-box !important;
+            }
+
+            .print-table-card * {
+                display: block !important;
+                visibility: visible !important;
+            }
+
+            /* Body override */
+            body {
+                display: block !important;
+                visibility: visible !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                background: white !important;
+                color: black !important;
+                font-family: Arial, sans-serif !important;
+                font-size: 12pt !important;
+            }
+
+            html {
+                display: block !important;
+                visibility: visible !important;
+            }
+
+            /* Print header */
+            .print-header {
+                display: block !important;
+                visibility: visible !important;
+                text-align: center !important;
+                margin-bottom: 25px !important;
+                border-bottom: 3px solid black !important;
+                padding-bottom: 15px !important;
+            }
+
+            .print-header h2 {
+                display: block !important;
+                visibility: visible !important;
+                font-size: 20pt !important;
+                font-weight: bold !important;
+                margin: 0 0 10px 0 !important;
+                color: black !important;
+                text-transform: uppercase !important;
+            }
+
+            .print-header h3 {
+                display: block !important;
+                visibility: visible !important;
+                font-size: 16pt !important;
+                margin: 0 !important;
+                color: black !important;
+            }
+
+            /* Print info box */
+            .print-info {
+                display: block !important;
+                visibility: visible !important;
+                margin-bottom: 25px !important;
+                padding: 20px !important;
+                border: 2px solid black !important;
+                background: #f5f5f5 !important;
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+            }
+
+            .print-info div {
+                display: block !important;
+                visibility: visible !important;
+                line-height: 1.8 !important;
+                color: black !important;
+            }
+
+            .print-info strong {
+                display: inline !important;
+                visibility: visible !important;
+                font-weight: bold !important;
+                color: black !important;
+            }
+
+            /* Table container */
+            .card-body {
+                display: block !important;
+                visibility: visible !important;
+                margin: 0 !important;
+                padding: 0 !important;
+            }
+
+            .table-responsive {
+                display: block !important;
+                visibility: visible !important;
+                overflow: visible !important;
+                margin: 0 !important;
+                padding: 0 !important;
+            }
+
+            /* Main table styling */
+            #dataPencatatanTable {
+                display: table !important;
+                visibility: visible !important;
+                width: 100% !important;
+                border-collapse: collapse !important;
+                font-size: 12pt !important;
+                margin: 0 !important;
+                border: 3px solid black !important;
+            }
+
+            #dataPencatatanTable thead {
+                display: table-header-group !important;
+                visibility: visible !important;
+            }
+
+            #dataPencatatanTable tbody {
+                display: table-row-group !important;
+                visibility: visible !important;
+            }
+
+            #dataPencatatanTable tr {
+                display: table-row !important;
+                visibility: visible !important;
+            }
+
+            #dataPencatatanTable th {
+                display: table-cell !important;
+                visibility: visible !important;
+                background: #e0e0e0 !important;
+                border: 1px solid black !important;
+                padding: 12px 8px !important;
+                text-align: center !important;
+                font-weight: bold !important;
+                color: black !important;
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+            }
+
+            #dataPencatatanTable td {
+                display: table-cell !important;
+                visibility: visible !important;
+                border: 1px solid black !important;
+                padding: 10px 8px !important;
+                text-align: left !important;
+                color: black !important;
+                background: white !important;
+                vertical-align: middle !important;
+            }
+
+            /* Column specific alignments */
+            #dataPencatatanTable td:first-child {
+                text-align: center !important;
+                font-weight: bold !important;
+            }
+
+            #dataPencatatanTable td:nth-child(4),
+            #dataPencatatanTable td:nth-child(6) {
+                text-align: right !important;
+            }
+
+            /* HIDE Action column completely */
+            #dataPencatatanTable th:nth-child(7),
+            #dataPencatatanTable td:nth-child(7) {
+                display: none !important;
+                visibility: hidden !important;
+            }
+
+            /* Footer section */
+            .card-footer {
+                display: block !important;
+                visibility: visible !important;
+                margin-top: 25px !important;
+                padding: 20px !important;
+                border: 2px solid black !important;
+                background: #f5f5f5 !important;
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+            }
+
+            .card-footer .row {
+                display: flex !important;
+                visibility: visible !important;
+                align-items: center !important;
+            }
+
+            .card-footer .col-md-6 {
+                display: block !important;
+                visibility: visible !important;
+            }
+
+            .card-footer .col-md-6:first-child {
+                flex: 1 !important;
+                text-align: left !important;
+            }
+
+            .card-footer .col-md-6:last-child {
+                text-align: right !important;
+                font-size: 11pt !important;
+                color: #666 !important;
+            }
+
+            .card-footer strong {
+                display: inline !important;
+                visibility: visible !important;
+                font-size: 16pt !important;
+                font-weight: bold !important;
+                color: black !important;
+            }
+
+            .card-footer .text-primary {
+                display: inline !important;
+                visibility: visible !important;
+                color: black !important;
+                font-weight: bold !important;
+                font-size: 18pt !important;
+            }
+
+            .card-footer .fas {
+                display: inline !important;
+                visibility: visible !important;
+                margin-right: 6px !important;
+            }
+
+            /* Page setup */
+            @page {
+                size: A4 landscape !important;
+                margin: 15mm !important;
+            }
+
+            /* Force hide everything else with higher specificity */
+            .main-header,
+            .main-sidebar,
+            .main-footer,
+            .content-header,
+            .navbar,
+            .breadcrumb,
+            .alert,
+            .modal,
+            .card:not(.print-table-card) {
+                display: none !important;
+                visibility: hidden !important;
+            }
+        }
+
+        /* Print header - hidden by default, shown only when printing */
+        .print-header {
+            display: none;
+        }
+
+        .print-info {
+            display: none;
+        }
     </style>
 @endsection
 
@@ -1004,9 +1370,15 @@ usort($pricingHistory, function ($a, $b) {
             // DataTables initialization
             var table = $("#dataPencatatanTable").DataTable({
                 "responsive": true,
-                "lengthChange": false,
+                "lengthChange": true,
                 "autoWidth": false,
                 "ordering": false, // Disable client-side ordering since we're using server-side ordering
+                "stateSave": false, // Disable state saving to prevent caching issues
+                "pageLength": 10, // Default entries per page
+                "lengthMenu": [
+                    [10, 25, 50, -1],
+                    [10, 25, 50, "Semua"]
+                ], // Length menu options
                 "language": {
                     "emptyTable": "Tidak ada data pencatatan tersedia",
                     "zeroRecords": "Tidak ada data yang cocok ditemukan",
@@ -1014,6 +1386,7 @@ usort($pricingHistory, function ($a, $b) {
                     "infoEmpty": "Menampilkan 0 hingga 0 dari 0 entri",
                     "infoFiltered": "(disaring dari _MAX_ total entri)",
                     "search": "Cari:",
+                    "lengthMenu": "Tampilkan _MENU_ entri",
                     "paginate": {
                         "first": "Pertama",
                         "last": "Terakhir",
@@ -1024,8 +1397,10 @@ usort($pricingHistory, function ($a, $b) {
                 "paging": true,
                 "info": true,
                 "searching": true,
+                "destroy": true, // Allow re-initialization
                 "initComplete": function(settings, json) {
-                    console.log("DataTable initialized with ordering by date (ascending)");
+                    console.log("DataTable initialized successfully with", this.api().data().length,
+                        "records");
                 }
             });
 
@@ -1074,5 +1449,21 @@ usort($pricingHistory, function ($a, $b) {
             });
             */
         });
+
+        // Simple function to open print page
+        function openPrintPage() {
+            console.log('Opening print page...');
+
+            // Get current filter parameters
+            const bulan = '{{ $selectedBulan }}';
+            const tahun = '{{ $selectedTahun }}';
+            const customerId = '{{ $customer->id }}';
+
+            // Build URL with parameters
+            const printUrl = `/data-pencatatan/fob/${customerId}/print?bulan=${bulan}&tahun=${tahun}`;
+
+            // Open in new window/tab
+            window.open(printUrl, '_blank', 'width=1200,height=800,scrollbars=yes,resizable=yes');
+        }
     </script>
 @endsection

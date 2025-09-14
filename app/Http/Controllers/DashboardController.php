@@ -131,14 +131,14 @@ class DashboardController extends Controller
 
         // 3. Data Summary - Menghitung Profit
         $summaryData = $this->calculateSummaryData($customers, $selectedTahun, $selectedBulan);
-        
+
         // 4. Data untuk grafik profit tahunan
         $profitChartData = $this->getProfitChartData($customers, $selectedTahun);
-        
+
         // 5. Data Rekap Pembelian (dari RekapPembelianController logic)
         $rekapPembelianData = $this->getRekapPembelianData($selectedTahun, $selectedBulan);
         $customerRekapPembelianData = $this->getCustomerRekapPembelianData($selectedTahun, $selectedBulan);
-        
+
         // 6. Data chart untuk rekap pembelian
         $rekapPembelianYearlyChartData = $this->getRekapPembelianYearlyChartData($selectedTahun);
         $rekapPembelianMonthlyChartData = $this->getRekapPembelianMonthlyChartData($selectedTahun, $selectedBulan);
@@ -179,12 +179,12 @@ class DashboardController extends Controller
             // Filter berdasarkan tahun dari data_input, bukan created_at
             $dataPencatatan = $dataPencatatan->filter(function ($item) use ($tahun, $customer) {
                 $dataInput = json_decode($item->data_input, true) ?? [];
-                
+
                 // Jika data input kosong, skip
                 if (empty($dataInput)) {
                     return false;
                 }
-                
+
                 // Periksa format data berdasarkan role customer
                 if (isset($customer['role']) && $customer['role'] === 'fob' && isset($dataInput['waktu'])) {
                     // Format FOB - menggunakan kunci 'waktu'
@@ -195,7 +195,7 @@ class DashboardController extends Controller
                     $dataTahun = Carbon::parse($dataInput['pembacaan_awal']['waktu'])->format('Y');
                     return $dataTahun == $tahun;
                 }
-                
+
                 return false; // Skip jika tidak ada data waktu yang valid
             });
 
@@ -246,12 +246,12 @@ class DashboardController extends Controller
             // Filter data berdasarkan bulan dan tahun
             $filteredPencatatan = $dataPencatatan->filter(function ($item) use ($yearMonth, $customer) {
                 $dataInput = json_decode($item->data_input, true) ?? [];
-                
+
                 // Jika data input kosong, skip
                 if (empty($dataInput)) {
                     return false;
                 }
-                
+
                 // Periksa format data (FOB atau customer biasa)
                 if (isset($customer['role']) && $customer['role'] === 'fob' && isset($dataInput['waktu'])) {
                     // Format FOB - menggunakan kunci 'waktu'
@@ -262,35 +262,35 @@ class DashboardController extends Controller
                     $waktuAwal = \Carbon\Carbon::parse($dataInput['pembacaan_awal']['waktu'])->format('Y-m');
                     return $waktuAwal === $yearMonth;
                 }
-                
+
                 return false; // Skip jika tidak ada data waktu yang valid
             });
 
             foreach ($filteredPencatatan as $item) {
                 $dataInput = json_decode($item->data_input, true) ?? [];
-                
+
                 // Jika data input kosong, skip
                 if (empty($dataInput)) {
                     continue;
                 }
-                    if (isset($customer['role']) && $customer['role'] === 'fob' && isset($dataInput['volume_sm3'])) {
-                        // FOB format data (simpler)
-                        $volumeSm3 = floatval($dataInput['volume_sm3']);
-                        // Gunakan harga per meter kubik yang sesuai untuk FOB
-                        $hargaPerMeterKubik = floatval($customer['harga_per_meter_kubik'] ?? 0);
-                        $pembelian = $volumeSm3 * $hargaPerMeterKubik;
-                    } else {
-                        // Customer biasa format data
-                        $volumeFlowMeter = floatval($dataInput['volume_flow_meter'] ?? 0);
-                        $koreksiMeter = floatval($customer['koreksi_meter'] ?? 1.0);
-                        $volumeSm3 = $volumeFlowMeter * $koreksiMeter;
-                        // Gunakan harga per meter kubik yang sesuai untuk customer biasa
-                        $hargaPerMeterKubik = floatval($customer['harga_per_meter_kubik'] ?? 0);
-                        $pembelian = $volumeSm3 * $hargaPerMeterKubik;
-                    }
+                if (isset($customer['role']) && $customer['role'] === 'fob' && isset($dataInput['volume_sm3'])) {
+                    // FOB format data (simpler)
+                    $volumeSm3 = floatval($dataInput['volume_sm3']);
+                    // Gunakan harga per meter kubik yang sesuai untuk FOB
+                    $hargaPerMeterKubik = floatval($customer['harga_per_meter_kubik'] ?? 0);
+                    $pembelian = $volumeSm3 * $hargaPerMeterKubik;
+                } else {
+                    // Customer biasa format data
+                    $volumeFlowMeter = floatval($dataInput['volume_flow_meter'] ?? 0);
+                    $koreksiMeter = floatval($customer['koreksi_meter'] ?? 1.0);
+                    $volumeSm3 = $volumeFlowMeter * $koreksiMeter;
+                    // Gunakan harga per meter kubik yang sesuai untuk customer biasa
+                    $hargaPerMeterKubik = floatval($customer['harga_per_meter_kubik'] ?? 0);
+                    $pembelian = $volumeSm3 * $hargaPerMeterKubik;
+                }
 
-                    $totalPemakaian += $volumeSm3;
-                    $totalPembelian += $pembelian; // Gunakan hasil perhitungan bukan harga_final dari database
+                $totalPemakaian += $volumeSm3;
+                $totalPembelian += $pembelian; // Gunakan hasil perhitungan bukan harga_final dari database
             }
         }
 
@@ -321,12 +321,12 @@ class DashboardController extends Controller
             // Filter berdasarkan tahun dari data_input, bukan created_at
             $dataPencatatanTahun = $allDataPencatatan->filter(function ($item) use ($tahun, $customer) {
                 $dataInput = json_decode($item->data_input, true) ?? [];
-                
+
                 // Jika data input kosong, skip
                 if (empty($dataInput)) {
                     return false;
                 }
-                
+
                 // Periksa tipe data pencatatan (FOB atau customer biasa)
                 if (isset($customer['role']) && $customer['role'] === 'fob' && isset($dataInput['waktu'])) {
                     // Format FOB - menggunakan kunci 'waktu'
@@ -337,7 +337,7 @@ class DashboardController extends Controller
                     $dataTahun = Carbon::parse($dataInput['pembacaan_awal']['waktu'])->format('Y');
                     return $dataTahun == $tahun;
                 }
-                
+
                 return false; // Skip jika tidak ada data waktu yang valid
             });
 
@@ -368,12 +368,12 @@ class DashboardController extends Controller
             // Data untuk bulan - filter berdasarkan waktu pencatatan
             $dataPencatatanBulan = $dataPencatatanTahun->filter(function ($item) use ($yearMonth, $customer) {
                 $dataInput = json_decode($item->data_input, true) ?? [];
-                
+
                 // Jika data input kosong, skip
                 if (empty($dataInput)) {
                     return false;
                 }
-                
+
                 // Periksa format data (FOB atau customer biasa)
                 if (isset($customer['role']) && $customer['role'] === 'fob' && isset($dataInput['waktu'])) {
                     // Format FOB - menggunakan kunci 'waktu'
@@ -384,7 +384,7 @@ class DashboardController extends Controller
                     $waktuAwal = \Carbon\Carbon::parse($dataInput['pembacaan_awal']['waktu'])->format('Y-m');
                     return $waktuAwal === $yearMonth;
                 }
-                
+
                 return false; // Skip jika tidak ada data waktu yang valid
             });
 
@@ -570,7 +570,7 @@ class DashboardController extends Controller
                 if ($depositDate->format('Y-m') === $currentYearMonth) {
                     $amount = floatval($deposit['amount'] ?? 0);
                     $keterangan = $deposit['keterangan'] ?? 'penambahan';
-                    
+
                     // Handle deposit dan pengurangan dengan benar
                     if ($keterangan === 'pengurangan') {
                         // Jika keterangan pengurangan, kurangi dari total deposit
@@ -589,7 +589,7 @@ class DashboardController extends Controller
 
         // Hitung saldo bulan sebelumnya secara real-time
         $realTimePrevMonthBalance = 0;
-        
+
         // 1. Hitung semua deposit dan pengurangan sampai akhir bulan sebelumnya
         $deposits = $ensureArray($user->deposit_history);
         foreach ($deposits as $deposit) {
@@ -599,7 +599,7 @@ class DashboardController extends Controller
                 if ($depositDate->format('Y-m') <= $prevYearMonth) {
                     $amount = floatval($deposit['amount'] ?? 0);
                     $keterangan = $deposit['keterangan'] ?? 'penambahan';
-                    
+
                     // Handle deposit dan pengurangan dengan benar
                     if ($keterangan === 'pengurangan') {
                         // Jika keterangan pengurangan, pastikan amount negatif
@@ -611,7 +611,7 @@ class DashboardController extends Controller
                 }
             }
         }
-        
+
         // 2. Kurangi semua pembelian sampai akhir bulan sebelumnya
         $allDataPencatatan = $user->dataPencatatan()->get();
         foreach ($allDataPencatatan as $purchaseItem) {
@@ -621,7 +621,7 @@ class DashboardController extends Controller
             }
 
             $itemWaktuAwal = Carbon::parse($itemDataInput['pembacaan_awal']['waktu']);
-            
+
             // Ambil pembelian sampai akhir bulan sebelumnya
             if ($itemWaktuAwal->format('Y-m') <= $prevYearMonth) {
                 $volumeFlowMeter = floatval($itemDataInput['volume_flow_meter'] ?? 0);
@@ -647,6 +647,211 @@ class DashboardController extends Controller
         $belumLunas = $allData->where('status_pembayaran', 'belum_lunas')->count();
 
         return view('dashboard.customer', compact(
+            'dataPencatatan',
+            'totalTagihan',
+            'belumLunas',
+            'selectedBulan',
+            'selectedTahun',
+            'totalVolumeSm3',
+            'filteredVolumeSm3',
+            'filteredTotalPurchases',
+            'filteredTotalDeposits',
+            'pricingInfo',
+            'realTimePrevMonthBalance',
+            'realTimeCurrentMonthBalance'
+        ));
+    }
+    // Dashboard untuk FOB
+    public function fobDashboard(Request $request)
+    {
+        $user = Auth::user();
+
+        // Get filter parameters
+        $selectedBulan = $request->input('bulan', date('m'));
+        $selectedTahun = $request->input('tahun', date('Y'));
+
+        // Format filter untuk query
+        $yearMonth = $selectedTahun . '-' . str_pad($selectedBulan, 2, '0', STR_PAD_LEFT);
+
+        // Helper function to ensure data is array (same as FOB detail)
+        $ensureArray = function ($data) {
+            if (is_string($data)) {
+                return json_decode($data, true) ?? [];
+            }
+            if (is_array($data)) {
+                return $data;
+            }
+            return [];
+        };
+
+        // Ambil semua data dulu
+        $allData = $user->dataPencatatan;
+
+        // Filter data berdasarkan bulan dan tahun dari WAKTU FOB (bukan pembacaan_awal)
+        $dataPencatatan = $allData->filter(function ($item) use ($yearMonth, $ensureArray) {
+            $dataInput = $ensureArray($item->data_input);
+
+            // Jika data input kosong, skip
+            if (empty($dataInput)) {
+                return false;
+            }
+
+            // PERBAIKAN: FOB menggunakan 'waktu' langsung, bukan 'pembacaan_awal.waktu'
+            if (!empty($dataInput['waktu'])) {
+                try {
+                    $waktu = Carbon::parse($dataInput['waktu'])->format('Y-m');
+                    return $waktu === $yearMonth;
+                } catch (\Exception $e) {
+                    return false;
+                }
+            }
+
+            return false;
+        });
+
+        // Urutkan data berdasarkan tanggal waktu (FOB format)
+        $dataPencatatan = $dataPencatatan->sortByDesc(function ($item) use ($ensureArray) {
+            $dataInput = $ensureArray($item->data_input);
+            $waktuTimestamp = strtotime($dataInput['waktu'] ?? '');
+            return $waktuTimestamp ? $waktuTimestamp : 0;
+        });
+
+        // Get pricing info for selected month (dynamic pricing)
+        $pricingInfo = $user->getPricingForYearMonth($yearMonth);
+
+        // Calculate total volume SM3 for all time (FOB format)
+        $totalVolumeSm3 = 0;
+        foreach ($allData as $item) {
+            $dataInput = $ensureArray($item->data_input);
+            $totalVolumeSm3 += floatval($dataInput['volume_sm3'] ?? 0);
+        }
+
+        // Calculate total volume SM3 for filtered period (FOB format)
+        $filteredVolumeSm3 = 0;
+        foreach ($dataPencatatan as $item) {
+            $dataInput = $ensureArray($item->data_input);
+            $filteredVolumeSm3 += floatval($dataInput['volume_sm3'] ?? 0);
+        }
+
+        // Calculate total purchases for the filtered period (FOB format)
+        $filteredTotalPurchases = 0;
+        foreach ($dataPencatatan as $item) {
+            $dataInput = $ensureArray($item->data_input);
+            $volumeSm3 = floatval($dataInput['volume_sm3'] ?? 0);
+
+            // Ambil waktu untuk mendapatkan pricing yang tepat
+            $waktuDateTime = null;
+            $waktuYearMonth = $yearMonth;
+            
+            if (!empty($dataInput['waktu'])) {
+                try {
+                    $waktuDateTime = Carbon::parse($dataInput['waktu']);
+                    $waktuYearMonth = $waktuDateTime->format('Y-m');
+                } catch (\Exception $e) {
+                    $waktuDateTime = null;
+                }
+            }
+
+            $itemPricingInfo = $user->getPricingForYearMonth($waktuYearMonth, $waktuDateTime);
+            $hargaPerM3 = floatval($itemPricingInfo['harga_per_meter_kubik'] ?? $user->harga_per_meter_kubik);
+            $filteredTotalPurchases += $volumeSm3 * $hargaPerM3;
+        }
+
+        // Calculate total deposits for the filtered period (current month only)
+        $filteredTotalDeposits = 0;
+        $depositHistory = $ensureArray($user->deposit_history);
+
+        // Format bulan saat ini untuk perbandingan konsisten
+        $currentYearMonth = $selectedTahun . '-' . str_pad($selectedBulan, 2, '0', STR_PAD_LEFT);
+
+        foreach ($depositHistory as $deposit) {
+            if (isset($deposit['date'])) {
+                $depositDate = Carbon::parse($deposit['date']);
+                // Pastikan hanya deposit pada bulan dan tahun yang dipilih menggunakan format yang konsisten
+                if ($depositDate->format('Y-m') === $currentYearMonth) {
+                    $amount = floatval($deposit['amount'] ?? 0);
+                    $keterangan = $deposit['keterangan'] ?? 'penambahan';
+
+                    // Handle deposit dan pengurangan dengan benar
+                    if ($keterangan === 'pengurangan') {
+                        // Jika keterangan pengurangan, kurangi dari total deposit
+                        $filteredTotalDeposits -= abs($amount);
+                    } else {
+                        // Jika keterangan penambahan, tambahkan
+                        $filteredTotalDeposits += $amount;
+                    }
+                }
+            }
+        }
+
+        // Mendapatkan bulan sebelumnya
+        $prevDate = Carbon::createFromDate($selectedTahun, $selectedBulan, 1)->subMonth();
+        $prevYearMonth = $prevDate->format('Y-m');
+
+        // Hitung saldo bulan sebelumnya secara real-time (FOB format)
+        $realTimePrevMonthBalance = 0;
+
+        // 1. Hitung semua deposit dan pengurangan sampai akhir bulan sebelumnya
+        $deposits = $ensureArray($user->deposit_history);
+        foreach ($deposits as $deposit) {
+            if (isset($deposit['date'])) {
+                $depositDate = Carbon::parse($deposit['date']);
+                // Ambil deposit sampai akhir bulan sebelumnya
+                if ($depositDate->format('Y-m') <= $prevYearMonth) {
+                    $amount = floatval($deposit['amount'] ?? 0);
+                    $keterangan = $deposit['keterangan'] ?? 'penambahan';
+
+                    // Handle deposit dan pengurangan dengan benar
+                    if ($keterangan === 'pengurangan') {
+                        $realTimePrevMonthBalance -= abs($amount);
+                    } else {
+                        $realTimePrevMonthBalance += $amount;
+                    }
+                }
+            }
+        }
+
+        // 2. Kurangi semua pembelian sampai akhir bulan sebelumnya (FOB format)
+        $allDataPencatatan = $user->dataPencatatan()->get();
+        foreach ($allDataPencatatan as $purchaseItem) {
+            $itemDataInput = $ensureArray($purchaseItem->data_input);
+            
+            // PERBAIKAN: FOB menggunakan format 'waktu', bukan 'pembacaan_awal.waktu'
+            $itemDate = null;
+            if (!empty($itemDataInput['waktu'])) {
+                try {
+                    $itemDate = Carbon::parse($itemDataInput['waktu']);
+                } catch (\Exception $e) {
+                    continue;
+                }
+            } else {
+                continue;
+            }
+
+            // Ambil pembelian sampai akhir bulan sebelumnya
+            if ($itemDate->format('Y-m') <= $prevYearMonth) {
+                // FOB menggunakan volume_sm3 langsung, tidak ada koreksi meter
+                $volumeSm3 = floatval($itemDataInput['volume_sm3'] ?? 0);
+
+                // Ambil pricing yang sesuai (bulanan atau periode khusus)
+                $itemYearMonth = $itemDate->format('Y-m');
+                $itemPricingInfo = $user->getPricingForYearMonth($itemYearMonth, $itemDate);
+
+                // Hitung harga
+                $itemHargaPerM3 = floatval($itemPricingInfo['harga_per_meter_kubik'] ?? $user->harga_per_meter_kubik);
+                $itemHarga = $volumeSm3 * $itemHargaPerM3;
+
+                $realTimePrevMonthBalance -= $itemHarga;
+            }
+        }
+
+        // Hitung saldo bulan ini menggunakan saldo bulan sebelumnya yang real-time
+        $realTimeCurrentMonthBalance = $realTimePrevMonthBalance + $filteredTotalDeposits - $filteredTotalPurchases;
+
+        $totalTagihan = $allData->sum('harga_final');
+        $belumLunas = $allData->where('status_pembayaran', 'belum_lunas')->count();
+
+        return view('dashboard.fob', compact(
             'dataPencatatan',
             'totalTagihan',
             'belumLunas',
@@ -707,7 +912,7 @@ class DashboardController extends Controller
 
                 // Ambil bulan berdasarkan format data
                 $bulanIndex = -1;
-                
+
                 if (isset($customer['role']) && $customer['role'] === 'fob' && isset($dataInput['waktu'])) {
                     // Format FOB - menggunakan kunci 'waktu'
                     $bulanIndex = (int)Carbon::parse($dataInput['waktu'])->format('n') - 1;
@@ -802,7 +1007,7 @@ class DashboardController extends Controller
 
                 // Ambil hari berdasarkan format data
                 $hariIndex = -1;
-                
+
                 if (isset($customer['role']) && $customer['role'] === 'fob' && isset($dataInput['waktu'])) {
                     // Format FOB - menggunakan kunci 'waktu'
                     $tanggal = Carbon::parse($dataInput['waktu']);
@@ -851,38 +1056,38 @@ class DashboardController extends Controller
     private function calculateSummaryData($customers, $tahun, $bulan)
     {
         $yearMonth = $tahun . '-' . str_pad($bulan, 2, '0', STR_PAD_LEFT);
-        
+
         // 1. Hitung total penjualan bulanan (revenue dari customer)
         $penjualanBulanan = $this->calculateMonthlyData($customers, $yearMonth);
         $totalPenjualan = $penjualanBulanan['total_pembelian'];  // Ini adalah revenue dari customer
         $totalVolumePenjualan = $penjualanBulanan['total_pemakaian'];
-        
+
         // 2. Hitung total pembelian gas dari supplier (cost berdasarkan HargaGagas)
         $pembelianData = $this->getRekapPembelianData($tahun, $bulan);
         $totalVolumePengambilan = $pembelianData['total_pengambilan'];
         $totalPembelianGas = $pembelianData['total_pembelian'];
-        
+
         // 3. Hitung profit (Revenue - Cost)
         $totalProfit = $totalPenjualan - $totalPembelianGas;
-        
+
         // 4. Hitung selisih volume
         $selisihVolume = $totalVolumePenjualan - $totalVolumePengambilan;
-        
+
         // 5. Hitung profit margin
         $profitMargin = $totalPenjualan > 0 ? (($totalProfit / $totalPenjualan) * 100) : 0;
-        
-        // 6. Hitung efisiensi volume  
+
+        // 6. Hitung efisiensi volume
         $efisiensiVolume = $totalVolumePengambilan > 0 ? (($totalVolumePenjualan / $totalVolumePengambilan) * 100) : 0;
-        
+
         // 7. Hitung harga rata-rata
         $hargaRataPenjualan = $totalVolumePenjualan > 0 ? ($totalPenjualan / $totalVolumePenjualan) : 0;
         $hargaRataPembelian = $totalVolumePengambilan > 0 ? ($totalPembelianGas / $totalVolumePengambilan) : 0;
-        
+
         // 8. Validasi data dan fallback
         if ($totalVolumePenjualan == 0 && $totalVolumePengambilan == 0) {
             \Log::warning('No sales or procurement data found', ['year_month' => $yearMonth]);
         }
-        
+
         return [
             'total_penjualan' => round($totalPenjualan, 0),
             'total_volume_penjualan' => round($totalVolumePenjualan, 2),
@@ -897,32 +1102,32 @@ class DashboardController extends Controller
             'method' => 'Berdasarkan HargaGagas' // Identifier untuk UI
         ];
     }
-    
+
     // Menghitung data untuk grafik profit tahunan (per bulan)
     private function getProfitChartData($customers, $tahun)
     {
         $profitData = array_fill(0, 12, 0);
-        
+
         for ($bulan = 1; $bulan <= 12; $bulan++) {
             $yearMonth = $tahun . '-' . str_pad($bulan, 2, '0', STR_PAD_LEFT);
-            
+
             // Hitung penjualan bulanan (revenue)
             $penjualanBulanan = $this->calculateMonthlyData($customers, $yearMonth);
             $totalPenjualan = $penjualanBulanan['total_pembelian'];
-            
+
             // Hitung pembelian gas berdasarkan HargaGagas (cost)
             $totalPembelianGas = $this->calculateTotalPembelianFromHargaGagas($tahun, $bulan);
-            
+
             // Hitung profit dan convert ke jutaan untuk display
             $profit = $totalPenjualan - $totalPembelianGas;
             $profitData[$bulan - 1] = round($profit / 1000000, 2); // Convert to millions
         }
-        
+
         return [
             'profit' => $profitData
         ];
     }
-    
+
     // Method untuk mendapatkan data rekap pembelian (dari RekapPembelianController logic)
     private function getRekapPembelianData($tahun, $bulan)
     {
@@ -930,16 +1135,16 @@ class DashboardController extends Controller
         $totalPengambilan = RekapPengambilan::whereYear('tanggal', $tahun)
             ->whereMonth('tanggal', $bulan)
             ->sum('volume');
-        
+
         // Total pembelian berdasarkan harga gagas untuk bulan tersebut
         $totalPembelian = $this->calculateTotalPembelianFromHargaGagas($tahun, $bulan);
-        
+
         return [
             'total_pengambilan' => $totalPengambilan,
             'total_pembelian' => $totalPembelian
         ];
     }
-    
+
     // Menghitung total pembelian berdasarkan harga gagas
     private function calculateTotalPembelianFromHargaGagas($tahun, $bulan = null)
     {
@@ -954,26 +1159,26 @@ class DashboardController extends Controller
             }
             return $totalPembelianTahun;
         }
-        
+
         if (!$hargaGagas) {
             return 0;
         }
-        
+
         // Ambil total volume pengambilan
         $totalVolume = RekapPengambilan::whereYear('tanggal', $tahun)
             ->whereMonth('tanggal', $bulan)
             ->sum('volume');
-        
+
         // Hitung MMBTU (Total Volume SM3 / Kalori)
         $totalMMBTU = $hargaGagas->kalori > 0 ? $totalVolume / $hargaGagas->kalori : 0;
-        
+
         // Hitung total pembelian (MMBTU * Harga USD dalam IDR)
         $hargaIDR = $hargaGagas->harga_usd * $hargaGagas->rate_konversi_idr;
         $totalPembelian = $totalMMBTU * $hargaIDR;
-        
+
         return $totalPembelian;
     }
-    
+
     // Mendapatkan harga gagas dengan fallback ke periode sebelumnya
     private function getHargaGagasWithFallback($tahun, $bulan)
     {
@@ -982,61 +1187,61 @@ class DashboardController extends Controller
             ->where('periode_bulan', $bulan)
             ->latest()
             ->first();
-        
+
         if ($hargaGagas) {
             return $hargaGagas;
         }
-        
+
         // Jika tidak ada, cari periode sebelumnya (maksimal 12 bulan ke belakang)
         $currentDate = Carbon::create($tahun, $bulan, 1);
-        
+
         for ($i = 1; $i <= 12; $i++) {
             $fallbackDate = $currentDate->copy()->subMonths($i);
             $fallbackHarga = HargaGagas::where('periode_tahun', $fallbackDate->year)
                 ->where('periode_bulan', $fallbackDate->month)
                 ->latest()
                 ->first();
-            
+
             if ($fallbackHarga) {
                 \Log::info("Harga Gagas Fallback: Periode {$tahun}-{$bulan} menggunakan data dari {$fallbackDate->year}-{$fallbackDate->month}");
                 return $fallbackHarga;
             }
         }
-        
+
         // Jika tidak ada data sama sekali
         return null;
     }
-    
-    // Mendapatkan data customer rekap pembelian 
+
+    // Mendapatkan data customer rekap pembelian
     private function getCustomerRekapPembelianData($tahun, $bulan)
     {
         // Ambil semua customer yang memiliki data pengambilan
         $customers = User::whereIn('role', ['customer', 'fob'])
-            ->whereHas('rekapPengambilan', function($query) use ($tahun) {
+            ->whereHas('rekapPengambilan', function ($query) use ($tahun) {
                 $query->whereYear('tanggal', $tahun);
             })
             ->get();
-        
+
         $data = [];
-        
+
         foreach ($customers as $customer) {
             // Pengambilan tahunan
             $pengambilanTahun = RekapPengambilan::where('customer_id', $customer->id)
                 ->whereYear('tanggal', $tahun)
                 ->sum('volume');
-            
+
             // Pengambilan bulanan
             $pengambilanBulan = RekapPengambilan::where('customer_id', $customer->id)
                 ->whereYear('tanggal', $tahun)
                 ->whereMonth('tanggal', $bulan)
                 ->sum('volume');
-            
+
             // Pembelian berdasarkan harga gagas dengan fallback
             $hargaGagas = $this->getHargaGagasWithFallback($tahun, $bulan);
-            
+
             if ($hargaGagas && $hargaGagas->kalori > 0) {
                 $hargaIDR = $hargaGagas->harga_usd * $hargaGagas->rate_konversi_idr;
-                
+
                 // Untuk pembelian tahunan, hitung per bulan
                 $pembelianTahun = 0;
                 for ($m = 1; $m <= 12; $m++) {
@@ -1044,20 +1249,20 @@ class DashboardController extends Controller
                         ->whereYear('tanggal', $tahun)
                         ->whereMonth('tanggal', $m)
                         ->sum('volume');
-                    
+
                     $hargaInfoBulan = $this->getHargaGagasWithFallback($tahun, $m);
                     if ($hargaInfoBulan && $hargaInfoBulan->kalori > 0) {
                         $hargaIDRBulan = $hargaInfoBulan->harga_usd * $hargaInfoBulan->rate_konversi_idr;
                         $pembelianTahun += ($pengambilanCustomerBulan / $hargaInfoBulan->kalori) * $hargaIDRBulan;
                     }
                 }
-                
+
                 $pembelianBulan = ($pengambilanBulan / $hargaGagas->kalori) * $hargaIDR;
             } else {
                 $pembelianTahun = 0;
                 $pembelianBulan = 0;
             }
-            
+
             if ($pengambilanTahun > 0 || $pengambilanBulan > 0) {
                 $data[] = [
                     'nama' => $customer->name,
@@ -1069,10 +1274,10 @@ class DashboardController extends Controller
                 ];
             }
         }
-        
+
         return $data;
     }
-    
+
     // Mendapatkan data chart tahunan untuk rekap pembelian
     private function getRekapPembelianYearlyChartData($tahun)
     {
@@ -1080,7 +1285,7 @@ class DashboardController extends Controller
         $pembelian = [];
         $totalPengambilanTahun = 0;
         $totalPembelianTahun = 0;
-        
+
         for ($bulan = 1; $bulan <= 12; $bulan++) {
             // Pengambilan bulanan
             $pengambilanBulan = RekapPengambilan::whereYear('tanggal', $tahun)
@@ -1088,13 +1293,13 @@ class DashboardController extends Controller
                 ->sum('volume');
             $pengambilan[] = $pengambilanBulan;
             $totalPengambilanTahun += $pengambilanBulan;
-            
+
             // Pembelian bulanan dengan fallback logic
             $pembelianBulan = $this->calculateTotalPembelianFromHargaGagas($tahun, $bulan);
             $pembelian[] = $pembelianBulan / 1000000; // Convert ke juta rupiah
             $totalPembelianTahun += $pembelianBulan;
         }
-        
+
         return [
             'pengambilan' => $pengambilan,
             'pembelian' => $pembelian,
@@ -1102,25 +1307,25 @@ class DashboardController extends Controller
             'total_pembelian_tahun' => $totalPembelianTahun
         ];
     }
-    
-    // Mendapatkan data chart bulanan untuk rekap pembelian  
+
+    // Mendapatkan data chart bulanan untuk rekap pembelian
     private function getRekapPembelianMonthlyChartData($tahun, $bulan)
     {
         $daysInMonth = Carbon::create($tahun, $bulan)->daysInMonth;
         $pengambilan = [];
         $pembelian = [];
-        
+
         // Ambil harga gagas dengan fallback untuk bulan ini
         $hargaGagas = $this->getHargaGagasWithFallback($tahun, $bulan);
-        
+
         for ($hari = 1; $hari <= $daysInMonth; $hari++) {
             $tanggal = Carbon::create($tahun, $bulan, $hari)->format('Y-m-d');
-            
+
             // Pengambilan harian
             $pengambilanHari = RekapPengambilan::whereDate('tanggal', $tanggal)
                 ->sum('volume');
             $pengambilan[] = $pengambilanHari;
-            
+
             // Pembelian harian (proporsional)
             if ($hargaGagas && $hargaGagas->kalori > 0) {
                 $mmbtuHari = $pengambilanHari / $hargaGagas->kalori;
@@ -1131,7 +1336,7 @@ class DashboardController extends Controller
                 $pembelian[] = 0;
             }
         }
-        
+
         return [
             'pengambilan' => $pengambilan,
             'pembelian' => $pembelian

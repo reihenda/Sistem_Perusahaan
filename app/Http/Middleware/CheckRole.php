@@ -33,6 +33,9 @@ class CheckRole
                 case 'customer':
                     if ($user->isCustomer()) return $next($request);
                     break;
+                case 'fob':
+                    if ($user->isFob()) return $next($request);
+                    break;
                 case 'demo':
                     if ($user->isDemo()) return $next($request);
                     break;
