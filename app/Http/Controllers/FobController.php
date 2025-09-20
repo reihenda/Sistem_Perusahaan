@@ -286,6 +286,10 @@ class FobController extends Controller
             if ($importedCount > 0) {
                 $userController = new UserController();
                 $userController->rekalkulasiTotalPembelianFob($customer);
+                
+                // PERBAIKAN: Lakukan sinkronisasi realtime setelah import data
+                $this->syncRealtimeCalculationsToTotal($customer);
+                
                 Log::info("Rekalkulasi total pembelian setelah import", [
                     'customer_id' => $customer->id,
                     'imported_count' => $importedCount
@@ -441,17 +445,21 @@ class FobController extends Controller
 
         // Jika ada data yang diimpor, rekalkulasi total pembelian
         if ($importedCount > 0) {
-            try {
-                $userController = new UserController();
-                $userController->rekalkulasiTotalPembelianFob($customer);
-                Log::info("Auto-sync: Rekalkulasi total pembelian sukses", [
-                    'customer_id' => $customer->id,
-                    'customer_name' => $customer->name
+        try {
+        $userController = new UserController();
+        $userController->rekalkulasiTotalPembelianFob($customer);
+        
+        // PERBAIKAN: Lakukan sinkronisasi realtime setelah auto-sync
+        $this->syncRealtimeCalculationsToTotal($customer);
+        
+            Log::info("Auto-sync: Rekalkulasi total pembelian sukses", [
+            'customer_id' => $customer->id,
+                'customer_name' => $customer->name
                 ]);
-            } catch (\Exception $e) {
-                Log::error("Error saat merekalkulasi total pembelian FOB {$customer->name}: " . $e->getMessage());
+                } catch (\Exception $e) {
+                    Log::error("Error saat merekalkulasi total pembelian FOB {$customer->name}: " . $e->getMessage());
+                }
             }
-        }
 
         return $importedCount;
     }
@@ -754,6 +762,9 @@ class FobController extends Controller
         $customer->recordPurchase($hargaFinal);
         $userController = new UserController();
         $userController->rekalkulasiTotalPembelianFob($customer);
+        
+        // PERBAIKAN: Lakukan sinkronisasi realtime setelah menambah data
+        $this->syncRealtimeCalculationsToTotal($customer);
 
         // Tambahkan data ke rekap pengambilan
         $rekapPengambilan = new RekapPengambilan();
@@ -783,6 +794,84 @@ class FobController extends Controller
         }
     }
 
+    /**
+     * Fungsi untuk melakukan sinkronisasi realtime antara perhitungan periode dengan total customer
+     * Memastikan $customer->total_purchases selalu sama dengan total dari semua periode
+     */
+    private function syncRealtimeCalculationsToTotal(User $customer)
+    {
+        try {
+            // PERBAIKAN: Hitung ulang total purchases berdasarkan semua data dengan pricing realtime
+            $allRekapPengambilan = RekapPengambilan::where('customer_id', $customer->id)->get();
+            
+            $calculatedTotalPurchases = 0;
+            $calculatedTotalVolume = 0;
+            
+            foreach ($allRekapPengambilan as $item) {
+                $volumeSm3 = floatval($item->volume);
+                $calculatedTotalVolume += $volumeSm3;
+                
+                // Ambil pricing berdasarkan tanggal item (sama seperti perhitungan periode)
+                $itemDate = Carbon::parse($item->tanggal);
+                $itemYearMonth = $itemDate->format('Y-m');
+                $itemPricingInfo = $customer->getPricingForYearMonth($itemYearMonth, $itemDate);
+                
+                $hargaPerM3 = floatval($itemPricingInfo['harga_per_meter_kubik'] ?? $customer->harga_per_meter_kubik);
+                $calculatedTotalPurchases += ($volumeSm3 * $hargaPerM3);
+            }
+            
+            // PERBAIKAN: Bandingkan dengan total yang tersimpan di database
+            $currentTotalPurchases = $customer->total_purchases;
+            $difference = abs($calculatedTotalPurchases - $currentTotalPurchases);
+            
+            // Jika ada perbedaan signifikan (lebih dari 1 rupiah), update
+            if ($difference > 1) {
+                Log::info('FOB Realtime Sync: Perbedaan total purchases terdeteksi', [
+                    'customer_id' => $customer->id,
+                    'customer_name' => $customer->name,
+                    'calculated_total' => $calculatedTotalPurchases,
+                    'current_total' => $currentTotalPurchases,
+                    'difference' => $difference
+                ]);
+                
+                // Update total_purchases dengan perhitungan realtime
+                $customer->total_purchases = $calculatedTotalPurchases;
+                $customer->save();
+                
+                Log::info('FOB Realtime Sync: Total purchases berhasil disinkronkan', [
+                    'customer_id' => $customer->id,
+                    'new_total_purchases' => $calculatedTotalPurchases
+                ]);
+                
+                return [
+                    'updated' => true,
+                    'old_total' => $currentTotalPurchases,
+                    'new_total' => $calculatedTotalPurchases,
+                    'difference' => $difference,
+                    'total_volume' => $calculatedTotalVolume
+                ];
+            }
+            
+            return [
+                'updated' => false,
+                'total_purchases' => $calculatedTotalPurchases,
+                'total_volume' => $calculatedTotalVolume
+            ];
+            
+        } catch (\Exception $e) {
+            Log::error('Error dalam syncRealtimeCalculationsToTotal', [
+                'customer_id' => $customer->id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return [
+                'updated' => false,
+                'error' => $e->getMessage()
+            ];
+        }
+    }
+
     // Menampilkan detail pencatatan untuk FOB tertentu
     public function fobDetail(User $customer, Request $request)
     {
@@ -790,6 +879,20 @@ class FobController extends Controller
         if (!$customer->isFOB()) {
             Log::warning('Attempt to access FOB detail for non-FOB user', ['user_id' => $customer->id, 'role' => $customer->role]);
             return redirect()->back()->with('error', 'User yang dipilih bukan FOB');
+        }
+
+        // PERBAIKAN: Lakukan sinkronisasi realtime sebelum menampilkan data
+        $syncResult = $this->syncRealtimeCalculationsToTotal($customer);
+        
+        // Reload customer jika ada update
+        if ($syncResult['updated'] ?? false) {
+            $customer = User::findOrFail($customer->id);
+            
+            // Tampilkan notifikasi jika ada perbaikan otomatis
+            session()->flash('info', 
+                '✅ Data total berhasil disinkronkan dengan perhitungan realtime. ' .
+                'Selisih yang diperbaiki: Rp ' . number_format($syncResult['difference'], 0)
+            );
         }
 
         // Get filter parameters
@@ -826,11 +929,19 @@ class FobController extends Controller
         // Urutkan data berdasarkan tanggal (ascending)
         $dataPencatatan = $dataPencatatan->sortBy('tanggal');
 
+        // PERBAIKAN: Buat mapping untuk memudahkan akses ID rekap pengambilan
+        $rekapMapping = [];
+        foreach ($dataPencatatan as $item) {
+            $tanggalKey = Carbon::parse($item->tanggal)->format('Y-m-d');
+            $volumeKey = floatval($item->volume);
+            $rekapMapping[$tanggalKey][$volumeKey] = $item->id;
+        }
+
         // Get pricing info for selected month
         $pricingInfo = $customer->getPricingForYearMonth($yearMonth);
 
-        // Calculate total volume SM3 for ALL TIME (menggunakan RekapPengambilan)
-        $totalVolumeSm3 = $allRekapPengambilan->sum('volume');
+        // PERBAIKAN: Calculate total volume SM3 untuk SEMUA WAKTU dari hasil sinkronisasi
+        $totalVolumeSm3 = $syncResult['total_volume'] ?? $allRekapPengambilan->sum('volume');
 
         // Calculate total volume untuk periode yang difilter
         $filteredVolumeSm3 = $dataPencatatan->sum('volume');
@@ -894,7 +1005,7 @@ class FobController extends Controller
             }
         }
 
-        // Total purchases sampai bulan sebelumnya berdasarkan rekap pengambilan
+            // Total purchases sampai bulan sebelumnya berdasarkan rekap pengambilan dengan pricing realtime
         $totalPurchasesUntilPrevMonth = 0;
         $allRekapUntilPrevMonth = $allRekapPengambilan->filter(function ($item) use ($carbonDate) {
             $itemDate = Carbon::parse($item->tanggal);
@@ -912,7 +1023,7 @@ class FobController extends Controller
 
         $prevMonthBalance = $totalDepositsUntilPrevMonth - $totalPurchasesUntilPrevMonth;
 
-        // Calculate yearly data menggunakan rekap pengambilan
+            // Calculate yearly data menggunakan rekap pengambilan dengan pricing realtime
         $yearlyRekapData = $allRekapPengambilan->filter(function ($item) use ($tahun) {
             $itemDate = Carbon::parse($item->tanggal);
             return $itemDate->year == $tahun;
@@ -930,12 +1041,16 @@ class FobController extends Controller
             $totalPembelianTahunan += ($volumeSm3 * $hargaPerM3);
         }
 
+        // PERBAIKAN: Reload customer terbaru untuk memastikan data total_purchases sudah tersinkronisasi
+        $customer = User::findOrFail($customer->id);
+
         return view('data-pencatatan.fob.fob-detail', [
             'customer' => $customer,
             'dataPencatatan' => $dataPencatatan, // Menggunakan data dari RekapPengambilan
+            'rekapMapping' => $rekapMapping, // PERBAIKAN: Tambahkan mapping
             'depositHistory' => $this->ensureArray($customer->deposit_history),
             'totalDeposit' => $customer->total_deposit,
-            'totalPurchases' => $customer->total_purchases,
+            'totalPurchases' => $customer->total_purchases, // PERBAIKAN: Ini sekarang sudah tersinkronisasi
             'currentBalance' => $customer->getCurrentBalance(),
             'selectedBulan' => $selectedBulan,
             'selectedTahun' => $selectedTahun,
@@ -946,7 +1061,9 @@ class FobController extends Controller
             'filteredTotalDeposits' => $filteredTotalDeposits,
             'prevMonthBalance' => $prevMonthBalance,
             'totalPemakaianTahunan' => $totalPemakaianTahunan,
-            'totalPembelianTahunan' => $totalPembelianTahunan
+            'totalPembelianTahunan' => $totalPembelianTahunan,
+            // PERBAIKAN: Tambahkan info sinkronisasi untuk debugging
+            'syncInfo' => $syncResult
         ]);
     }
 

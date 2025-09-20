@@ -48,6 +48,14 @@ class RekapPengambilan extends Model
     }
 
     /**
+     * Get the data pencatatan associated with this rekap pengambilan.
+     */
+    public function dataPencatatan()
+    {
+        return $this->hasOne(DataPencatatan::class, 'rekap_pengambilan_id');
+    }
+
+    /**
      * Filter pengambilan by month and year
      */
     public static function filterByMonthYear($month, $year)

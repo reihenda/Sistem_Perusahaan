@@ -14,6 +14,7 @@ class DataPencatatan extends Model
 
     protected $fillable = [
         'customer_id',
+        'rekap_pengambilan_id',
         'nama_customer',
         'data_input',
         'harga_final',
@@ -98,6 +99,12 @@ class DataPencatatan extends Model
     public function customer()
     {
         return $this->belongsTo(User::class, 'customer_id');
+    }
+
+    // Relasi dengan RekapPengambilan
+    public function rekapPengambilan()
+    {
+        return $this->belongsTo(RekapPengambilan::class, 'rekap_pengambilan_id');
     }
 
     // Method perhitungan harga

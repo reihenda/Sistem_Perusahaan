@@ -20,6 +20,7 @@ use App\Http\Controllers\ExcelImportController;
 use App\Http\Controllers\Debug\DataSyncDebugController;
 use App\Http\Controllers\ProformaInvoiceController;
 use App\Http\Controllers\Rekap\RekapPembelianController;
+use App\Http\Controllers\DataSyncController;
 
 // Rute Autentikasi
 Route::get('/login', [AuthController::class, 'showLoginForm'])->name('login');
@@ -224,6 +225,8 @@ Route::middleware(['auth', 'role:admin,superadmin'])->group(function () {
         ->name('rekap-pengambilan.destroy');
     Route::get('/rekap-pengambilan/find-by-date/{customer}/{date}', [RekapPengambilanController::class, 'findByDate'])
         ->name('rekap-pengambilan.find-by-date');
+    Route::get('/rekap-pengambilan/find-by-date-volume/{customer}/{date}/{volume}', [RekapPengambilanController::class, 'findByDateAndVolume'])
+        ->name('rekap-pengambilan.find-by-date-volume');
 
     Route::get('/rekap-penjualan', [App\Http\Controllers\Rekap\RekapPenjualanController::class, 'index'])
         ->name('rekap.penjualan.index');
@@ -273,6 +276,19 @@ Route::middleware(['auth', 'role:admin,superadmin'])->group(function () {
     Route::get('/debug/check-import', [App\Http\Controllers\DebugKasController::class, 'checkLastImport'])->name('debug.check-import');
     Route::get('/debug/simulate-import', [App\Http\Controllers\DebugKasController::class, 'simulateImport'])->name('debug.simulate-import');
     Route::get('/debug/fob-calculations/{customer}', [FobController::class, 'debugAndFixCalculations'])->name('debug.fob-calculations');
+
+    // Data Sync Routes - HANYA Admin
+    Route::prefix('data-sync')->group(function () {
+        Route::post('/fob/{customer}/analyze-and-fix', [App\Http\Controllers\DataSyncController::class, 'analyzeAndFixFobDataSync'])
+            ->name('data-sync.fob.analyze-and-fix');
+        Route::get('/fob/{customer}/debug', [App\Http\Controllers\DataSyncController::class, 'debugFobDataSync'])
+            ->name('data-sync.fob.debug');
+    });
+
+    // Test route untuk Advanced Fix
+    Route::get('/test-advanced-fix/{customer}', function(App\Models\User $customer) {
+        return view('test-advanced-fix', compact('customer'));
+    })->name('test.advanced-fix');
 
     Route::prefix('debug')->group(function () {
         Route::get('/compare-data', [DataSyncDebugController::class, 'compareCustomerBillingData'])

@@ -75,6 +75,19 @@
                                     onclick="return confirm('Sinkronisasi akan memastikan semua data di rekap-pengambilan juga ada di data-pencatatan. Lanjutkan?')">
                                     <i class="fas fa-sync-alt mr-1"></i> Sinkronkan Data
                                 </a>
+                                <div class="btn-group">
+
+                                    <div class="dropdown-menu">
+                                        <button class="dropdown-item" onclick="analyzeAndFixData()">
+                                            <i class="fas fa-search mr-1"></i> Analisis & Perbaiki Data
+                                        </button>
+                                        <button class="dropdown-item" onclick="debugDataSync()">
+                                            <i class="fas fa-bug mr-1"></i> Debug Data Sync
+                                        </button>
+                                        <div class="dropdown-divider"></div>
+                                        <small class="dropdown-header">Gunakan dengan hati-hati</small>
+                                    </div>
+                                </div>
                             @endif
                         </div>
                     </div>
@@ -521,26 +534,52 @@
                                         <td>Rp {{ number_format($pembelian, 2) }}</td>
                                         <td>
                                             <div class="btn-group">
-                                                <a href="{{ route('rekap-pengambilan.find-by-date', [$customer->id, $tanggalFilter]) }}"
-                                                    class="btn btn-info btn-sm" title="Lihat/Edit Rekap Pengambilan">
-                                                    <i class="fas fa-eye"></i>
-                                                </a>
+                                                @php
+                                                    // PERBAIKAN: Ambil ID rekap yang tepat dari mapping
+                                                    $rekapId = $rekapMapping[$tanggalFilter][$volumeSm3] ?? null;
+                                                @endphp
 
-                                                @if (Auth::user()->isAdmin() || Auth::user()->isSuperAdmin())
-                                                    <a href="{{ route('rekap-pengambilan.find-by-date', [$customer->id, $tanggalFilter]) }}"
-                                                        class="btn btn-warning btn-sm" title="Edit Rekap Pengambilan">
-                                                        <i class="fas fa-edit"></i>
+                                                @if ($rekapId)
+                                                    <a href="{{ route('rekap-pengambilan.show', $rekapId) }}"
+                                                        class="btn btn-info btn-sm" title="Lihat Rekap Pengambilan">
+                                                        <i class="fas fa-eye"></i>
                                                     </a>
 
-                                                    <form action="{{ route('rekap-pengambilan.destroy', $item->id) }}"
-                                                        method="POST" class="d-inline"
-                                                        onsubmit="return confirm('Apakah Anda yakin ingin menghapus data ini?');">
-                                                        @csrf
-                                                        @method('DELETE')
-                                                        <button type="submit" class="btn btn-danger btn-sm">
+                                                    @if (Auth::user()->isAdmin() || Auth::user()->isSuperAdmin())
+                                                        <a href="{{ route('rekap-pengambilan.edit', $rekapId) }}?return_to_fob=1"
+                                                            class="btn btn-warning btn-sm" title="Edit Rekap Pengambilan">
+                                                            <i class="fas fa-edit"></i>
+                                                        </a>
+
+                                                        <form action="{{ route('rekap-pengambilan.destroy', $rekapId) }}"
+                                                            method="POST" class="d-inline"
+                                                            onsubmit="return confirm('Apakah Anda yakin ingin menghapus data ini?');">
+                                                            @csrf
+                                                            @method('DELETE')
+                                                            <input type="hidden" name="return_to_fob" value="1">
+                                                            <button type="submit" class="btn btn-danger btn-sm">
+                                                                <i class="fas fa-trash"></i>
+                                                            </button>
+                                                        </form>
+                                                    @endif
+                                                @else
+                                                    <!-- Fallback jika tidak ditemukan mapping -->
+                                                    <a href="{{ route('rekap-pengambilan.find-by-date', [$customer->id, $tanggalFilter]) }}"
+                                                        class="btn btn-info btn-sm" title="Lihat/Edit Rekap Pengambilan">
+                                                        <i class="fas fa-eye"></i>
+                                                    </a>
+
+                                                    @if (Auth::user()->isAdmin() || Auth::user()->isSuperAdmin())
+                                                        <a href="{{ route('rekap-pengambilan.find-by-date', [$customer->id, $tanggalFilter]) }}"
+                                                            class="btn btn-warning btn-sm" title="Edit Rekap Pengambilan">
+                                                            <i class="fas fa-edit"></i>
+                                                        </a>
+
+                                                        <button class="btn btn-danger btn-sm" disabled
+                                                            title="Data tidak ditemukan">
                                                             <i class="fas fa-trash"></i>
                                                         </button>
-                                                    </form>
+                                                    @endif
                                                 @endif
                                             </div>
                                         </td>
@@ -893,6 +932,8 @@ usort($pricingHistory, function ($a, $b) {
 @endsection
 
 @section('css')
+    <!-- SweetAlert2 -->
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <style>
         .table-bordered th,
         .table-bordered td {
@@ -1391,6 +1432,134 @@ usort($pricingHistory, function ($a, $b) {
 
             // Open in new window/tab
             window.open(printUrl, '_blank', 'width=1200,height=800,scrollbars=yes,resizable=yes');
+        }
+
+        // Advanced Fix Functions
+        function analyzeAndFixData() {
+            if (!confirm(
+                    'Ini akan menganalisis dan memperbaiki data yang tidak sinkron. Proses ini mungkin memakan waktu beberapa menit. Lanjutkan?'
+                    )) {
+                return;
+            }
+
+            // Show loading
+            Swal.fire({
+                title: 'Menganalisis Data...',
+                text: 'Sedang memeriksa dan memperbaiki data yang tidak sinkron',
+                allowOutsideClick: false,
+                showConfirmButton: false,
+                didOpen: () => {
+                    Swal.showLoading();
+                }
+            });
+
+            $.ajax({
+                url: '{{ route('data-sync.fob.analyze-and-fix', $customer->id) }}',
+                method: 'POST',
+                success: function(response) {
+                    Swal.fire({
+                        title: 'Analisis Selesai!',
+                        html: `
+                            <div class="text-left">
+                                <p><strong>Hasil Analisis:</strong></p>
+                                <ul>
+                                    <li>Data Rekap: ${response.rekap_count}</li>
+                                    <li>Data Pencatatan: ${response.pencatatan_count}</li>
+                                    <li>Data Dibuat: ${response.created_pencatatan}</li>
+                                    <li>Data Dihapus: ${response.deleted_orphaned}</li>
+                                    <li>Relasi Diperbaiki: ${response.fixed_relations}</li>
+                                </ul>
+                                <p><strong>Total Pembelian Baru: Rp ${new Intl.NumberFormat('id-ID').format(response.new_total_purchases)}</strong></p>
+                            </div>
+                        `,
+                        icon: 'success',
+                        confirmButtonText: 'Refresh Halaman'
+                    }).then(() => {
+                        location.reload();
+                    });
+                },
+                error: function(xhr) {
+                    let errorMsg = 'Terjadi kesalahan';
+                    if (xhr.responseJSON && xhr.responseJSON.error) {
+                        errorMsg = xhr.responseJSON.error;
+                    }
+                    Swal.fire({
+                        title: 'Error!',
+                        text: errorMsg,
+                        icon: 'error'
+                    });
+                }
+            });
+        }
+
+        function debugDataSync() {
+            // Show loading
+            Swal.fire({
+                title: 'Mengambil Data Debug...',
+                allowOutsideClick: false,
+                showConfirmButton: false,
+                didOpen: () => {
+                    Swal.showLoading();
+                }
+            });
+
+            $.ajax({
+                url: '{{ route('data-sync.fob.debug', $customer->id) }}',
+                method: 'GET',
+                success: function(response) {
+                    // Format data untuk ditampilkan
+                    let debugInfo = `
+                        <div class="text-left" style="max-height: 400px; overflow-y: auto;">
+                            <h5>Customer Info:</h5>
+                            <p><strong>ID:</strong> ${response.customer_info.id}</p>
+                            <p><strong>Name:</strong> ${response.customer_info.name}</p>
+                            <p><strong>Total Purchases:</strong> Rp ${new Intl.NumberFormat('id-ID').format(response.customer_info.total_purchases)}</p>
+
+                            <h5>Data Rekap (${response.rekap_data.length} records):</h5>
+                            <div style="max-height: 150px; overflow-y: auto; border: 1px solid #ddd; padding: 10px; margin: 5px 0;">
+                    `;
+
+                    response.rekap_data.forEach(function(item) {
+                        debugInfo +=
+                            `<p><strong>ID ${item.id}:</strong> ${item.tanggal} - ${item.volume} Sm³ ${item.has_pencatatan ? '✓' : '✗'}</p>`;
+                    });
+
+                    debugInfo += `
+                            </div>
+                            <h5>Data Pencatatan (${response.pencatatan_data.length} records):</h5>
+                            <div style="max-height: 150px; overflow-y: auto; border: 1px solid #ddd; padding: 10px; margin: 5px 0;">
+                    `;
+
+                    response.pencatatan_data.forEach(function(item) {
+                        debugInfo +=
+                            `<p><strong>ID ${item.id}:</strong> ${item.waktu} - ${item.volume_sm3} Sm³ (Rekap ID: ${item.rekap_pengambilan_id || 'None'})</p>`;
+                    });
+
+                    debugInfo += `
+                            </div>
+                        </div>
+                    `;
+
+                    Swal.fire({
+                        title: 'Debug Info',
+                        html: debugInfo,
+                        width: '80%',
+                        showConfirmButton: true,
+                        confirmButtonText: 'Tutup'
+                    });
+                },
+                error: function(xhr) {
+                    let errorMsg = 'Terjadi kesalahan';
+                    if (xhr.responseJSON && xhr.responseJSON.error) {
+                        errorMsg = xhr.responseJSON.error;
+                    }
+                    Swal.fire({
+                        title: 'Error!',
+                        text: errorMsg,
+                        icon: 'error'
+                    });
+                }
+            });
         }
     </script>
 @endsection

@@ -95,13 +95,14 @@ class RekapPengambilanController extends Controller
     }
 
     /**
-     * Find rekap pengambilan by customer and date, then redirect to edit.
+     * Find rekap pengambilan by customer, date, and volume, then redirect to edit.
      */
-    public function findByDate(User $customer, $date)
+    public function findByDateAndVolume(User $customer, $date, $volume)
     {
-        // Cari rekap pengambilan berdasarkan customer dan tanggal
+        // Cari rekap pengambilan berdasarkan customer, tanggal, dan volume
         $rekapPengambilan = RekapPengambilan::where('customer_id', $customer->id)
             ->whereDate('tanggal', $date)
+            ->where('volume', $volume)
             ->first();
 
         if ($rekapPengambilan) {
@@ -114,6 +115,7 @@ class RekapPengambilanController extends Controller
             return redirect()->route('rekap-pengambilan.create-with-customer', $customer->id)
                 ->with('info', 'Data rekap pengambilan tidak ditemukan. Silakan buat data baru.')
                 ->with('preset_date', $date)
+                ->with('preset_volume', $volume)
                 ->with('return_to_fob', true);
         }
     }
@@ -371,8 +373,14 @@ class RekapPengambilanController extends Controller
             $customer->updateMonthlyBalances($startMonth);
         }
 
-        // Check if there's a return URL from FOB detail page
-        if ($request->has('return_to_fob') && $request->return_to_fob) {
+        // PERBAIKAN: Cek apakah request datang dari halaman FOB detail
+        // Bisa dari session, parameter request, atau HTTP referrer
+        $returnToFob = $request->has('return_to_fob') || 
+                      session()->has('return_to_fob') ||
+                      (str_contains($request->header('referer', ''), '/data-pencatatan/fob/') && 
+                       str_contains($request->header('referer', ''), '/detail'));
+
+        if ($returnToFob && $customer) {
             return redirect()->route('data-pencatatan.fob-detail', $customer->id)
                 ->with('success', 'Data pengambilan berhasil diperbarui dan disinkronkan dengan FOB.');
         }
@@ -381,7 +389,7 @@ class RekapPengambilanController extends Controller
             ->with('success', 'Data pengambilan berhasil diperbarui.');
     }
 
-    public function destroy(RekapPengambilan $rekapPengambilan)
+    public function destroy(Request $request, RekapPengambilan $rekapPengambilan)
     {
         $customer = $rekapPengambilan->customer;
         $tanggal = $rekapPengambilan->tanggal;
@@ -413,6 +421,17 @@ class RekapPengambilanController extends Controller
 
         // Hapus rekap pengambilan
         $rekapPengambilan->delete();
+
+        // PERBAIKAN: Cek apakah request datang dari halaman FOB detail
+        // Bisa dari parameter request atau HTTP referrer
+        $returnToFob = $request->has('return_to_fob') || 
+                      (str_contains($request->header('referer', ''), '/data-pencatatan/fob/') && 
+                       str_contains($request->header('referer', ''), '/detail'));
+
+        if ($returnToFob && $customer) {
+            return redirect()->route('data-pencatatan.fob-detail', $customer->id)
+                ->with('success', 'Data pengambilan berhasil dihapus dari FOB.');
+        }
 
         return redirect()->route('rekap-pengambilan.index')
             ->with('success', 'Data pengambilan berhasil dihapus.');
