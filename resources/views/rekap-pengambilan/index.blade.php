@@ -103,8 +103,8 @@
                                 <div class="input-group-prepend">
                                     <span class="input-group-text"><i class="fas fa-search"></i></span>
                                 </div>
-                                <input type="text" id="searchCustomer" class="form-control" 
-                                       placeholder="Cari customer..." value="{{ request('search_customer') }}">
+                                <input type="text" id="searchData" class="form-control" 
+                                       placeholder="Cari customer, nopol, alamat, volume..." value="{{ request('search') }}">
                             </div>
                         </div>
                     </div>
@@ -125,8 +125,8 @@
             // Timer untuk debounce pencarian
             let searchTimer;
 
-            // Event listener untuk pencarian customer real-time
-            $('#searchCustomer').on('input', function() {
+            // Event listener untuk pencarian data real-time
+            $('#searchData').on('input', function() {
                 const searchTerm = $(this).val();
                 const tanggal = $('#tanggal').val();
                 
@@ -141,7 +141,7 @@
                         url: '{{ route('rekap-pengambilan.index') }}',
                         type: 'GET',
                         data: { 
-                            search_customer: searchTerm,
+                            search: searchTerm,
                             tanggal: tanggal
                         },
                         dataType: 'json',
@@ -160,7 +160,7 @@
             // Auto submit form when date changes dan reset search
             $('#tanggal').on('change', function() {
                 // Reset search input
-                $('#searchCustomer').val('');
+                $('#searchData').val('');
                 // Submit form untuk filter tanggal
                 $(this).closest('form').submit();
             });

@@ -30,11 +30,20 @@ class RekapPengambilanController extends Controller
         $query = RekapPengambilan::filterByMonthYear($bulan, $tahun)
             ->with('customer');
 
-        // Filter berdasarkan pencarian customer jika ada
-        if ($request->has('search_customer') && !empty($request->search_customer)) {
-            $searchTerm = $request->search_customer;
-            $query->whereHas('customer', function ($q) use ($searchTerm) {
-                $q->where('name', 'like', '%' . $searchTerm . '%');
+        // Filter berdasarkan pencarian data (customer, nopol, alamat, volume) jika ada
+        if ($request->has('search') && !empty($request->search)) {
+            $searchTerm = $request->search;
+            $query->where(function ($q) use ($searchTerm) {
+                // Cari di nama customer
+                $q->whereHas('customer', function ($customerQuery) use ($searchTerm) {
+                    $customerQuery->where('name', 'like', '%' . $searchTerm . '%');
+                })
+                // Cari di nopol
+                ->orWhere('nopol', 'like', '%' . $searchTerm . '%')
+                // Cari di alamat pengambilan
+                ->orWhere('alamat_pengambilan', 'like', '%' . $searchTerm . '%')
+                // Cari di volume (konversi ke string untuk pencarian partial)
+                ->orWhereRaw('CAST(volume AS CHAR) LIKE ?', ['%' . $searchTerm . '%']);
             });
         }
 
@@ -48,7 +57,7 @@ class RekapPengambilanController extends Controller
         $totalVolumeHarian = RekapPengambilan::getTotalVolumeDaily($tanggal);
 
         // Deteksi jika request adalah AJAX untuk pencarian real-time
-        if ($request->ajax() && $request->has('search_customer')) {
+        if ($request->ajax() && $request->has('search')) {
             $html = view('rekap-pengambilan.partials.table', ['rekapPengambilan' => $rekapPengambilan])->render();
             return response()->json([
                 'html' => $html
