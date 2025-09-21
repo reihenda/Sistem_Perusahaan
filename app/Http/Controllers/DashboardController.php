@@ -643,8 +643,10 @@ class DashboardController extends Controller
         // Hitung saldo bulan ini menggunakan saldo bulan sebelumnya yang real-time
         $realTimeCurrentMonthBalance = $realTimePrevMonthBalance + $filteredTotalDeposits - $filteredTotalPurchases;
 
-        $totalTagihan = $allData->sum('harga_final');
-        $belumLunas = $allData->where('status_pembayaran', 'belum_lunas')->count();
+        // Hitung total tagihan dari semua data pencatatan (untuk backward compatibility)
+        $allDataPencatatan = $user->dataPencatatan;
+        $totalTagihan = $allDataPencatatan->sum('harga_final');
+        $belumLunas = $allDataPencatatan->where('status_pembayaran', 'belum_lunas')->count();
 
         return view('dashboard.customer', compact(
             'dataPencatatan',
@@ -672,6 +674,8 @@ class DashboardController extends Controller
 
         // Format filter untuk query
         $yearMonth = $selectedTahun . '-' . str_pad($selectedBulan, 2, '0', STR_PAD_LEFT);
+        $startDate = Carbon::createFromDate($selectedTahun, $selectedBulan, 1)->startOfDay();
+        $endDate = Carbon::createFromDate($selectedTahun, $selectedBulan, 1)->endOfMonth()->endOfDay();
 
         // Helper function to ensure data is array (same as FOB detail)
         $ensureArray = function ($data) {
@@ -684,75 +688,37 @@ class DashboardController extends Controller
             return [];
         };
 
-        // Ambil semua data dulu
-        $allData = $user->dataPencatatan;
-
-        // Filter data berdasarkan bulan dan tahun dari WAKTU FOB (bukan pembacaan_awal)
-        $dataPencatatan = $allData->filter(function ($item) use ($yearMonth, $ensureArray) {
-            $dataInput = $ensureArray($item->data_input);
-
-            // Jika data input kosong, skip
-            if (empty($dataInput)) {
-                return false;
-            }
-
-            // PERBAIKAN: FOB menggunakan 'waktu' langsung, bukan 'pembacaan_awal.waktu'
-            if (!empty($dataInput['waktu'])) {
-                try {
-                    $waktu = Carbon::parse($dataInput['waktu'])->format('Y-m');
-                    return $waktu === $yearMonth;
-                } catch (\Exception $e) {
-                    return false;
-                }
-            }
-
-            return false;
+        // PERBAIKAN: Ambil data dari RekapPengambilan (sama seperti fob-detail.blade.php)
+        $allRekapPengambilan = RekapPengambilan::where('customer_id', $user->id)->get();
+        
+        // Filter data berdasarkan periode (sama logic dengan fob-detail)
+        $dataPencatatan = $allRekapPengambilan->filter(function ($item) use ($startDate, $endDate) {
+            $tanggalItem = Carbon::parse($item->tanggal);
+            return $tanggalItem->between($startDate, $endDate);
         });
 
-        // Urutkan data berdasarkan tanggal waktu (FOB format)
-        $dataPencatatan = $dataPencatatan->sortByDesc(function ($item) use ($ensureArray) {
-            $dataInput = $ensureArray($item->data_input);
-            $waktuTimestamp = strtotime($dataInput['waktu'] ?? '');
-            return $waktuTimestamp ? $waktuTimestamp : 0;
-        });
+        // Urutkan data berdasarkan tanggal (descending)
+        $dataPencatatan = $dataPencatatan->sortByDesc('tanggal');
 
         // Get pricing info for selected month (dynamic pricing)
         $pricingInfo = $user->getPricingForYearMonth($yearMonth);
 
-        // Calculate total volume SM3 for all time (FOB format)
-        $totalVolumeSm3 = 0;
-        foreach ($allData as $item) {
-            $dataInput = $ensureArray($item->data_input);
-            $totalVolumeSm3 += floatval($dataInput['volume_sm3'] ?? 0);
-        }
+        // Calculate total volume SM3 for all time dari RekapPengambilan
+        $totalVolumeSm3 = $allRekapPengambilan->sum('volume');
 
-        // Calculate total volume SM3 for filtered period (FOB format)
-        $filteredVolumeSm3 = 0;
-        foreach ($dataPencatatan as $item) {
-            $dataInput = $ensureArray($item->data_input);
-            $filteredVolumeSm3 += floatval($dataInput['volume_sm3'] ?? 0);
-        }
+        // Calculate total volume SM3 for filtered period dari RekapPengambilan
+        $filteredVolumeSm3 = $dataPencatatan->sum('volume');
 
-        // Calculate total purchases for the filtered period (FOB format)
+        // Calculate total purchases for the filtered period dengan pricing yang tepat
         $filteredTotalPurchases = 0;
         foreach ($dataPencatatan as $item) {
-            $dataInput = $ensureArray($item->data_input);
-            $volumeSm3 = floatval($dataInput['volume_sm3'] ?? 0);
+            $volumeSm3 = floatval($item->volume);
 
-            // Ambil waktu untuk mendapatkan pricing yang tepat
-            $waktuDateTime = null;
-            $waktuYearMonth = $yearMonth;
+            // Ambil pricing berdasarkan tanggal item
+            $itemDate = Carbon::parse($item->tanggal);
+            $itemYearMonth = $itemDate->format('Y-m');
+            $itemPricingInfo = $user->getPricingForYearMonth($itemYearMonth, $itemDate);
             
-            if (!empty($dataInput['waktu'])) {
-                try {
-                    $waktuDateTime = Carbon::parse($dataInput['waktu']);
-                    $waktuYearMonth = $waktuDateTime->format('Y-m');
-                } catch (\Exception $e) {
-                    $waktuDateTime = null;
-                }
-            }
-
-            $itemPricingInfo = $user->getPricingForYearMonth($waktuYearMonth, $waktuDateTime);
             $hargaPerM3 = floatval($itemPricingInfo['harga_per_meter_kubik'] ?? $user->harga_per_meter_kubik);
             $filteredTotalPurchases += $volumeSm3 * $hargaPerM3;
         }
@@ -811,45 +777,28 @@ class DashboardController extends Controller
             }
         }
 
-        // 2. Kurangi semua pembelian sampai akhir bulan sebelumnya (FOB format)
-        $allDataPencatatan = $user->dataPencatatan()->get();
-        foreach ($allDataPencatatan as $purchaseItem) {
-            $itemDataInput = $ensureArray($purchaseItem->data_input);
-            
-            // PERBAIKAN: FOB menggunakan format 'waktu', bukan 'pembacaan_awal.waktu'
-            $itemDate = null;
-            if (!empty($itemDataInput['waktu'])) {
-                try {
-                    $itemDate = Carbon::parse($itemDataInput['waktu']);
-                } catch (\Exception $e) {
-                    continue;
-                }
-            } else {
-                continue;
-            }
-
-            // Ambil pembelian sampai akhir bulan sebelumnya
-            if ($itemDate->format('Y-m') <= $prevYearMonth) {
-                // FOB menggunakan volume_sm3 langsung, tidak ada koreksi meter
-                $volumeSm3 = floatval($itemDataInput['volume_sm3'] ?? 0);
-
-                // Ambil pricing yang sesuai (bulanan atau periode khusus)
-                $itemYearMonth = $itemDate->format('Y-m');
-                $itemPricingInfo = $user->getPricingForYearMonth($itemYearMonth, $itemDate);
-
-                // Hitung harga
-                $itemHargaPerM3 = floatval($itemPricingInfo['harga_per_meter_kubik'] ?? $user->harga_per_meter_kubik);
-                $itemHarga = $volumeSm3 * $itemHargaPerM3;
-
-                $realTimePrevMonthBalance -= $itemHarga;
-            }
+        // 2. Kurangi semua pembelian sampai akhir bulan sebelumnya dari RekapPengambilan
+        $allRekapUntilPrevMonth = $allRekapPengambilan->filter(function ($item) use ($startDate) {
+            $itemDate = Carbon::parse($item->tanggal);
+            return $itemDate < $startDate;
+        });
+        
+        foreach ($allRekapUntilPrevMonth as $item) {
+            $volumeSm3 = floatval($item->volume);
+            $itemDate = Carbon::parse($item->tanggal);
+            $itemYearMonth = $itemDate->format('Y-m');
+            $itemPricingInfo = $user->getPricingForYearMonth($itemYearMonth, $itemDate);
+            $hargaPerM3 = floatval($itemPricingInfo['harga_per_meter_kubik'] ?? $user->harga_per_meter_kubik);
+            $realTimePrevMonthBalance -= ($volumeSm3 * $hargaPerM3);
         }
 
         // Hitung saldo bulan ini menggunakan saldo bulan sebelumnya yang real-time
         $realTimeCurrentMonthBalance = $realTimePrevMonthBalance + $filteredTotalDeposits - $filteredTotalPurchases;
 
-        $totalTagihan = $allData->sum('harga_final');
-        $belumLunas = $allData->where('status_pembayaran', 'belum_lunas')->count();
+        // Hitung total tagihan dari semua data pencatatan (untuk backward compatibility)
+        $allDataPencatatan = $user->dataPencatatan;
+        $totalTagihan = $allDataPencatatan->sum('harga_final');
+        $belumLunas = $allDataPencatatan->where('status_pembayaran', 'belum_lunas')->count();
 
         return view('dashboard.fob', compact(
             'dataPencatatan',

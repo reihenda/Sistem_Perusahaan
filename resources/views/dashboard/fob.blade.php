@@ -265,6 +265,7 @@
                                 <tr>
                                     <th>No</th>
                                     <th>Tanggal</th>
+                                    <th>No Pol</th>
                                     <th>Volume Sm³</th>
                                     <th>Alamat Pengambilan</th>
                                     <th>Rupiah</th>
@@ -275,28 +276,16 @@
                                 @php $no = 1; @endphp
                                 @forelse ($dataPencatatan as $item)
                                     @php
-                                        $dataInput = is_string($item->data_input)
-                                            ? json_decode($item->data_input, true)
-                                            : (is_array($item->data_input)
-                                                ? $item->data_input
-                                                : []);
-
-                                        $volumeSm3 = $dataInput['volume_sm3'] ?? 0;
-
-                                        // Get the timestamp for data-filter attribute
-                                        $waktuTimestamp = strtotime($dataInput['waktu'] ?? '');
-                                        $tanggalFilter = $waktuTimestamp ? date('Y-m-d', $waktuTimestamp) : '';
-
-                                        // Ambil waktu untuk mendapatkan pricing yang tepat
-                                        $waktuDateTime = $waktuTimestamp
-                                            ? \Carbon\Carbon::createFromTimestamp($waktuTimestamp)
-                                            : null;
-                                        $waktuYearMonth = $waktuTimestamp ? date('Y-m', $waktuTimestamp) : date('Y-m');
+                                        // PERBAIKAN: Gunakan data dari RekapPengambilan langsung
+                                        $volumeSm3 = floatval($item->volume);
+                                        $tanggalItem = \Carbon\Carbon::parse($item->tanggal);
+                                        $tanggalFilter = $tanggalItem->format('Y-m-d');
+                                        $waktuYearMonth = $tanggalItem->format('Y-m');
 
                                         // Ambil pricing info berdasarkan tanggal spesifik
                                         $itemPricingInfo = Auth::user()->getPricingForYearMonth(
                                             $waktuYearMonth,
-                                            $waktuDateTime,
+                                            $tanggalItem,
                                         );
 
                                         // Hitung Pembelian dengan harga sesuai periode
@@ -308,56 +297,30 @@
                                     @endphp
                                     <tr data-tanggal="{{ $tanggalFilter }}">
                                         <td>{{ $no++ }}</td>
-                                        <td>{{ isset($dataInput['waktu']) ? \Carbon\Carbon::parse($dataInput['waktu'])->format('d M Y H:i') : '-' }}
-                                        </td>
+                                        <td>{{ $tanggalItem->format('d M Y H:i') }}</td>
+                                        <td>{{ $item->nopol ?? '-' }}</td>
                                         <td>{{ number_format($volumeSm3, 2) }}</td>
-                                        <td>{{ $dataInput['alamat_pengambilan'] ?? '-' }}</td>
+                                        <td>{{ $item->alamat_pengambilan ?? '-' }}</td>
                                         <td>Rp {{ number_format($pembelian, 2) }}</td>
                                         <td>
                                             <div class="btn-group">
-                                                @php
-                                                    // Extract date from data_input for finding corresponding rekap pengambilan
-                                                    $waktuData = $dataInput['waktu'] ?? null;
-                                                    $tanggalData = $waktuData
-                                                        ? \Carbon\Carbon::parse($waktuData)->format('Y-m-d')
-                                                        : null;
-                                                @endphp
-
-                                                @if ($tanggalData)
-                                                    <a href="{{ route('rekap-pengambilan.find-by-date', [Auth::user()->id, $tanggalData]) }}"
-                                                        class="btn btn-info btn-sm" title="Lihat/Edit Rekap Pengambilan">
-                                                        <i class="fas fa-eye"></i>
-                                                    </a>
-                                                @else
-                                                    <a href="{{ route('data-pencatatan.show', $item->id) }}"
-                                                        class="btn btn-info btn-sm">
-                                                        <i class="fas fa-eye"></i>
-                                                    </a>
-                                                @endif
+                                                <a href="{{ route('rekap-pengambilan.show', $item->id) }}"
+                                                    class="btn btn-info btn-sm" title="Lihat Rekap Pengambilan">
+                                                    <i class="fas fa-eye"></i>
+                                                </a>
 
                                                 @if (Auth::user()->isAdmin() || Auth::user()->isSuperAdmin())
-                                                    @if ($tanggalData)
-                                                        <a href="{{ route('rekap-pengambilan.find-by-date', [Auth::user()->id, $tanggalData]) }}"
-                                                            class="btn btn-warning btn-sm" title="Edit Rekap Pengambilan">
-                                                            <i class="fas fa-edit"></i>
-                                                        </a>
-                                                    @else
-                                                        <a href="{{ route('data-pencatatan.edit', $item->id) }}"
-                                                            class="btn btn-warning btn-sm">
-                                                            <i class="fas fa-edit"></i>
-                                                        </a>
-                                                    @endif
+                                                    <a href="{{ route('rekap-pengambilan.edit', $item->id) }}?return_to_fob=1"
+                                                        class="btn btn-warning btn-sm" title="Edit Rekap Pengambilan">
+                                                        <i class="fas fa-edit"></i>
+                                                    </a>
 
-                                                    <form action="{{ route('data-pencatatan.destroy', $item->id) }}"
+                                                    <form action="{{ route('rekap-pengambilan.destroy', $item->id) }}"
                                                         method="POST" class="d-inline"
                                                         onsubmit="return confirm('Apakah Anda yakin ingin menghapus data ini?');">
                                                         @csrf
                                                         @method('DELETE')
-                                                        <input type="hidden" name="bulan"
-                                                            value="{{ $selectedBulan }}">
-                                                        <input type="hidden" name="tahun"
-                                                            value="{{ $selectedTahun }}">
-                                                        <input type="hidden" name="fob" value="1">
+                                                        <input type="hidden" name="return_to_fob" value="1">
                                                         <button type="submit" class="btn btn-danger btn-sm">
                                                             <i class="fas fa-trash"></i>
                                                         </button>
@@ -368,7 +331,7 @@
                                     </tr>
                                 @empty
                                     <tr>
-                                        <td colspan="6" class="text-center text-muted py-4">
+                                        <td colspan="7" class="text-center text-muted py-4">
                                             <div class="py-3">
                                                 <i class="fas fa-inbox fa-3x mb-3 text-muted"></i>
                                                 <h5>Tidak ada data untuk periode ini</h5>
@@ -435,6 +398,23 @@
             .card-body {
                 padding: 0.75rem;
             }
+
+            /* Hide Alamat Pengambilan column on mobile to save space */
+            #dataPencatatanTable th:nth-child(5),
+            #dataPencatatanTable td:nth-child(5) {
+                display: none;
+            }
+        }
+
+        /* Tablet view adjustments */
+        @media (min-width: 768px) and (max-width: 991.98px) {
+            /* Optionally hide Rupiah on tablet if needed */
+            /* Uncomment if you want to hide it on tablet too
+            #dataPencatatanTable th:nth-child(6),
+            #dataPencatatanTable td:nth-child(6) {
+                display: none;
+            }
+            */
         }
     </style>
 @endsection
