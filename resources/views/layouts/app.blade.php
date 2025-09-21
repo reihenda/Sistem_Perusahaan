@@ -398,12 +398,35 @@
                             </li>
                         @endif
 
-                        @if (Auth::user()->isCustomer())
+                        @if (Auth::user()->isCustomer() || Auth::user()->isFOB())
                             <li class="nav-item">
-                                <a href="{{ route('customer.dashboard') }}" class="nav-link">
+                                <a href="{{ Auth::user()->isCustomer() ? route('customer.dashboard') : route('fob.dashboard') }}" class="nav-link">
                                     <i class="nav-icon fas fa-tachometer-alt"></i>
                                     <p>Dashboard</p>
                                 </a>
+                            </li>
+                            <li class="nav-item has-treeview">
+                                <a href="#" class="nav-link">
+                                    <i class="nav-icon fas fa-file-invoice-dollar"></i>
+                                    <p>
+                                        Invoice & Billing
+                                        <i class="fas fa-angle-left right"></i>
+                                    </p>
+                                </a>
+                                <ul class="nav nav-treeview">
+                                    <li class="nav-item">
+                                        <a href="{{ route('customer.invoices') }}" class="nav-link">
+                                            <i class="far fa-file-alt nav-icon"></i>
+                                            <p>Invoice Saya</p>
+                                        </a>
+                                    </li>
+                                    <li class="nav-item">
+                                        <a href="{{ route('customer.billings') }}" class="nav-link">
+                                            <i class="far fa-money-bill-alt nav-icon"></i>
+                                            <p>Billing Saya</p>
+                                        </a>
+                                    </li>
+                                </ul>
                             </li>
                         @endif
 

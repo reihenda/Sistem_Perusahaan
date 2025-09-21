@@ -400,6 +400,11 @@ class BillingController extends Controller
      */
     public function show(Billing $billing)
     {
+        // Authorization: Customer hanya bisa melihat billing milik mereka sendiri
+        if ((auth()->user()->isCustomer() || auth()->user()->isFOB()) && $billing->customer_id !== auth()->id()) {
+            abort(403, 'Anda tidak memiliki akses ke billing ini.');
+        }
+        
         $customer = $billing->customer;
         
         // Determine period based on billing type
@@ -713,6 +718,54 @@ class BillingController extends Controller
         
         return redirect()->route('billings.index')
             ->with('success', 'Billing dan Invoice berhasil dihapus.');
+    }
+
+    /**
+     * Display customer's own billings (Customer view only).
+     */
+    public function customerBillings(Request $request)
+    {
+        // Pastikan user adalah customer yang sedang login
+        $customer = auth()->user();
+        
+        if (!$customer->isCustomer() && !$customer->isFOB()) {
+            abort(403, 'Akses tidak diizinkan.');
+        }
+        
+        // Query billing milik customer yang sedang login
+        $query = Billing::where('customer_id', $customer->id)
+            ->orderBy('created_at', 'desc');
+        
+        // Filter berdasarkan search jika ada
+        if ($request->has('search') && !empty($request->search)) {
+            $query->where('billing_number', 'like', '%' . $request->search . '%');
+        }
+        
+        // Filter berdasarkan periode jika ada
+        if ($request->has('period') && !empty($request->period)) {
+            $periodParts = explode('-', $request->period);
+            if (count($periodParts) == 2) {
+                $year = $periodParts[0];
+                $month = $periodParts[1];
+                $query->where('period_year', $year)
+                      ->where('period_month', $month);
+            }
+        }
+        
+        $billings = $query->paginate(10);
+        
+        // Menyimpan parameter filter dalam pagination links
+        $billings->appends($request->only(['search', 'period']));
+        
+        // Deteksi jika request adalah AJAX untuk pencarian real-time
+        if ($request->ajax()) {
+            return response()->json([
+                'html' => view('customer.billings.partials.billing-table', compact('billings'))->render(),
+                'pagination' => view('customer.billings.partials.pagination', compact('billings'))->render(),
+            ]);
+        }
+        
+        return view('customer.billings.index', compact('billings', 'customer'));
     }
 
     /**

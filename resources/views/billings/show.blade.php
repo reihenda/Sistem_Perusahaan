@@ -24,12 +24,20 @@
                             <button onclick="window.print();" class="btn btn-sm btn-light">
                                 <i class="fas fa-print mr-1"></i><span class="d-none d-sm-inline">Cetak</span>
                             </button>
-                            <a href="{{ route('billings.edit', $billing) }}" class="btn btn-sm btn-warning">
-                                <i class="fas fa-edit mr-1"></i><span class="d-none d-sm-inline">Edit</span>
-                            </a>
-                            <a href="{{ route('billings.index') }}" class="btn btn-sm btn-secondary">
-                                <i class="fas fa-arrow-left mr-1"></i><span class="d-none d-sm-inline">Kembali</span>
-                            </a>
+                            @if(!Auth::user()->isCustomer() && !Auth::user()->isFOB())
+                                <a href="{{ route('billings.edit', $billing) }}" class="btn btn-sm btn-warning">
+                                    <i class="fas fa-edit mr-1"></i><span class="d-none d-sm-inline">Edit</span>
+                                </a>
+                            @endif
+                            @if(Auth::user()->isCustomer() || Auth::user()->isFOB())
+                                <a href="{{ route('customer.billings') }}" class="btn btn-sm btn-secondary">
+                                    <i class="fas fa-arrow-left mr-1"></i><span class="d-none d-sm-inline">Kembali</span>
+                                </a>
+                            @else
+                                <a href="{{ route('billings.index') }}" class="btn btn-sm btn-secondary">
+                                    <i class="fas fa-arrow-left mr-1"></i><span class="d-none d-sm-inline">Kembali</span>
+                                </a>
+                            @endif
                         </div>
                     </div>
                 </div>
