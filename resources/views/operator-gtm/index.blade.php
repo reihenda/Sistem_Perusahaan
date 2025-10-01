@@ -41,9 +41,11 @@
                 <div class="card-header">
                     <h3 class="card-title">Daftar Operator GTM</h3>
                     <div class="card-tools">
+                        @if(auth()->user()->role !== 'keuangan')
                         <a href="{{ route('operator-gtm.create') }}" class="btn btn-primary btn-sm">
                             <i class="fas fa-plus mr-1"></i> Tambah Operator
                         </a>
+                        @endif
                     </div>
                 </div>
                 <!-- /.card-header -->
@@ -104,6 +106,7 @@
                                             class="btn btn-info btn-sm">
                                             <i class="fas fa-eye"></i> Detail
                                         </a>
+                                        @if(auth()->user()->role !== 'keuangan')
                                         <a href="{{ route('operator-gtm.edit', $operator->id) }}"
                                             class="btn btn-warning btn-sm">
                                             <i class="fas fa-edit"></i> Edit
@@ -117,6 +120,7 @@
                                                 <i class="fas fa-trash"></i> Hapus
                                             </button>
                                         </form>
+                                        @endif
                                     </td>
                                 </tr>
                             @empty

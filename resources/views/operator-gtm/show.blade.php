@@ -54,6 +54,7 @@
                             Informasi Operator: {{ $operatorGtm->nama }}
                         </h3>
                         <div class="card-tools">
+                            @if(auth()->user()->role !== 'keuangan')
                             <a href="{{ route('operator-gtm.edit', $operatorGtm->id) }}" class="btn btn-warning btn-sm">
                                 <i class="fas fa-edit mr-1"></i> Edit
                             </a>
@@ -64,6 +65,7 @@
                                     <i class="fas fa-trash mr-1"></i> Hapus
                                 </button>
                             </form>
+                            @endif
                             <a href="{{ route('operator-gtm.index') }}" class="btn btn-secondary btn-sm">
                                 <i class="fas fa-arrow-left mr-1"></i> Kembali
                             </a>
@@ -346,9 +348,11 @@
                             - {{ $startDate->format('d M Y') }} s/d {{ $endDate->format('d M Y') }}
                         </h3>
                         <div class="card-tools">
+                            @if(auth()->user()->role !== 'keuangan')
                             <a href="{{ route('operator-gtm.create-lembur', $operatorGtm->id) }}" class="btn btn-success btn-sm">
                                 <i class="fas fa-plus mr-1"></i> Tambah Data Lembur
                             </a>
+                            @endif
                         </div>
                     </div>
                     <div class="card-body table-responsive p-0">
@@ -373,7 +377,9 @@
                                     <th>Total Jam Kerja</th>
                                     <th>Jam Lembur</th>
                                     <th>Upah Lembur</th>
+                                    @if(auth()->user()->role !== 'keuangan')
                                     <th>Aksi</th>
+                                    @endif
                                 </tr>
                             </thead>
                             <tbody>
@@ -448,26 +454,28 @@
                                                 -
                                             @endif
                                         </td>
+                                        @if(auth()->user()->role !== 'keuangan')
                                         <td>
-                                            @if($record)
-                                                <div class="btn-group">
-                                                    <a href="{{ route('operator-gtm.edit-lembur', $record->id) }}" class="btn btn-warning btn-sm">
-                                                        <i class="fas fa-edit"></i>
+                                                @if($record)
+                                                    <div class="btn-group">
+                                                        <a href="{{ route('operator-gtm.edit-lembur', $record->id) }}" class="btn btn-warning btn-sm">
+                                                            <i class="fas fa-edit"></i>
+                                                        </a>
+                                                        <form action="{{ route('operator-gtm.destroy-lembur', $record->id) }}" method="POST" class="d-inline">
+                                                            @csrf
+                                                            @method('DELETE')
+                                                            <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Apakah Anda yakin ingin menghapus data lembur ini?')">
+                                                                <i class="fas fa-trash"></i>
+                                                            </button>
+                                                        </form>
+                                                    </div>
+                                                @else
+                                                    <a href="{{ route('operator-gtm.create-lembur', ['operatorGtm' => $operatorGtm->id, 'tanggal' => $date]) }}" class="btn btn-success btn-sm">
+                                                        <i class="fas fa-plus"></i> Input Data
                                                     </a>
-                                                    <form action="{{ route('operator-gtm.destroy-lembur', $record->id) }}" method="POST" class="d-inline">
-                                                        @csrf
-                                                        @method('DELETE')
-                                                        <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Apakah Anda yakin ingin menghapus data lembur ini?')">
-                                                            <i class="fas fa-trash"></i>
-                                                        </button>
-                                                    </form>
-                                                </div>
-                                            @else
-                                                <a href="{{ route('operator-gtm.create-lembur', ['operatorGtm' => $operatorGtm->id, 'tanggal' => $date]) }}" class="btn btn-success btn-sm">
-                                                    <i class="fas fa-plus"></i> Input Data
-                                                </a>
-                                            @endif
+                                                @endif
                                         </td>
+                                        @endif
                                     </tr>
                                 @empty
                                     <tr>
@@ -505,7 +513,9 @@
                                         @endphp
                                         Rp {{ number_format($totalUpahLembur, 0, ',', '.') }}
                                     </th>
+                                    @if(auth()->user()->role !== 'keuangan')
                                     <th></th>
+                                    @endif
                                 </tr>
                             </tfoot>
                         </table>
