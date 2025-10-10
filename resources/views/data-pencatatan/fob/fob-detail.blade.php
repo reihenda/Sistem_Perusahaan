@@ -311,137 +311,11 @@
                                                 {{ \Carbon\Carbon::createFromDate($selectedTahun, $selectedBulan, 1)->format('F Y') }}</span>
                                         </span>
                                         <div class="table-responsive mt-2">
-                                            @php
-                                                /*
-                                                 * PERBAIKAN PERHITUNGAN SALDO FOB:
-                                                 * Mengubah perhitungan dari menggunakan data monthly_balances (yang bisa tidak akurat)
-                                                 * menjadi perhitungan real-time yang konsisten dengan customer detail
-                                                 */
-
-                                                // Definisikan variabel currentYearMonth terlebih dahulu
-                                                $currentYearMonth = \Carbon\Carbon::createFromDate(
-                                                    $selectedTahun,
-                                                    $selectedBulan,
-                                                    1,
-                                                )->format('Y-m');
-
-                                                // PERBAIKAN: Hitung saldo bulan sebelumnya secara real-time
-                                                $prevDate = \Carbon\Carbon::createFromDate(
-                                                    $selectedTahun,
-                                                    $selectedBulan,
-                                                    1,
-                                                )->subMonth();
-                                                $prevYearMonth = $prevDate->format('Y-m');
-
-                                                // Hitung total deposit dan pembelian sampai akhir bulan sebelumnya
-                                                $realTimePrevMonthBalance = 0;
-
-                                                // 1. Hitung semua deposit sampai akhir bulan sebelumnya
-                                                $deposits = is_string($customer->deposit_history)
-                                                    ? json_decode($customer->deposit_history, true)
-                                                    : $customer->deposit_history;
-                                                if (is_array($deposits)) {
-                                                    foreach ($deposits as $deposit) {
-                                                        if (isset($deposit['date'])) {
-                                                            $depositDate = \Carbon\Carbon::parse($deposit['date']);
-                                                            // Ambil deposit sampai akhir bulan sebelumnya
-                                                            if ($depositDate->format('Y-m') <= $prevYearMonth) {
-                                                                $amount = floatval($deposit['amount'] ?? 0);
-                                                                $keterangan = $deposit['keterangan'] ?? 'penambahan';
-
-                                                                // Handle deposit dan pengurangan dengan benar
-                                                                if ($keterangan === 'pengurangan') {
-                                                                    $realTimePrevMonthBalance -= abs($amount);
-                                                                } else {
-                                                                    $realTimePrevMonthBalance += $amount;
-                                                                }
-                                                            }
-                                                        }
-                                                    }
-                                                }
-
-                                                // 2. Kurangi semua pembelian sampai akhir bulan sebelumnya
-                                                $allDataPencatatan = $customer->dataPencatatan()->get();
-                                                foreach ($allDataPencatatan as $purchaseItem) {
-                                                    $itemDataInput = is_string($purchaseItem->data_input)
-                                                        ? json_decode($purchaseItem->data_input, true)
-                                                        : (is_array($purchaseItem->data_input)
-                                                            ? $purchaseItem->data_input
-                                                            : []);
-
-                                                    // Untuk FOB, cek format waktu yang berbeda
-                                                    $itemDate = null;
-                                                    if (!empty($itemDataInput['waktu'])) {
-                                                        $itemDate = \Carbon\Carbon::parse($itemDataInput['waktu']);
-                                                    } elseif (!empty($itemDataInput['pembacaan_awal']['waktu'])) {
-                                                        $itemDate = \Carbon\Carbon::parse(
-                                                            $itemDataInput['pembacaan_awal']['waktu'],
-                                                        );
-                                                    } elseif ($purchaseItem->created_at) {
-                                                        $itemDate = $purchaseItem->created_at;
-                                                    }
-
-                                                    if (!$itemDate) {
-                                                        continue;
-                                                    }
-
-                                                    // Ambil pembelian sampai akhir bulan sebelumnya
-                                                    if ($itemDate->format('Y-m') <= $prevYearMonth) {
-                                                        // Untuk FOB, gunakan volume_sm3 langsung atau harga_final
-                                                        if ($purchaseItem->harga_final > 0) {
-                                                            $realTimePrevMonthBalance -= $purchaseItem->harga_final;
-                                                        } else {
-                                                            $volumeSm3 = floatval($itemDataInput['volume_sm3'] ?? 0);
-
-                                                            // Ambil pricing yang sesuai (untuk FOB)
-                                                            $itemYearMonth = $itemDate->format('Y-m');
-                                                            $itemPricingInfo = $customer->getPricingForYearMonth(
-                                                                $itemYearMonth,
-                                                                $itemDate,
-                                                            );
-
-                                                            // Hitung volume dan harga (FOB tidak menggunakan koreksi meter)
-                                                            $itemHargaPerM3 = floatval(
-                                                                $itemPricingInfo['harga_per_meter_kubik'] ??
-                                                                    $customer->harga_per_meter_kubik,
-                                                            );
-                                                            $itemHarga = $volumeSm3 * $itemHargaPerM3;
-
-                                                            $realTimePrevMonthBalance -= $itemHarga;
-                                                        }
-                                                    }
-                                                }
-
-                                                // Hitung ulang saldo bulan ini secara real-time
-                                                $realTimeFilteredTotalPurchases = $filteredTotalPurchases;
-                                                $realTimeFilteredDeposits = $filteredTotalDeposits;
-
-                                                // Hitung saldo bulan ini menggunakan saldo bulan sebelumnya yang real-time
-                                                $realTimeCurrentMonthBalance =
-                                                    $realTimePrevMonthBalance +
-                                                    $realTimeFilteredDeposits -
-                                                    $realTimeFilteredTotalPurchases;
-
-                                                // Log untuk debugging (disederhanakan untuk production)
-                                                if (
-                                                    (Auth::user()->isAdmin() || Auth::user()->isSuperAdmin()) &&
-                                                    abs($realTimePrevMonthBalance - ($prevMonthBalance ?? 0)) > 100
-                                                ) {
-                                                    \Log::info('FOB real-time calculation difference detected', [
-                                                        'customer_id' => $customer->id,
-                                                        'period' =>
-                                                            $selectedTahun .
-                                                            '-' .
-                                                            str_pad($selectedBulan, 2, '0', STR_PAD_LEFT),
-                                                        'difference' =>
-                                                            $realTimePrevMonthBalance - ($prevMonthBalance ?? 0),
-                                                    ]);
-                                                }
-                                            @endphp
+                                            {{-- PERBAIKAN: Gunakan data dari Controller, tidak ada perhitungan di View --}}
                                             <table class="table table-sm table-bordered">
                                                 <tr>
                                                     <td width="60%">Saldo Bulan Sebelumnya</td>
-                                                    <td>Rp {{ number_format($realTimePrevMonthBalance, 0) }}</td>
+                                                    <td>Rp {{ number_format($prevMonthBalance, 0) }}</td>
                                                 </tr>
                                                 <tr>
                                                     <td>+ Deposit Bulan Ini</td>
@@ -453,13 +327,13 @@
                                                 </tr>
                                                 <tr class="font-weight-bold">
                                                     <td>= Sisa Saldo Periode Bulan Ini</td>
-                                                    <td>Rp {{ number_format($realTimeCurrentMonthBalance, 0) }}</td>
+                                                    <td>Rp {{ number_format($currentMonthBalance, 0) }}</td>
                                                 </tr>
                                                 <tr>
                                                     <td colspan="2" class="text-muted"><small>* Saldo ini hanya
                                                             menunjukkan saldo untuk periode
                                                             {{ \Carbon\Carbon::createFromDate($selectedTahun, $selectedBulan, 1)->format('F Y') }}
-                                                            saja (Perhitungan Real-time)</small></td>
+                                                            saja (Perhitungan dari Controller)</small></td>
                                                 </tr>
                                             </table>
                                         </div>

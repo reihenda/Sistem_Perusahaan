@@ -872,6 +872,143 @@ class FobController extends Controller
         }
     }
 
+    /**
+     * PERBAIKAN: Method helper untuk menghitung saldo periode tertentu
+     * Method ini menggantikan perhitungan yang ada di View
+     * Memastikan konsistensi antara "Saldo Bulan Sebelumnya" dan "Sisa Saldo Periode Bulan Ini"
+     */
+    private function calculatePeriodBalance(User $customer, $tahun, $bulan)
+    {
+        try {
+            $startDate = Carbon::createFromDate($tahun, $bulan, 1)->startOfDay();
+            $endDate = Carbon::createFromDate($tahun, $bulan, 1)->endOfMonth()->endOfDay();
+            
+            // Ambil semua rekap pengambilan untuk customer ini
+            $allRekapPengambilan = RekapPengambilan::where('customer_id', $customer->id)
+                ->orderBy('tanggal', 'asc')
+                ->get();
+            
+            // Ambil semua deposit history
+            $depositHistory = $this->ensureArray($customer->deposit_history);
+            
+            // Hitung deposits sampai SEBELUM periode ini dimulai (untuk saldo awal)
+            $depositsBeforePeriod = 0;
+            foreach ($depositHistory as $deposit) {
+                if (isset($deposit['date'])) {
+                    $depositDate = Carbon::parse($deposit['date']);
+                    if ($depositDate < $startDate) {
+                        $amount = floatval($deposit['amount'] ?? 0);
+                        $keterangan = $deposit['keterangan'] ?? 'penambahan';
+                        
+                        if ($keterangan === 'pengurangan') {
+                            $depositsBeforePeriod -= abs($amount);
+                        } else {
+                            $depositsBeforePeriod += $amount;
+                        }
+                    }
+                }
+            }
+            
+            // Hitung purchases sampai SEBELUM periode ini dimulai (untuk saldo awal)
+            $purchasesBeforePeriod = 0;
+            foreach ($allRekapPengambilan as $item) {
+                $itemDate = Carbon::parse($item->tanggal);
+                if ($itemDate < $startDate) {
+                    $volumeSm3 = floatval($item->volume);
+                    $itemYearMonth = $itemDate->format('Y-m');
+                    $itemPricingInfo = $customer->getPricingForYearMonth($itemYearMonth, $itemDate);
+                    $hargaPerM3 = floatval($itemPricingInfo['harga_per_meter_kubik'] ?? $customer->harga_per_meter_kubik);
+                    $purchasesBeforePeriod += ($volumeSm3 * $hargaPerM3);
+                }
+            }
+            
+            // Saldo awal periode = deposits sebelum periode - purchases sebelum periode
+            $saldoAwalPeriode = $depositsBeforePeriod - $purchasesBeforePeriod;
+            
+            // Hitung deposits DALAM periode ini
+            $depositsInPeriod = 0;
+            foreach ($depositHistory as $deposit) {
+                if (isset($deposit['date'])) {
+                    $depositDate = Carbon::parse($deposit['date']);
+                    if ($depositDate->between($startDate, $endDate)) {
+                        $amount = floatval($deposit['amount'] ?? 0);
+                        $keterangan = $deposit['keterangan'] ?? 'penambahan';
+                        
+                        if ($keterangan === 'pengurangan') {
+                            $depositsInPeriod -= abs($amount);
+                        } else {
+                            $depositsInPeriod += $amount;
+                        }
+                    }
+                }
+            }
+            
+            // Hitung purchases DALAM periode ini
+            $purchasesInPeriod = 0;
+            $volumeInPeriod = 0;
+            $dataPencatatanInPeriod = [];
+            
+            foreach ($allRekapPengambilan as $item) {
+                $itemDate = Carbon::parse($item->tanggal);
+                if ($itemDate->between($startDate, $endDate)) {
+                    $volumeSm3 = floatval($item->volume);
+                    $itemYearMonth = $itemDate->format('Y-m');
+                    $itemPricingInfo = $customer->getPricingForYearMonth($itemYearMonth, $itemDate);
+                    $hargaPerM3 = floatval($itemPricingInfo['harga_per_meter_kubik'] ?? $customer->harga_per_meter_kubik);
+                    
+                    $purchasesInPeriod += ($volumeSm3 * $hargaPerM3);
+                    $volumeInPeriod += $volumeSm3;
+                    $dataPencatatanInPeriod[] = $item;
+                }
+            }
+            
+            // Saldo akhir periode = saldo awal + deposits dalam periode - purchases dalam periode
+            $saldoAkhirPeriode = $saldoAwalPeriode + $depositsInPeriod - $purchasesInPeriod;
+            
+            // Log untuk debugging
+            Log::info('Perhitungan Saldo FOB Periode', [
+                'customer_id' => $customer->id,
+                'periode' => $tahun . '-' . str_pad($bulan, 2, '0', STR_PAD_LEFT),
+                'saldo_awal_periode' => $saldoAwalPeriode,
+                'deposits_in_period' => $depositsInPeriod,
+                'purchases_in_period' => $purchasesInPeriod,
+                'volume_in_period' => $volumeInPeriod,
+                'saldo_akhir_periode' => $saldoAkhirPeriode,
+                'jumlah_transaksi' => count($dataPencatatanInPeriod)
+            ]);
+            
+            return [
+                'saldo_awal_periode' => $saldoAwalPeriode, // Ini adalah "Saldo Bulan Sebelumnya"
+                'deposits_periode' => $depositsInPeriod,
+                'purchases_periode' => $purchasesInPeriod,
+                'volume_periode' => $volumeInPeriod,
+                'saldo_akhir_periode' => $saldoAkhirPeriode, // Ini adalah "Sisa Saldo Periode Bulan Ini"
+                'data_pencatatan' => collect($dataPencatatanInPeriod)->sortBy('tanggal'),
+                'jumlah_transaksi' => count($dataPencatatanInPeriod)
+            ];
+            
+        } catch (\Exception $e) {
+            Log::error('Error dalam calculatePeriodBalance', [
+                'customer_id' => $customer->id,
+                'tahun' => $tahun,
+                'bulan' => $bulan,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            // Return default values jika error
+            return [
+                'saldo_awal_periode' => 0,
+                'deposits_periode' => 0,
+                'purchases_periode' => 0,
+                'volume_periode' => 0,
+                'saldo_akhir_periode' => 0,
+                'data_pencatatan' => collect([]),
+                'jumlah_transaksi' => 0
+            ];
+        }
+    }
+
     // Menampilkan detail pencatatan untuk FOB tertentu
     public function fobDetail(User $customer, Request $request)
     {
@@ -906,29 +1043,20 @@ class FobController extends Controller
         if (!$tahun) {
             $tahun = date('Y');
         }
+        
+        // PERBAIKAN: Gunakan helper method untuk menghitung saldo periode
+        $periodBalance = $this->calculatePeriodBalance($customer, $tahun, $bulan);
 
         // PERBAIKAN: Gunakan data dari RekapPengambilan untuk konsistensi dengan halaman rekap-pengambilan
-        // Ini memastikan data yang ditampilkan di FOB-detail sama persis dengan rekap-pengambilan
         $selectedBulan = $bulan;
         $selectedTahun = $tahun;
         
         // Format filter untuk query
         $yearMonth = $tahun . '-' . str_pad($bulan, 2, '0', STR_PAD_LEFT);
-        $startDate = Carbon::createFromDate($tahun, $bulan, 1)->startOfDay();
-        $endDate = Carbon::createFromDate($tahun, $bulan, 1)->endOfMonth()->endOfDay();
 
-        // PERBAIKAN: Ambil data dari RekapPengambilan (sama seperti rekap-pengambilan.index)
-        $allRekapPengambilan = RekapPengambilan::where('customer_id', $customer->id)->get();
+        // PERBAIKAN: Ambil data dari helper method (sudah terfilter dan tersortir)
+        $dataPencatatan = $periodBalance['data_pencatatan'];
         
-        // Filter data berdasarkan periode (sama logic dengan RekapPengambilanController)
-        $dataPencatatan = $allRekapPengambilan->filter(function ($item) use ($startDate, $endDate) {
-            $tanggalItem = Carbon::parse($item->tanggal);
-            return $tanggalItem->between($startDate, $endDate);
-        });
-
-        // Urutkan data berdasarkan tanggal (ascending)
-        $dataPencatatan = $dataPencatatan->sortBy('tanggal');
-
         // PERBAIKAN: Buat mapping untuk memudahkan akses ID rekap pengambilan
         $rekapMapping = [];
         foreach ($dataPencatatan as $item) {
@@ -941,89 +1069,17 @@ class FobController extends Controller
         $pricingInfo = $customer->getPricingForYearMonth($yearMonth);
 
         // PERBAIKAN: Calculate total volume SM3 untuk SEMUA WAKTU dari hasil sinkronisasi
-        $totalVolumeSm3 = $syncResult['total_volume'] ?? $allRekapPengambilan->sum('volume');
+        $totalVolumeSm3 = $syncResult['total_volume'] ?? RekapPengambilan::where('customer_id', $customer->id)->sum('volume');
 
-        // Calculate total volume untuk periode yang difilter
-        $filteredVolumeSm3 = $dataPencatatan->sum('volume');
-        
-        // Calculate total purchases untuk periode yang difilter dengan pricing yang tepat
-        $filteredTotalPurchases = 0;
-        foreach ($dataPencatatan as $item) {
-            $volumeSm3 = floatval($item->volume);
-            
-            // Ambil pricing berdasarkan tanggal item
-            $itemDate = Carbon::parse($item->tanggal);
-            $itemYearMonth = $itemDate->format('Y-m');
-            $itemPricingInfo = $customer->getPricingForYearMonth($itemYearMonth, $itemDate);
-            
-            $hargaPerM3 = floatval($itemPricingInfo['harga_per_meter_kubik'] ?? $customer->harga_per_meter_kubik);
-            $filteredTotalPurchases += ($volumeSm3 * $hargaPerM3);
-        }
-        
+        // PERBAIKAN: Ambil data dari helper method
+        $filteredVolumeSm3 = $periodBalance['volume_periode'];
+        $filteredTotalPurchases = $periodBalance['purchases_periode'];
+        $filteredTotalDeposits = $periodBalance['deposits_periode'];
+        $prevMonthBalance = $periodBalance['saldo_awal_periode']; // Ini adalah saldo bulan sebelumnya
+        $currentMonthBalance = $periodBalance['saldo_akhir_periode']; // Ini adalah sisa saldo periode bulan ini
 
-
-        // Calculate total deposits for the filtered period
-        $filteredTotalDeposits = 0;
-        $depositHistory = $this->ensureArray($customer->deposit_history);
-
-        foreach ($depositHistory as $deposit) {
-            if (isset($deposit['date'])) {
-                $depositDate = Carbon::parse($deposit['date']);
-                if ($depositDate->month == $bulan && $depositDate->year == $tahun) {
-                    $amount = floatval($deposit['amount'] ?? 0);
-                    $keterangan = $deposit['keterangan'] ?? 'penambahan';
-                    
-                    // Handle deposit dan pengurangan dengan benar
-                    if ($keterangan === 'pengurangan') {
-                        $filteredTotalDeposits -= abs($amount);
-                    } else {
-                        $filteredTotalDeposits += $amount;
-                    }
-                }
-            }
-        }
-
-        // Hitung saldo bulan sebelumnya berdasarkan rekap pengambilan
-        $carbonDate = Carbon::createFromDate($tahun, $bulan, 1);
-        $prevCarbonDate = $carbonDate->copy()->subMonth();
-        
-        // Total deposits sampai bulan sebelumnya
-        $totalDepositsUntilPrevMonth = 0;
-        foreach ($depositHistory as $deposit) {
-            if (isset($deposit['date'])) {
-                $depositDate = Carbon::parse($deposit['date']);
-                if ($depositDate < $carbonDate) {
-                    $amount = floatval($deposit['amount'] ?? 0);
-                    $keterangan = $deposit['keterangan'] ?? 'penambahan';
-                    
-                    if ($keterangan === 'pengurangan') {
-                        $totalDepositsUntilPrevMonth -= abs($amount);
-                    } else {
-                        $totalDepositsUntilPrevMonth += $amount;
-                    }
-                }
-            }
-        }
-
-            // Total purchases sampai bulan sebelumnya berdasarkan rekap pengambilan dengan pricing realtime
-        $totalPurchasesUntilPrevMonth = 0;
-        $allRekapUntilPrevMonth = $allRekapPengambilan->filter(function ($item) use ($carbonDate) {
-            $itemDate = Carbon::parse($item->tanggal);
-            return $itemDate < $carbonDate;
-        });
-        
-        foreach ($allRekapUntilPrevMonth as $item) {
-            $volumeSm3 = floatval($item->volume);
-            $itemDate = Carbon::parse($item->tanggal);
-            $itemYearMonth = $itemDate->format('Y-m');
-            $itemPricingInfo = $customer->getPricingForYearMonth($itemYearMonth, $itemDate);
-            $hargaPerM3 = floatval($itemPricingInfo['harga_per_meter_kubik'] ?? $customer->harga_per_meter_kubik);
-            $totalPurchasesUntilPrevMonth += ($volumeSm3 * $hargaPerM3);
-        }
-
-        $prevMonthBalance = $totalDepositsUntilPrevMonth - $totalPurchasesUntilPrevMonth;
-
-            // Calculate yearly data menggunakan rekap pengambilan dengan pricing realtime
+        // Calculate yearly data menggunakan rekap pengambilan dengan pricing realtime
+        $allRekapPengambilan = RekapPengambilan::where('customer_id', $customer->id)->get();
         $yearlyRekapData = $allRekapPengambilan->filter(function ($item) use ($tahun) {
             $itemDate = Carbon::parse($item->tanggal);
             return $itemDate->year == $tahun;
@@ -1043,14 +1099,29 @@ class FobController extends Controller
 
         // PERBAIKAN: Reload customer terbaru untuk memastikan data total_purchases sudah tersinkronisasi
         $customer = User::findOrFail($customer->id);
+        
+        // PERBAIKAN: Log untuk debugging konsistensi saldo
+        Log::info('FOB Detail - Data yang dikirim ke view', [
+            'customer_id' => $customer->id,
+            'periode' => $yearMonth,
+            'prevMonthBalance' => $prevMonthBalance,
+            'currentMonthBalance' => $currentMonthBalance,
+            'filteredTotalDeposits' => $filteredTotalDeposits,
+            'filteredTotalPurchases' => $filteredTotalPurchases,
+            'calculation_check' => [
+                'expected_current' => $prevMonthBalance + $filteredTotalDeposits - $filteredTotalPurchases,
+                'actual_current' => $currentMonthBalance,
+                'is_consistent' => abs(($prevMonthBalance + $filteredTotalDeposits - $filteredTotalPurchases) - $currentMonthBalance) < 0.01
+            ]
+        ]);
 
         return view('data-pencatatan.fob.fob-detail', [
             'customer' => $customer,
-            'dataPencatatan' => $dataPencatatan, // Menggunakan data dari RekapPengambilan
-            'rekapMapping' => $rekapMapping, // PERBAIKAN: Tambahkan mapping
+            'dataPencatatan' => $dataPencatatan, // Menggunakan data dari helper method
+            'rekapMapping' => $rekapMapping,
             'depositHistory' => $this->ensureArray($customer->deposit_history),
             'totalDeposit' => $customer->total_deposit,
-            'totalPurchases' => $customer->total_purchases, // PERBAIKAN: Ini sekarang sudah tersinkronisasi
+            'totalPurchases' => $customer->total_purchases,
             'currentBalance' => $customer->getCurrentBalance(),
             'selectedBulan' => $selectedBulan,
             'selectedTahun' => $selectedTahun,
@@ -1059,7 +1130,8 @@ class FobController extends Controller
             'filteredVolumeSm3' => $filteredVolumeSm3,
             'filteredTotalPurchases' => $filteredTotalPurchases,
             'filteredTotalDeposits' => $filteredTotalDeposits,
-            'prevMonthBalance' => $prevMonthBalance,
+            'prevMonthBalance' => $prevMonthBalance, // PERBAIKAN: Dari helper method
+            'currentMonthBalance' => $currentMonthBalance, // PERBAIKAN: Saldo akhir periode
             'totalPemakaianTahunan' => $totalPemakaianTahunan,
             'totalPembelianTahunan' => $totalPembelianTahunan,
             // PERBAIKAN: Tambahkan info sinkronisasi untuk debugging
