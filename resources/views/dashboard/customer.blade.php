@@ -319,34 +319,46 @@
                                 @php $no = 1; @endphp
                                 @foreach ($dataPencatatan as $item)
                                     @php
-                                        $dataInput = is_string($item->data_input)
-                                            ? json_decode($item->data_input, true)
-                                            : (is_array($item->data_input)
-                                                ? $item->data_input
-                                                : []);
+                                    $dataInput = is_string($item->data_input)
+                                    ? json_decode($item->data_input, true)
+                                    : (is_array($item->data_input)
+                                    ? $item->data_input
+                                    : []);
 
-                                        $pembacaanAwal = $dataInput['pembacaan_awal'] ?? [
-                                            'volume' => 0,
-                                            'tanggal' => null,
-                                        ];
-                                        $pembacaanAkhir = $dataInput['pembacaan_akhir'] ?? [
-                                            'volume' => 0,
-                                            'tanggal' => null,
-                                        ];
-                                        $volumeFlowMeter = $dataInput['volume_flow_meter'] ?? 0;
+                                    $pembacaanAwal = $dataInput['pembacaan_awal'] ?? [
+                                    'volume' => 0,
+                                    'tanggal' => null,
+                                    ];
+                                    $pembacaanAkhir = $dataInput['pembacaan_akhir'] ?? [
+                                    'volume' => 0,
+                                    'tanggal' => null,
+                                    ];
+                                    $volumeFlowMeter = $dataInput['volume_flow_meter'] ?? 0;
 
-                                        // Hitung Volume Sm³
-                                        $volumeSm3 = $volumeFlowMeter * (Auth::user()->koreksi_meter ?? 1);
+                                    // PERBAIKAN: Ambil pricing per periode seperti di customer-detail
+                                    if (!empty($dataInput['pembacaan_awal']['waktu'])) {
+                                        $waktuAwal = \Carbon\Carbon::parse($dataInput['pembacaan_awal']['waktu']);
+                                        $waktuAwalYearMonth = $waktuAwal->format('Y-m');
+                                        $itemPricingInfo = Auth::user()->getPricingForYearMonth($waktuAwalYearMonth, $waktuAwal);
+                                        $koreksiMeter = floatval($itemPricingInfo['koreksi_meter'] ?? Auth::user()->koreksi_meter);
+                                        $hargaPerM3 = floatval($itemPricingInfo['harga_per_meter_kubik'] ?? Auth::user()->harga_per_meter_kubik);
+                                    } else {
+                                        $koreksiMeter = floatval(Auth::user()->koreksi_meter ?? 1);
+                                    $hargaPerM3 = floatval(Auth::user()->harga_per_meter_kubik ?? 0);
+                                    }
 
-                                        // Hitung Pembelian
-                                        $pembelian = $volumeSm3 * (Auth::user()->harga_per_meter_kubik ?? 0);
+                                    // Hitung Volume Sm³ dengan koreksi yang sesuai periode
+                                    $volumeSm3 = $volumeFlowMeter * $koreksiMeter;
 
-                                        // Get the timestamp for data-filter attribute
-                                        $waktuAwalTimestamp = strtotime($dataInput['pembacaan_awal']['waktu'] ?? '');
-                                        $tanggalAwalFilter = $waktuAwalTimestamp
-                                            ? date('Y-m-d', $waktuAwalTimestamp)
-                                            : '';
-                                    @endphp
+                                    // Hitung Pembelian dengan harga yang sesuai periode
+                                    $pembelian = $volumeSm3 * $hargaPerM3;
+
+                                    // Get the timestamp for data-filter attribute
+                                    $waktuAwalTimestamp = strtotime($dataInput['pembacaan_awal']['waktu'] ?? '');
+                                    $tanggalAwalFilter = $waktuAwalTimestamp
+                                        ? date('Y-m-d', $waktuAwalTimestamp)
+                                        : '';
+                                @endphp
                                     <tr data-tanggal-awal="{{ $tanggalAwalFilter }}">
                                         <td>{{ $no++ }}</td>
                                         <td>{{ \Carbon\Carbon::parse($dataInput['pembacaan_awal']['waktu'] ?? now())->format('d M Y H:i') }}

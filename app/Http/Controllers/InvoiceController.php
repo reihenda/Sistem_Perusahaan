@@ -185,6 +185,42 @@ class InvoiceController extends Controller
             });
         }
 
+        // DEBUG: Log jumlah data yang ditemukan
+        \Log::info('Invoice store - Data filtering', [
+            'customer_id' => $customer->id,
+            'period' => $yearMonth,
+            'total_records_raw' => $customer->dataPencatatan()->count(),
+            'filtered_records' => $dataPencatatan->count(),
+            'customer_name' => $customer->name
+        ]);
+        
+        // DEBUG: Deteksi duplikasi pada store juga
+        $tanggalDitemukan = [];
+        foreach ($dataPencatatan as $item) {
+            $dataInput = $this->ensureArray($item->data_input);
+            if (!empty($dataInput['pembacaan_awal']['waktu'])) {
+                $tanggal = Carbon::parse($dataInput['pembacaan_awal']['waktu'])->format('Y-m-d');
+                $volume = floatval($dataInput['volume_flow_meter'] ?? 0);
+                $tanggalDitemukan[] = [
+                    'id' => $item->id,
+                    'tanggal' => $tanggal,
+                    'volume' => $volume
+                ];
+            }
+        }
+        
+        $tanggalCount = array_count_values(array_column($tanggalDitemukan, 'tanggal'));
+        $duplicates = array_filter($tanggalCount, function($count) { return $count > 1; });
+        
+        if (!empty($duplicates)) {
+            \Log::warning('Invoice store - Duplicate dates detected in source data', [
+                'customer_id' => $customer->id,
+                'period' => $yearMonth,
+                'duplicates' => $duplicates,
+                'all_dates_found' => $tanggalDitemukan
+            ]);
+        }
+
         // Perhitungan volume dan biaya total
         $totalVolume = 0;
         $totalBiaya = 0;
@@ -234,22 +270,63 @@ class InvoiceController extends Controller
                 $totalBiaya += $period['volume'] * $period['harga'];
             }
         } else {
-            // For monthly period, use existing logic
+            // PERBAIKAN: For monthly period, tambahkan deteksi duplikasi sama seperti Billing
             $hargaGas = 0;
             
             foreach ($dataPencatatan as $item) {
                 $dataInput = $this->ensureArray($item->data_input);
                 $volumeFlowMeter = floatval($dataInput['volume_flow_meter'] ?? 0);
-                $volumeSm3 = $volumeFlowMeter * floatval($pricingInfo['koreksi_meter'] ?? $customer->koreksi_meter);
-                // Use the last price as the standard price
-                $hargaGas = floatval($pricingInfo['harga_per_meter_kubik'] ?? $customer->harga_per_meter_kubik);
+                
+                $waktuAwal = Carbon::parse($dataInput['pembacaan_awal']['waktu']);
+                $tanggalKey = $waktuAwal->format('Y-m-d');
+                
+                // PERBAIKAN: Skip jika tanggal sudah diproses (hindari duplikasi)
+                if (isset($processedDates[$tanggalKey])) {
+                    \Log::debug('Invoice store - Skipping duplicate date', [
+                        'customer_id' => $customer->id,
+                        'item_id' => $item->id,
+                        'duplicate_date' => $tanggalKey,
+                        'volume_flow_meter' => $volumeFlowMeter
+                    ]);
+                    continue;
+                }
+                
+                // Tandai tanggal ini sebagai sudah diproses
+                $processedDates[$tanggalKey] = true;
+                
+                // PERBAIKAN: Gunakan pricing yang sesuai periode item (bukan periode invoice)
+                $waktuAwalYearMonth = $waktuAwal->format('Y-m');
+                $itemPricingInfo = $customer->getPricingForYearMonth($waktuAwalYearMonth, $waktuAwal);
+                
+                $volumeSm3 = $volumeFlowMeter * floatval($itemPricingInfo['koreksi_meter'] ?? $customer->koreksi_meter);
+                $hargaGas = floatval($itemPricingInfo['harga_per_meter_kubik'] ?? $customer->harga_per_meter_kubik);
                 
                 $totalVolume += $volumeSm3;
+                
+                // DEBUG: Log setiap item yang diproses
+                \Log::debug('Invoice store - Processing item', [
+                    'item_id' => $item->id,
+                    'waktu_awal' => $waktuAwal->format('Y-m-d H:i:s'),
+                    'volume_flow_meter' => $volumeFlowMeter,
+                    'volume_sm3' => $volumeSm3,
+                    'harga_gas' => $hargaGas,
+                    'included_in_calculation' => true
+                ]);
             }
             
             // Calculate total cost with total volume
             $totalBiaya = $totalVolume * $hargaGas;
         }
+        
+        // FINAL DEBUG: Log invoice results
+        \Log::info('Invoice store - Calculation results', [
+            'customer_id' => $customer->id,
+            'period' => $yearMonth,
+            'total_volume' => $totalVolume,
+            'total_amount' => $totalBiaya,
+            'filtered_records_count' => $dataPencatatan->count(),
+            'unique_dates_processed' => count($processedDates)
+        ]);
 
         // Bulatkan total biaya untuk konsistensi
         $totalBiaya = round($totalBiaya);
@@ -362,6 +439,16 @@ class InvoiceController extends Controller
             return back()->withErrors(['error' => 'Gagal membuat invoice dan billing: ' . $e->getMessage()])->withInput();
         }
 
+        // FINAL LOG: Log created invoice and billing
+        \Log::info('Invoice and Billing created successfully', [
+            'invoice_id' => $invoice->id,
+            'billing_id' => $billing->id,
+            'customer_id' => $customer->id,
+            'period' => $yearMonth,
+            'total_volume' => $totalVolume,
+            'total_amount' => $totalBiaya
+        ]);
+
         return redirect()->route('invoices.show', $invoice)
             ->with('success', 'Invoice dan Billing berhasil dibuat secara bersamaan.');
     }
@@ -427,6 +514,43 @@ class InvoiceController extends Controller
             });
         }
 
+        // DEBUG: Log untuk verifikasi data show
+        \Log::info('Invoice show - Data filtering', [
+            'invoice_id' => $invoice->id,
+            'customer_id' => $customer->id,
+            'period' => $yearMonth,
+            'total_records_raw' => $customer->dataPencatatan()->count(),
+            'filtered_records' => $dataPencatatan->count()
+        ]);
+        
+        // DEBUG: Log semua tanggal yang ditemukan untuk deteksi duplikasi
+        $tanggalDitemukan = [];
+        foreach ($dataPencatatan as $item) {
+            $dataInput = $this->ensureArray($item->data_input);
+            if (!empty($dataInput['pembacaan_awal']['waktu'])) {
+                $tanggal = Carbon::parse($dataInput['pembacaan_awal']['waktu'])->format('Y-m-d');
+                $volume = floatval($dataInput['volume_flow_meter'] ?? 0);
+                $tanggalDitemukan[] = [
+                    'id' => $item->id,
+                    'tanggal' => $tanggal,
+                    'volume' => $volume,
+                    'waktu_lengkap' => $dataInput['pembacaan_awal']['waktu']
+                ];
+            }
+        }
+        
+        // Detect duplicates
+        $tanggalCount = array_count_values(array_column($tanggalDitemukan, 'tanggal'));
+        $duplicates = array_filter($tanggalCount, function($count) { return $count > 1; });
+        
+        if (!empty($duplicates)) {
+            \Log::warning('Invoice show - Duplicate dates detected', [
+                'invoice_id' => $invoice->id,
+                'duplicates' => $duplicates,
+                'all_dates_found' => $tanggalDitemukan
+            ]);
+        }
+
         // Perhitungan untuk volume dan biaya pemakaian gas
         $pemakaianGas = [];
         $totalVolume = 0;
@@ -447,10 +571,22 @@ class InvoiceController extends Controller
                 
                 // Skip jika tanggal sudah diproses (hindari duplikasi)
                 if (isset($processedDates[$tanggalKey])) {
+                    \Log::debug('Invoice show - Skipping duplicate date', [
+                        'invoice_id' => $invoice->id,
+                        'item_id' => $item->id,
+                        'duplicate_date' => $tanggalKey,
+                        'volume_flow_meter' => $volumeFlowMeter,
+                        'already_processed_id' => $processedDates[$tanggalKey]['id'],
+                        'already_processed_volume' => $processedDates[$tanggalKey]['volume']
+                    ]);
                     continue;
                 }
                 
-                $processedDates[$tanggalKey] = true;
+                // Tandai tanggal ini sebagai sudah diproses
+                $processedDates[$tanggalKey] = [
+                    'id' => $item->id,
+                    'volume' => $volumeFlowMeter
+                ];
                 
                 // Get pricing info for this specific date
                 $waktuAwalYearMonth = $waktuAwal->format('Y-m');
@@ -483,6 +619,17 @@ class InvoiceController extends Controller
                 }
                 
                 $totalVolume += $volumeSm3;
+                
+                // DEBUG: Log setiap item yang diproses di show
+                \Log::debug('Invoice show - Processing unique item', [
+                    'invoice_id' => $invoice->id,
+                    'item_id' => $item->id,
+                    'tanggal_key' => $tanggalKey,
+                    'waktu_awal' => $waktuAwal->format('Y-m-d H:i:s'),
+                    'volume_flow_meter' => $volumeFlowMeter,
+                    'volume_sm3' => $volumeSm3,
+                    'harga_gas' => $hargaGas
+                ]);
             }
             
             // Sort pricing periods by start date
@@ -512,17 +659,54 @@ class InvoiceController extends Controller
                 ];
             }
         } else {
-            // For monthly period, use existing logic
+            // PERBAIKAN: For monthly period, tambahkan deteksi duplikasi sama seperti Billing
             $hargaGas = 0;
             
             foreach ($dataPencatatan as $item) {
                 $dataInput = $this->ensureArray($item->data_input);
                 $volumeFlowMeter = floatval($dataInput['volume_flow_meter'] ?? 0);
-                $volumeSm3 = $volumeFlowMeter * floatval($pricingInfo['koreksi_meter'] ?? $customer->koreksi_meter);
-                // Use the last price as the standard price
-                $hargaGas = floatval($pricingInfo['harga_per_meter_kubik'] ?? $customer->harga_per_meter_kubik);
+                
+                $waktuAwal = Carbon::parse($dataInput['pembacaan_awal']['waktu']);
+                $tanggalKey = $waktuAwal->format('Y-m-d');
+                
+                // PERBAIKAN: Skip jika tanggal sudah diproses (hindari duplikasi)
+                if (isset($processedDates[$tanggalKey])) {
+                    \Log::debug('Invoice show - Skipping duplicate date (monthly)', [
+                        'invoice_id' => $invoice->id,
+                        'item_id' => $item->id,
+                        'duplicate_date' => $tanggalKey,
+                        'volume_flow_meter' => $volumeFlowMeter,
+                        'already_processed_id' => $processedDates[$tanggalKey]['id'],
+                        'already_processed_volume' => $processedDates[$tanggalKey]['volume']
+                    ]);
+                    continue;
+                }
+                
+                // Tandai tanggal ini sebagai sudah diproses
+                $processedDates[$tanggalKey] = [
+                    'id' => $item->id,
+                    'volume' => $volumeFlowMeter
+                ];
+                
+                // PERBAIKAN: Gunakan pricing yang sesuai periode item (bukan periode invoice)
+                $waktuAwalYearMonth = $waktuAwal->format('Y-m');
+                $itemPricingInfo = $customer->getPricingForYearMonth($waktuAwalYearMonth, $waktuAwal);
+                
+                $volumeSm3 = $volumeFlowMeter * floatval($itemPricingInfo['koreksi_meter'] ?? $customer->koreksi_meter);
+                $hargaGas = floatval($itemPricingInfo['harga_per_meter_kubik'] ?? $customer->harga_per_meter_kubik);
                 
                 $totalVolume += $volumeSm3;
+                
+                // DEBUG: Log setiap item yang diproses di show (monthly)
+                \Log::debug('Invoice show - Processing unique item (monthly)', [
+                    'invoice_id' => $invoice->id,
+                    'item_id' => $item->id,
+                    'tanggal_key' => $tanggalKey,
+                    'waktu_awal' => $waktuAwal->format('Y-m-d H:i:s'),
+                    'volume_flow_meter' => $volumeFlowMeter,
+                    'volume_sm3' => $volumeSm3,
+                    'harga_gas' => $hargaGas
+                ]);
             }
             
             // Calculate total cost with total volume
@@ -540,6 +724,21 @@ class InvoiceController extends Controller
                 'biaya_pemakaian' => $totalBiaya
             ];
         }
+        
+        // DEBUG: Log final show data
+        \Log::info('Invoice show - Final data', [
+            'invoice_id' => $invoice->id,
+            'customer_id' => $customer->id,
+            'period' => $yearMonth,
+            'total_records_filtered' => $dataPencatatan->count(),
+            'pemakaian_gas_count_displayed' => count($pemakaianGas),
+            'invoice_total_volume' => $invoice->total_volume,
+            'calculated_total_volume' => $totalVolume,
+            'invoice_total_amount' => $invoice->total_amount,
+            'calculated_total_amount' => $totalBiaya,
+            'duplicates_removed' => $dataPencatatan->count() - count(array_filter($processedDates)),
+            'unique_dates_count' => count($processedDates)
+        ]);
         
         // Generate ID Pelanggan (contoh format)
         $idPelanggan = sprintf('03C%04d', $customer->id);
