@@ -36,11 +36,13 @@ Route::middleware(['auth', 'role:superadmin'])->group(function () {
 // ============================================================================
 // Rute untuk Admin, SuperAdmin, Keuangan, Customer, dan FOB (READ ACCESS)
 // Customer dan FOB hanya bisa akses show routes
+// Authorization check ada di controller untuk memastikan customer hanya bisa lihat data mereka sendiri
 // ============================================================================
 Route::middleware(['auth', 'role:admin,superadmin,keuangan,customer,fob'])->group(function () {
-    // Routes yang bisa diakses customer (hanya show)
-    // PENTING: Route dengan parameter dinamis HARUS SETELAH route statis
-    // Invoice show route akan didefinisikan di bawah setelah route statis
+    // Invoice & Billing Show Routes - Bisa diakses oleh semua role
+    // Authorization check di controller memastikan customer hanya bisa lihat milik mereka sendiri
+    Route::get('/invoices/{invoice}', [InvoiceController::class, 'show'])->name('invoices.show');
+    Route::get('/billings/{billing}', [BillingController::class, 'show'])->name('billings.show');
 });
 
 // ============================================================================
@@ -115,8 +117,6 @@ Route::middleware(['auth', 'role:admin,superadmin,keuangan'])->group(function ()
     Route::get('/invoices/{invoice}/edit', [InvoiceController::class, 'edit'])->name('invoices.edit');
     Route::put('/invoices/{invoice}', [InvoiceController::class, 'update'])->name('invoices.update');
     Route::delete('/invoices/{invoice}', [InvoiceController::class, 'destroy'])->name('invoices.destroy');
-    // Route show dengan parameter dinamis HARUS PALING AKHIR
-    Route::get('/invoices/{invoice}', [InvoiceController::class, 'show'])->name('invoices.show');
 
     // Billing Routes - URUTAN PENTING!
     Route::get('/billings', [BillingController::class, 'index'])->name('billings.index');
@@ -127,8 +127,6 @@ Route::middleware(['auth', 'role:admin,superadmin,keuangan'])->group(function ()
     Route::get('/billings/{billing}/edit', [BillingController::class, 'edit'])->name('billings.edit');
     Route::put('/billings/{billing}', [BillingController::class, 'update'])->name('billings.update');
     Route::delete('/billings/{billing}', [BillingController::class, 'destroy'])->name('billings.destroy');
-    // Route show dengan parameter dinamis HARUS PALING AKHIR
-    Route::get('/billings/{billing}', [BillingController::class, 'show'])->name('billings.show');
 
     Route::get('/proforma-invoices', [ProformaInvoiceController::class, 'index'])->name('proforma-invoices.index');
     Route::get('/proforma-invoices/select-customer', [ProformaInvoiceController::class, 'selectCustomer'])->name('proforma-invoices.select-customer');
@@ -336,6 +334,8 @@ Route::middleware(['auth', 'role:customer,fob'])->group(function () {
         ->name('customer.data');
     Route::post('/proses-pembayaran/{dataPencatatan}', [DataPencatatanController::class, 'prosesPembayaran'])
         ->name('customer.proses-pembayaran');
+    
+    // Customer Invoice & Billing Routes
     Route::get('/customer/invoices', [InvoiceController::class, 'customerInvoices'])->name('customer.invoices');
     Route::get('/customer/billings', [BillingController::class, 'customerBillings'])->name('customer.billings');
 });
