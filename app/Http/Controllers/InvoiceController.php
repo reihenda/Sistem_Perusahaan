@@ -35,8 +35,11 @@ class InvoiceController extends Controller
             ->orderBy('name')
             ->get();
         
-        // Query dasar
+        // Query dasar dengan sorting berdasarkan periode
         $query = Invoice::with('customer')
+            ->orderBy('period_year', 'desc')
+            ->orderBy('period_month', 'desc')
+            ->orderByRaw("CASE WHEN period_type = 'monthly' THEN 0 ELSE 1 END") // monthly first, then custom
             ->orderBy('created_at', 'desc');
         
         // Filter berdasarkan pencarian customer jika ada
@@ -874,8 +877,11 @@ class InvoiceController extends Controller
             abort(403, 'Akses tidak diizinkan.');
         }
         
-        // Query invoice milik customer yang sedang login
+        // Query invoice milik customer yang sedang login dengan sorting berdasarkan periode
         $query = Invoice::where('customer_id', $customer->id)
+            ->orderBy('period_year', 'desc')
+            ->orderBy('period_month', 'desc')
+            ->orderByRaw("CASE WHEN period_type = 'monthly' THEN 0 ELSE 1 END") // monthly first, then custom
             ->orderBy('created_at', 'desc');
         
         // Filter berdasarkan search jika ada
