@@ -660,12 +660,12 @@
                                 }
                                 echo '<!-- END DATA DUMP -->';
 
-                                // Buat array tanggal untuk periode penuh dan tandai tanggal yang memiliki data
+                                // PERBAIKAN: Buat array tanggal untuk periode penuh dan simpan SEMUA data (termasuk duplikasi)
                                 $allDatesInPeriod = [];
                                 $currentDate = clone $startDate;
                                 while ($currentDate->lte($endDate)) {
                                     $dateKey = $currentDate->format('Y-m-d');
-                                    $allDatesInPeriod[$dateKey] = null;
+                                    $allDatesInPeriod[$dateKey] = []; // Array kosong untuk menampung multiple records
                                     $currentDate->addDay();
                                 }
 
@@ -675,7 +675,7 @@
                                     implode(',', array_keys($allDatesInPeriod)) .
                                     ' -->';
 
-                                // Masukkan data pencatatan yang ada ke array berdasarkan tanggal
+                                // PERBAIKAN: Masukkan SEMUA data pencatatan ke array berdasarkan tanggal (termasuk duplikasi)
                                 $recordsFound = 0;
                                 foreach ($dataPencatatan as $record) {
                                     $dataInput = is_string($record->data_input)
@@ -695,7 +695,7 @@
 
                                         if (array_key_exists($recordDateStr, $allDatesInPeriod)) {
                                             echo '<!-- DEBUG: MATCH found for date: ' . $recordDateStr . ' -->';
-                                            $allDatesInPeriod[$recordDateStr] = $record;
+                                            $allDatesInPeriod[$recordDateStr][] = $record; // PUSH ke array, bukan replace!
                                             $recordsFound++;
                                         } else {
                                             echo '<!-- DEBUG: NO MATCH for date: ' .
@@ -711,7 +711,7 @@
                                                         ', period=' .
                                                         $periodDate .
                                                         ' -->';
-                                                    $allDatesInPeriod[$periodDate] = $record; // gunakan key dari period
+                                                    $allDatesInPeriod[$periodDate][] = $record; // PUSH ke array
                                                     $recordsFound++;
                                                     break;
                                                 }
@@ -722,11 +722,13 @@
                                 echo '<!-- DEBUG: Records found in period: ' . $recordsFound . ' -->';
                             @endphp
 
-                            @forelse($allDatesInPeriod as $date => $record)
-                                <tr class="{{ $record ? 'has-data' : 'table-light no-data' }}">
-                                    <td>{{ $no++ }}</td>
-                                    <td>
-                                        @if ($record)
+                            @forelse($allDatesInPeriod as $date => $records)
+                                @if (count($records) > 0)
+                                    {{-- Tampilkan SEMUA records untuk tanggal ini (termasuk duplikasi) --}}
+                                    @foreach ($records as $record)
+                                        <tr class="has-data">
+                                            <td>{{ $no++ }}</td>
+                                            <td>
                                             @php
                                                 $dataInput = is_string($record->data_input)
                                                     ? json_decode($record->data_input, true)
@@ -734,13 +736,9 @@
                                                         ? $record->data_input
                                                         : []);
                                             @endphp
-                                            {{ \Carbon\Carbon::parse($dataInput['pembacaan_awal']['waktu'])->format('d M Y H:i') }}
-                                        @else
-                                            {{ \Carbon\Carbon::parse($date)->format('d M Y') }}
-                                        @endif
-                                    </td>
-                                    <td>
-                                        @if ($record)
+                                                {{ \Carbon\Carbon::parse($dataInput['pembacaan_awal']['waktu'])->format('d M Y H:i') }}
+                                            </td>
+                                            <td>
                                             @php
                                                 $dataInput = is_string($record->data_input)
                                                     ? json_decode($record->data_input, true)
@@ -749,13 +747,9 @@
                                                         : []);
                                                 $pembacaanAwal = $dataInput['pembacaan_awal'] ?? ['volume' => 0];
                                             @endphp
-                                            {{ number_format($pembacaanAwal['volume'] ?? 0, 2) }} m³
-                                        @else
-                                            -
-                                        @endif
-                                    </td>
-                                    <td>
-                                        @if ($record)
+                                                {{ number_format($pembacaanAwal['volume'] ?? 0, 2) }} m³
+                                            </td>
+                                            <td>
                                             @php
                                                 $dataInput = is_string($record->data_input)
                                                     ? json_decode($record->data_input, true)
@@ -763,13 +757,9 @@
                                                         ? $record->data_input
                                                         : []);
                                             @endphp
-                                            {{ \Carbon\Carbon::parse($dataInput['pembacaan_akhir']['waktu'])->format('d M Y H:i') }}
-                                        @else
-                                            -
-                                        @endif
-                                    </td>
-                                    <td>
-                                        @if ($record)
+                                                {{ \Carbon\Carbon::parse($dataInput['pembacaan_akhir']['waktu'])->format('d M Y H:i') }}
+                                            </td>
+                                            <td>
                                             @php
                                                 $dataInput = is_string($record->data_input)
                                                     ? json_decode($record->data_input, true)
@@ -778,13 +768,9 @@
                                                         : []);
                                                 $pembacaanAkhir = $dataInput['pembacaan_akhir'] ?? ['volume' => 0];
                                             @endphp
-                                            {{ number_format($pembacaanAkhir['volume'] ?? 0, 2) }} m³
-                                        @else
-                                            -
-                                        @endif
-                                    </td>
-                                    <td>
-                                        @if ($record)
+                                                {{ number_format($pembacaanAkhir['volume'] ?? 0, 2) }} m³
+                                            </td>
+                                            <td>
                                             @php
                                                 $dataInput = is_string($record->data_input)
                                                     ? json_decode($record->data_input, true)
@@ -793,15 +779,11 @@
                                                         : []);
                                                 $volumeFlowMeter = $dataInput['volume_flow_meter'] ?? 0;
                                             @endphp
-                                            {{ number_format($volumeFlowMeter, 2) }} m³
-                                            <!-- Debug info -->
-                                            <!-- ID: {{ $record->id }} | Date: {{ $date }} -->
-                                        @else
-                                            -
-                                        @endif
-                                    </td>
-                                    <td>
-                                        @if ($record)
+                                                {{ number_format($volumeFlowMeter, 2) }} m³
+                                                <!-- Debug info -->
+                                                <!-- ID: {{ $record->id }} | Date: {{ $date }} -->
+                                            </td>
+                                            <td>
                                             @php
                                                 $dataInput = is_string($record->data_input)
                                                     ? json_decode($record->data_input, true)
@@ -833,12 +815,9 @@
                                                 $volumeFlowMeter = $dataInput['volume_flow_meter'] ?? 0;
                                                 $volumeSm3 = $volumeFlowMeter * $koreksiMeter;
                                             @endphp
-                                            {{ number_format($volumeSm3, 2) }} sm³
-                                        @else
-                                        @endif
-                                    </td>
-                                    <td>
-                                        @if ($record)
+                                                {{ number_format($volumeSm3, 2) }} sm³
+                                            </td>
+                                            <td>
                                             @php
                                                 // Hitung Pembelian dengan harga sesuai periode
                                                 $hargaPerM3 = floatval(
@@ -847,13 +826,9 @@
                                                 );
                                                 $pembelian = $volumeSm3 * $hargaPerM3;
                                             @endphp
-                                            Rp {{ number_format($pembelian, 2) }}
-                                        @else
-                                            -
-                                        @endif
-                                    </td>
-                                    <td>
-                                        @if ($record)
+                                                Rp {{ number_format($pembelian, 2) }}
+                                            </td>
+                                            <td>
                                             <div class="btn-group">
                                                 <a href="{{ route('data-pencatatan.show', $record->id) }}"
                                                     class="btn btn-info btn-sm">
@@ -879,16 +854,30 @@
                                                     </form>
                                                 @endif
                                             </div>
-                                        @else
+                                            </td>
+                                        </tr>
+                                    @endforeach
+                                @else
+                                    {{-- Tampilkan baris kosong jika tidak ada data --}}
+                                    <tr class="table-light no-data">
+                                        <td>{{ $no++ }}</td>
+                                        <td>{{ \Carbon\Carbon::parse($date)->format('d M Y') }}</td>
+                                        <td>-</td>
+                                        <td>-</td>
+                                        <td>-</td>
+                                        <td>-</td>
+                                        <td></td>
+                                        <td>-</td>
+                                        <td>
                                             @if (Auth::user()->isAdmin() || Auth::user()->isSuperAdmin())
                                                 <a href="{{ route('data-pencatatan.create-with-customer', ['customerId' => $customer->id, 'tanggal' => $date]) }}"
                                                     class="btn btn-success btn-sm">
                                                     <i class="fas fa-plus"></i> Input Data
                                                 </a>
                                             @endif
-                                        @endif
-                                    </td>
-                                </tr>
+                                        </td>
+                                    </tr>
+                                @endif
                             @empty
                                 <tr>
                                     <td colspan="9" class="text-center">Belum ada data pencatatan dalam periode ini.
@@ -902,8 +891,8 @@
                                 <th>
                                     @php
                                         $totalVolumeSm3Period = 0;
-                                        foreach ($allDatesInPeriod as $date => $record) {
-                                            if ($record) {
+                                        foreach ($allDatesInPeriod as $date => $records) {
+                                            foreach ($records as $record) {
                                                 $dataInput = is_string($record->data_input)
                                                     ? json_decode($record->data_input, true)
                                                     : (is_array($record->data_input)
@@ -939,8 +928,8 @@
                                 <th>
                                     @php
                                         $totalPembelianPeriod = 0;
-                                        foreach ($allDatesInPeriod as $date => $record) {
-                                            if ($record) {
+                                        foreach ($allDatesInPeriod as $date => $records) {
+                                            foreach ($records as $record) {
                                                 $dataInput = is_string($record->data_input)
                                                     ? json_decode($record->data_input, true)
                                                     : (is_array($record->data_input)

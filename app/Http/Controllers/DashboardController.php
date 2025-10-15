@@ -496,6 +496,13 @@ class DashboardController extends Controller
 
         // Ambil semua data dulu
         $allData = $user->dataPencatatan;
+        
+        // DEBUG: Log jumlah data mentah sebelum filter
+        \Log::info('Customer Dashboard - Data mentah', [
+            'customer_id' => $user->id,
+            'total_records' => $allData->count(),
+            'year_month' => $yearMonth
+        ]);
 
         // Filter data berdasarkan bulan dan tahun dari pembacaan awal
         $dataPencatatan = $allData->filter(function ($item) use ($yearMonth, $ensureArray) {
@@ -519,6 +526,13 @@ class DashboardController extends Controller
             return isset($dataInput['pembacaan_awal']['waktu']) ?
                 Carbon::parse($dataInput['pembacaan_awal']['waktu'])->timestamp : 0;
         });
+        
+        // DEBUG: Log jumlah data setelah filter duplikasi
+        \Log::info('Customer Dashboard - Data setelah filter', [
+            'customer_id' => $user->id,
+            'filtered_records' => $dataPencatatan->count(),
+            'duplicates_removed' => $allData->count() - $dataPencatatan->count()
+        ]);
 
         // Get pricing info for selected month (dynamic pricing)
         $pricingInfo = $user->getPricingForYearMonth($yearMonth);
