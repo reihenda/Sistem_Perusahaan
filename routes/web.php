@@ -69,8 +69,8 @@ Route::middleware(['auth', 'role:admin,superadmin,keuangan'])->group(function ()
         ->name('data-pencatatan.filter-month-year');
 
     // Operator GTM - View Only untuk Keuangan
+    // PENTING: Hanya index yang bisa diakses di sini, show route dipindah ke bawah setelah route create
     Route::get('/operator-gtm', [App\Http\Controllers\OperatorGtmController::class, 'index'])->name('operator-gtm.index');
-    Route::get('/operator-gtm/{operatorGtm}', [App\Http\Controllers\OperatorGtmController::class, 'show'])->name('operator-gtm.show');
 
     // Keuangan Routes - Full Access untuk Keuangan
     Route::get('/keuangan/accounts', [FinancialAccountController::class, 'index'])->name('keuangan.accounts.index');
@@ -210,18 +210,29 @@ Route::middleware(['auth', 'role:admin,superadmin'])->group(function () {
     Route::get('/sync-balance/{customer}', [UserController::class, 'syncBalance'])
         ->name('sync.balance');
 
+    // ========================================================================
     // Operator GTM - CREATE/UPDATE/DELETE (HANYA Admin)
-    // PENTING: Route statis harus diletakkan SEBELUM route dengan parameter dinamis
+    // CRITICAL: Route STATIS harus SEBELUM route DINAMIS untuk menghindari konflik!
+    // ========================================================================
+    
+    // Route statis untuk operator-gtm (harus di atas route dinamis)
     Route::get('/operator-gtm/create', [App\Http\Controllers\OperatorGtmController::class, 'create'])->name('operator-gtm.create');
-    Route::post('/operator-gtm', [App\Http\Controllers\OperatorGtmController::class, 'store'])->name('operator-gtm.store');
-    Route::get('/operator-gtm/{operatorGtm}/edit', [App\Http\Controllers\OperatorGtmController::class, 'edit'])->name('operator-gtm.edit');
-    Route::put('/operator-gtm/{operatorGtm}', [App\Http\Controllers\OperatorGtmController::class, 'update'])->name('operator-gtm.update');
-    Route::delete('/operator-gtm/{operatorGtm}', [App\Http\Controllers\OperatorGtmController::class, 'destroy'])->name('operator-gtm.destroy');
-    Route::get('/operator-gtm/{operatorGtm}/create-lembur', [App\Http\Controllers\OperatorGtmController::class, 'createLembur'])->name('operator-gtm.create-lembur');
-    Route::post('/operator-gtm/{operatorGtm}/lembur', [App\Http\Controllers\OperatorGtmController::class, 'storeLembur'])->name('operator-gtm.store-lembur');
+    
+    // Route statis untuk operator-gtm-lembur (harus di atas route dinamis)
     Route::get('/operator-gtm-lembur/{lembur}/edit', [App\Http\Controllers\OperatorGtmController::class, 'editLembur'])->name('operator-gtm.edit-lembur');
     Route::put('/operator-gtm-lembur/{lembur}', [App\Http\Controllers\OperatorGtmController::class, 'updateLembur'])->name('operator-gtm.update-lembur');
     Route::delete('/operator-gtm-lembur/{lembur}', [App\Http\Controllers\OperatorGtmController::class, 'destroyLembur'])->name('operator-gtm.destroy-lembur');
+    
+    // Route dengan parameter dinamis untuk operator-gtm (harus setelah route statis)
+    Route::get('/operator-gtm/{operatorGtm}/create-lembur', [App\Http\Controllers\OperatorGtmController::class, 'createLembur'])->name('operator-gtm.create-lembur');
+    Route::get('/operator-gtm/{operatorGtm}/edit', [App\Http\Controllers\OperatorGtmController::class, 'edit'])->name('operator-gtm.edit');
+    Route::get('/operator-gtm/{operatorGtm}', [App\Http\Controllers\OperatorGtmController::class, 'show'])->name('operator-gtm.show');
+    
+    // Route POST/PUT/DELETE untuk operator-gtm
+    Route::post('/operator-gtm', [App\Http\Controllers\OperatorGtmController::class, 'store'])->name('operator-gtm.store');
+    Route::post('/operator-gtm/{operatorGtm}/lembur', [App\Http\Controllers\OperatorGtmController::class, 'storeLembur'])->name('operator-gtm.store-lembur');
+    Route::put('/operator-gtm/{operatorGtm}', [App\Http\Controllers\OperatorGtmController::class, 'update'])->name('operator-gtm.update');
+    Route::delete('/operator-gtm/{operatorGtm}', [App\Http\Controllers\OperatorGtmController::class, 'destroy'])->name('operator-gtm.destroy');
 
     // Rekap Routes - HANYA Admin
     Route::get('/rekap-pengambilan', [RekapPengambilanController::class, 'index'])
