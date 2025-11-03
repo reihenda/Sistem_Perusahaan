@@ -519,10 +519,14 @@
                                             {{ number_format($customer->total_deposit - $customer->total_purchases, 2) }}</span>
                                     </h5>
                                 </div>
-                                <div class="col-md-6 col-sm-12 text-right">
-                                    <button class="btn btn-primary w-100 w-md-auto" data-toggle="modal"
+                                <div class="col-md-6 col-sm-12">
+                                    <button class="btn btn-primary w-100 mb-2" data-toggle="modal"
                                         data-target="#tambahDepositModal">
                                         <i class="fas fa-plus mr-1"></i> Tambah Deposit
+                                    </button>
+                                    <button class="btn btn-warning w-100" data-toggle="modal"
+                                        data-target="#penguranganSaldoModal">
+                                        <i class="fas fa-minus mr-1"></i> Pengurangan Saldo
                                     </button>
                                 </div>
                             </div>
@@ -532,8 +536,9 @@
                                         <tr>
                                             <th>No</th>
                                             <th>Tanggal</th>
-                                            <th>Jumlah Deposit</th>
                                             <th>Keterangan</th>
+                                            <th>Jumlah Deposit</th>
+                                            <th>Deskripsi</th>
                                             <th>Aksi</th>
                                         </tr>
                                     </thead>
@@ -568,7 +573,8 @@
                                                         'index' => $index,
                                                         'date' => $deposit['date'] ?? '',
                                                         'amount' => $deposit['amount'] ?? 0,
-                                                        'description' => $deposit['description'] ?? '-',
+                                                        'keterangan' => $deposit['keterangan'] ?? 'penambahan',
+                                                        'deskripsi' => $deposit['deskripsi'] ?? ($deposit['description'] ?? '-'),
                                                     ];
                                                 })
                                                 ->sortByDesc('date')
@@ -585,12 +591,25 @@
                                                         Tanggal tidak tersedia
                                                     @endif
                                                 </td>
-                                                <td>Rp {{ number_format($deposit['amount'] ?? 0, 2) }}</td>
-                                                <td>{{ $deposit['description'] ?? '-' }}</td>
+                                                <td>
+                                                    @if ($deposit['keterangan'] === 'penambahan')
+                                                        <span class="badge badge-success">Penambahan</span>
+                                                    @else
+                                                        <span class="badge badge-danger">Pengurangan</span>
+                                                    @endif
+                                                </td>
+                                                <td>
+                                                    @if ($deposit['amount'] >= 0)
+                                                        <span class="text-success">Rp {{ number_format($deposit['amount'] ?? 0, 2) }}</span>
+                                                    @else
+                                                        <span class="text-danger">Rp {{ number_format($deposit['amount'] ?? 0, 2) }}</span>
+                                                    @endif
+                                                </td>
+                                                <td>{{ $deposit['deskripsi'] ?? '-' }}</td>
                                                 <td>
                                                     <form action="{{ route('customer.remove-deposit', $customer->id) }}"
                                                         method="POST" class="d-inline"
-                                                        onsubmit="return confirm('Apakah Anda yakin ingin menghapus deposit ini?');">
+                                                        onsubmit="return confirm('Apakah Anda yakin ingin menghapus entry ini?');">
                                                         @csrf
                                                         @method('DELETE')
                                                         <input type="hidden" name="deposit_index"
@@ -606,6 +625,61 @@
                                 </table>
                             </div>
                         </div>
+                    </div>
+                </div>
+            </div>
+
+            {{-- Pengurangan Saldo Modal untuk FOB --}}
+            <div class="modal fade" id="penguranganSaldoModal" tabindex="-1" role="dialog">
+                <div class="modal-dialog" role="document">
+                    <div class="modal-content">
+                        <div class="modal-header bg-warning text-white">
+                            <h5 class="modal-title">
+                                <i class="fas fa-minus-circle mr-2"></i>Pengurangan Saldo FOB
+                            </h5>
+                            <button type="button" class="close text-white" data-dismiss="modal" aria-label="Close">
+                                <span aria-hidden="true">&times;</span>
+                            </button>
+                        </div>
+                        <form action="{{ route('customer.reduce-balance', $customer->id) }}" method="POST"
+                            id="penguranganSaldoForm">
+                            @csrf
+                            <div class="modal-body">
+                                <div class="alert alert-info">
+                                    <i class="fas fa-info-circle mr-2"></i>
+                                    <strong>Saldo Saat Ini:</strong> Rp
+                                    {{ number_format($customer->getCurrentBalance(), 2) }}
+                                </div>
+
+                                <div class="form-group">
+                                    <label>Jumlah Pengurangan <span class="text-danger">*</span></label>
+                                    <div class="input-group">
+                                        <div class="input-group-prepend">
+                                            <span class="input-group-text">Rp</span>
+                                        </div>
+                                        <input type="number" step="0.01" name="amount" class="form-control"
+                                            placeholder="Jumlah yang akan dikurangi" required>
+                                    </div>
+                                </div>
+                                <div class="form-group">
+                                    <label>Tanggal Pengurangan <span class="text-danger">*</span></label>
+                                    <input type="datetime-local" name="reduction_date" class="form-control"
+                                        value="{{ now()->format('Y-m-d\TH:i') }}" required>
+                                </div>
+                                <div class="form-group mb-0">
+                                    <label>Deskripsi (Opsional)</label>
+                                    <textarea name="description" class="form-control" placeholder="Alasan pengurangan saldo (opsional)" rows="2"></textarea>
+                                </div>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-secondary" data-dismiss="modal">
+                                    <i class="fas fa-times mr-1"></i>Batal
+                                </button>
+                                <button type="submit" class="btn btn-warning">
+                                    <i class="fas fa-save mr-1"></i>Kurangi Saldo
+                                </button>
+                            </div>
+                        </form>
                     </div>
                 </div>
             </div>
