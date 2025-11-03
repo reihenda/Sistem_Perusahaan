@@ -669,6 +669,80 @@ class User extends Authenticatable
         }
     }
 
+    /**
+     * Edit deposit entry
+     *
+     * @param int $index Index deposit yang akan diedit
+     * @param float $newAmount Jumlah deposit baru
+     * @param string|null $newDescription Deskripsi baru
+     * @param Carbon|null $newDate Tanggal baru
+     * @param string|null $newKeterangan Keterangan baru (penambahan/pengurangan)
+     * @return bool
+     */
+    public function editDeposit($index, $newAmount, $newDescription = null, $newDate = null, $newKeterangan = null)
+    {
+        try {
+            DB::beginTransaction();
+
+            // Get current deposit history
+            $depositHistory = $this->ensureArray($this->deposit_history);
+
+            // Validate index
+            if (!isset($depositHistory[$index])) {
+                \Log::error('Invalid deposit index', [
+                    'user_id' => $this->id,
+                    'index' => $index
+                ]);
+                return false;
+            }
+
+            // Get old deposit data
+            $oldDeposit = $depositHistory[$index];
+            $oldAmount = floatval($oldDeposit['amount'] ?? 0);
+
+            // Ensure new amount is numeric
+            $newAmount = floatval($newAmount);
+
+            // Update total_deposit: subtract old amount, add new amount
+            $this->total_deposit = $this->total_deposit - $oldAmount + $newAmount;
+
+            // Prepare updated deposit entry
+            $updatedEntry = [
+                'date' => $newDate ? $newDate->format('Y-m-d H:i:s') : ($oldDeposit['date'] ?? now()->format('Y-m-d H:i:s')),
+                'amount' => round($newAmount, 2),
+                'keterangan' => $newKeterangan ?? ($oldDeposit['keterangan'] ?? 'penambahan'),
+                'deskripsi' => $newDescription ?? ($oldDeposit['deskripsi'] ?? ($oldDeposit['description'] ?? null))
+            ];
+
+            // Update the specific deposit entry
+            $depositHistory[$index] = $updatedEntry;
+
+            // Update deposit history
+            $this->deposit_history = $depositHistory;
+
+            // Save the user
+            $this->save();
+
+            DB::commit();
+
+            \Log::info('Deposit edited successfully', [
+                'user_id' => $this->id,
+                'index' => $index,
+                'old_amount' => $oldAmount,
+                'new_amount' => $newAmount
+            ]);
+
+            return true;
+        } catch (\Exception $e) {
+            DB::rollBack();
+            \Log::error('Error in editDeposit', [
+                'user_id' => $this->id,
+                'error' => $e->getMessage()
+            ]);
+            return false;
+        }
+    }
+
     public function recordPurchase($amount)
     {
         try {

@@ -189,6 +189,56 @@ class UserController extends Controller
         }
     }
 
+    /**
+     * Update deposit entry
+     */
+    public function updateDeposit(Request $request, $userId)
+    {
+        // Validate user permissions (only admin can edit deposit)
+        if (!Auth::user()->isAdmin() && !Auth::user()->isSuperAdmin()) {
+            return redirect()->back()->with('error', 'Anda tidak memiliki izin untuk mengedit deposit');
+        }
+
+        // Validate input
+        $request->validate([
+            'deposit_index' => 'required|integer|min:0',
+            'amount' => 'required|numeric',
+            'deposit_date' => 'required|date',
+            'keterangan' => 'required|in:penambahan,pengurangan',
+            'description' => 'nullable|string|max:255'
+        ]);
+
+        $user = User::findOrFail($userId);
+        
+        // Parse tanggal
+        $depositDate = Carbon::parse($request->deposit_date);
+
+        // Handle amount berdasarkan keterangan
+        $amount = floatval($request->amount);
+        if ($request->keterangan === 'pengurangan') {
+            $amount = -abs($amount); // Pastikan negatif untuk pengurangan
+        } else {
+            $amount = abs($amount); // Pastikan positif untuk penambahan
+        }
+
+        // Edit deposit
+        if ($user->editDeposit(
+            $request->deposit_index,
+            $amount,
+            $request->description,
+            $depositDate,
+            $request->keterangan
+        )) {
+            // Rekalkulasi total deposit dan monthly balances
+            $this->rekalkulasiTotalDeposit($user);
+            $user->updateMonthlyBalances();
+            
+            return redirect()->back()->with('success', 'Deposit berhasil diperbarui');
+        } else {
+            return redirect()->back()->with('error', 'Gagal memperbarui deposit');
+        }
+    }
+
     public function updateCustomerPricing(Request $request, $customerId)
     {
         // Pastikan hanya admin atau super admin yang bisa mengakses

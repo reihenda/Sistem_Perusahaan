@@ -147,6 +147,15 @@ Route::middleware(['auth', 'role:admin,superadmin,keuangan'])->group(function ()
         ->name('data-pencatatan.print-billing');
     Route::get('/customer/{customer}/print-invoice', [DataPencatatanController::class, 'printInvoice'])
         ->name('data-pencatatan.print-invoice');
+
+    // ========================================================================
+    // FOB Routes - View Only untuk Keuangan
+    // CRITICAL: Route ini bisa diakses oleh Keuangan untuk VIEW data FOB
+    // ========================================================================
+    Route::get('/data-pencatatan/fob/{customer}', [FobController::class, 'fobDetail'])
+        ->name('data-pencatatan.fob-detail');
+    Route::post('/data-pencatatan/fob/{customer}/filter-month-year', [FobController::class, 'filterByMonthYear'])
+        ->name('data-pencatatan.fob.filter-month-year');
 });
 
 // ============================================================================
@@ -205,6 +214,8 @@ Route::middleware(['auth', 'role:admin,superadmin'])->group(function () {
         ->name('customer.zero-balance');
     Route::delete('/customers/{userId}/remove-deposit', [UserController::class, 'removeDeposit'])
         ->name('customer.remove-deposit');
+    Route::put('/customers/{userId}/update-deposit', [UserController::class, 'updateDeposit'])
+        ->name('customer.update-deposit');
     Route::get('/customer/{customer}/pricing-history', [UserController::class, 'getPricingHistory'])
         ->name('customer.pricing-history');
     Route::get('/sync-balance/{customer}', [UserController::class, 'syncBalance'])
@@ -276,24 +287,30 @@ Route::middleware(['auth', 'role:admin,superadmin'])->group(function () {
     Route::post('/rekap-pembelian/copy-from-previous', [App\Http\Controllers\Rekap\RekapPembelianController::class, 'copyFromPreviousPeriod'])
         ->name('rekap.pembelian.copy-from-previous');
 
-    // FOB Routes - HANYA Admin
+    // ========================================================================
+    // FOB Routes - CREATE/UPDATE/DELETE (HANYA Admin)
+    // CRITICAL: Route STATIS harus SEBELUM route DINAMIS untuk menghindari konflik!
+    // Route view-only (fobDetail & filterByMonthYear) sudah dipindah ke grup keuangan di atas
+    // ========================================================================
+    
+    // Route statis untuk FOB (harus di atas route dinamis)
     Route::get('/data-pencatatan/fob/create', [FobController::class, 'create'])
         ->name('data-pencatatan.fob.create');
+    
+    // Route dengan parameter dinamis untuk FOB (harus setelah route statis)
     Route::get('/data-pencatatan/fob/create/{fobId}', [FobController::class, 'createWithFob'])
         ->name('data-pencatatan.fob.create-with-fob');
-    Route::get('/data-pencatatan/fob/{customer}', [FobController::class, 'fobDetail'])
-        ->name('data-pencatatan.fob-detail');
     Route::get('/data-pencatatan/fob/{customer}/print', [FobController::class, 'printPage'])
         ->name('data-pencatatan.fob.print');
-    Route::post('/data-pencatatan/fob', [FobController::class, 'store'])
-        ->name('data-pencatatan.fob.store');
-    Route::post('/data-pencatatan/fob/{customer}/filter-month-year', [FobController::class, 'filterByMonthYear'])
-        ->name('data-pencatatan.fob.filter-month-year');
     Route::get('/data-pencatatan/fob/{customer}/sync', [FobController::class, 'syncData'])
         ->name('data-pencatatan.fob.sync-data');
     Route::get('/data-pencatatan/fob/{fob}/debug', function (App\Models\User $fob) {
         return view('data-pencatatan.fob.fob-debug', compact('fob'));
     })->name('fob.debug');
+    
+    // Route POST untuk FOB
+    Route::post('/data-pencatatan/fob', [FobController::class, 'store'])
+        ->name('data-pencatatan.fob.store');
     Route::post('/fob/{fobId}/update-pricing', [UserController::class, 'updateFobPricing'])
         ->name('fob.update-pricing');
 

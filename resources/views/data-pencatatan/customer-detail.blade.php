@@ -1075,18 +1075,27 @@
                                             </td>
                                             <td>{{ $deposit['deskripsi'] ?? '-' }}</td>
                                             <td>
-                                                <form action="{{ route('customer.remove-deposit', $customer->id) }}"
-                                                    method="POST" class="d-inline"
-                                                    onsubmit="return confirm('Apakah Anda yakin ingin menghapus entry ini?');">
-                                                    @csrf
-                                                    @method('DELETE')
-                                                    <input type="hidden" name="deposit_index"
-                                                        value="{{ $deposit['index'] }}">
-                                                    <button type="submit" class="btn btn-danger btn-sm">
-                                                        <i class="fas fa-trash"></i>
-                                                    </button>
-                                                </form>
-                                            </td>
+                                            <button type="button" class="btn btn-warning btn-sm btn-edit-deposit"
+                                            data-index="{{ $deposit['index'] }}"
+                                            data-date="{{ \Carbon\Carbon::parse($deposit['date'])->format('Y-m-d\TH:i') }}"
+                                            data-amount="{{ abs($deposit['amount']) }}"
+                                            data-keterangan="{{ $deposit['keterangan'] }}"
+                                            data-deskripsi="{{ $deposit['deskripsi'] ?? '' }}"
+                                            title="Edit Deposit">
+                                            <i class="fas fa-edit"></i>
+                                            </button>
+                                            <form action="{{ route('customer.remove-deposit', $customer->id) }}"
+                                                method="POST" class="d-inline"
+                                                    onsubmit="return confirm('Apakah Anda yakin ingin menghapus entry ini?');"> 
+                                                        @csrf
+                                                        @method('DELETE')
+                                                        <input type="hidden" name="deposit_index"
+                                                            value="{{ $deposit['index'] }}">
+                                                        <button type="submit" class="btn btn-danger btn-sm">
+                                                            <i class="fas fa-trash"></i>
+                                                        </button>
+                                                    </form>
+                                                </td>
                                         </tr>
                                     @endforeach
                                 </tbody>
@@ -1146,6 +1155,61 @@
                     </div>
                 </div>
             </div>
+
+        {{-- Edit Deposit Modal --}}
+        <div class="modal fade" id="editDepositModal" tabindex="-1" role="dialog">
+            <div class="modal-dialog" role="document">
+                <div class="modal-content">
+                    <div class="modal-header bg-warning text-white">
+                        <h5 class="modal-title">
+                            <i class="fas fa-edit mr-2"></i>Edit Deposit
+                        </h5>
+                        <button type="button" class="close text-white" data-dismiss="modal" aria-label="Close">
+                            <span aria-hidden="true">&times;</span>
+                        </button>
+                    </div>
+                    <form action="{{ route('customer.update-deposit', $customer->id) }}" method="POST" id="editDepositForm">
+                        @csrf
+                        @method('PUT')
+                        <input type="hidden" name="deposit_index" id="edit_deposit_index">
+                        <div class="modal-body">
+                            <div class="form-group">
+                                <label>Tanggal <span class="text-danger">*</span></label>
+                                <input type="datetime-local" name="deposit_date" id="edit_deposit_date" class="form-control" required>
+                            </div>
+                            <div class="form-group">
+                                <label>Keterangan <span class="text-danger">*</span></label>
+                                <select name="keterangan" id="edit_keterangan" class="form-control" required>
+                                    <option value="penambahan">Penambahan</option>
+                                    <option value="pengurangan">Pengurangan</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Jumlah <span class="text-danger">*</span></label>
+                                <div class="input-group">
+                                    <div class="input-group-prepend">
+                                        <span class="input-group-text">Rp</span>
+                                    </div>
+                                    <input type="number" step="0.01" name="amount" id="edit_amount" class="form-control" placeholder="Jumlah" required>
+                                </div>
+                            </div>
+                            <div class="form-group mb-0">
+                                <label>Deskripsi (Opsional)</label>
+                                <textarea name="description" id="edit_description" class="form-control" placeholder="Deskripsi (opsional)" rows="2"></textarea>
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-dismiss="modal">
+                                <i class="fas fa-times mr-1"></i>Batal
+                            </button>
+                            <button type="submit" class="btn btn-warning">
+                                <i class="fas fa-save mr-1"></i>Simpan Perubahan
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
         @endif
 
         {{-- Pengurangan Saldo Modal --}}
@@ -2147,6 +2211,8 @@
                 }
             });
 
+
+
             // Initialize DataTable for pricing history modal dengan pengecekan
             if ($.fn.DataTable.isDataTable('#pricingHistoryTable')) {
                 $('#pricingHistoryTable').DataTable().destroy();
@@ -2365,6 +2431,40 @@
                 $('#filter-form').submit();
             });
             */
+        });
+
+        // SIMPLE: Handle Edit Deposit - Outside $(function) to ensure it always works
+        $(document).ready(function() {
+            $(document).on('click', '.btn-edit-deposit', function() {
+                console.log('Edit button clicked!');
+                
+                var index = $(this).attr('data-index');
+                var date = $(this).attr('data-date');
+                var amount = $(this).attr('data-amount');
+                var keterangan = $(this).attr('data-keterangan');
+                var deskripsi = $(this).attr('data-deskripsi');
+                
+                console.log('Data:', index, date, amount, keterangan, deskripsi);
+                
+                // Populate fields
+                $('#edit_deposit_index').val(index);
+                $('#edit_deposit_date').val(date);
+                $('#edit_amount').val(amount);
+                $('#edit_keterangan').val(keterangan);
+                $('#edit_description').val(deskripsi);
+                
+                // Close deposit history modal first
+                $('#depositHistoryModal').modal('hide');
+                
+                // Wait for backdrop to clear, then show edit modal
+                setTimeout(function() {
+                    $('#editDepositModal').modal('show');
+                    // Focus on first input after modal shown
+                    setTimeout(function() {
+                        $('#edit_deposit_date').focus();
+                    }, 500);
+                }, 500);
+            });
         });
     </script>
 @endsection
