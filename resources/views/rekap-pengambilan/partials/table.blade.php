@@ -20,7 +20,7 @@
                         <td>{{ $rekap->customer->name }}</td>
                         <td>{{ $rekap->tanggal->format('d M Y H:i') }}</td>
                         <td>{{ $rekap->nopol }}</td>
-                        <td>{{ number_format($rekap->volume, 2) }}</td>
+                        <td class="volume-cell" data-volume="{{ $rekap->volume }}">{{ number_format($rekap->volume, 2) }}</td>
                         <td>{{ $rekap->alamat_pengambilan ?: '-' }}</td>
                         <td>
                             <div class="btn-group">
@@ -46,6 +46,13 @@
                 </tr>
             @endif
         </tbody>
+        <tfoot>
+            <tr class="bg-light font-weight-bold">
+                <td colspan="4" class="text-right">Total Volume:</td>
+                <td id="total-volume-display">0.00</td>
+                <td colspan="2"></td>
+            </tr>
+        </tfoot>
     </table>
 </div>
 

@@ -18,16 +18,31 @@ class RekapPengambilanController extends Controller
      */
     public function index(Request $request)
     {
-        // Get tanggal from request or use current date
-        $tanggal = $request->input('tanggal', now()->format('Y-m-d'));
+        // Get tanggal_mulai dan tanggal_akhir from request
+        // Default: awal bulan sampai akhir bulan ini
+        $tanggalMulai = $request->input('tanggal_mulai', now()->startOfMonth()->format('Y-m-d'));
+        $tanggalAkhir = $request->input('tanggal_akhir', now()->endOfMonth()->format('Y-m-d'));
 
-        // Extract month and year from the selected date
-        $selectedDate = Carbon::parse($tanggal);
-        $bulan = $selectedDate->month;
-        $tahun = $selectedDate->year;
+        // Validasi rentang tanggal maksimal 90 hari
+        $startDate = Carbon::parse($tanggalMulai);
+        $endDate = Carbon::parse($tanggalAkhir);
+        $daysDiff = $startDate->diffInDays($endDate);
 
-        // Start with base query
-        $query = RekapPengambilan::filterByMonthYear($bulan, $tahun)
+        if ($daysDiff > 90) {
+            return redirect()->route('rekap-pengambilan.index')
+                ->with('error', 'Rentang tanggal maksimal adalah 90 hari');
+        }
+
+        // Validasi tanggal akhir tidak boleh lebih kecil dari tanggal awal
+        if ($endDate->lt($startDate)) {
+            return redirect()->route('rekap-pengambilan.index')
+                ->with('error', 'Tanggal akhir tidak boleh lebih kecil dari tanggal awal');
+        }
+
+        // Start with base query berdasarkan rentang tanggal
+        // Gunakan whereDate untuk memastikan comparison hanya berdasarkan tanggal, bukan datetime
+        $query = RekapPengambilan::whereDate('tanggal', '>=', $tanggalMulai)
+            ->whereDate('tanggal', '<=', $tanggalAkhir)
             ->with('customer');
 
         // Filter berdasarkan pencarian data (customer, nopol, alamat, volume) jika ada
@@ -50,11 +65,10 @@ class RekapPengambilanController extends Controller
         // Get data dengan filter
         $rekapPengambilan = $query->get()->sortBy('customer.name');
 
-        // Hitung total volume bulanan (tanpa filter search untuk konsistensi)
-        $totalVolumeBulanan = RekapPengambilan::getTotalVolumeMonthly($bulan, $tahun);
-
-        // Hitung total volume harian berdasarkan tanggal yang dipilih (tanpa filter search)
-        $totalVolumeHarian = RekapPengambilan::getTotalVolumeDaily($tanggal);
+        // Hitung total volume dalam rentang tanggal terpilih (tanpa filter search untuk konsistensi)
+        $totalVolumeRentang = RekapPengambilan::whereDate('tanggal', '>=', $tanggalMulai)
+            ->whereDate('tanggal', '<=', $tanggalAkhir)
+            ->sum('volume');
 
         // Deteksi jika request adalah AJAX untuk pencarian real-time
         if ($request->ajax() && $request->has('search')) {
@@ -70,11 +84,9 @@ class RekapPengambilanController extends Controller
         return view('rekap-pengambilan.index', compact(
             'rekapPengambilan',
             'customers',
-            'bulan',
-            'tahun',
-            'tanggal',
-            'totalVolumeBulanan',
-            'totalVolumeHarian'
+            'tanggalMulai',
+            'tanggalAkhir',
+            'totalVolumeRentang'
         ));
     }
 
